@@ -1,0 +1,9 @@
+# Rust build
+/target/
+**/*.rs.bk
+
+# Cargo package files
+Cargo.lock
+
+# VSCode settings
+.vscode/
