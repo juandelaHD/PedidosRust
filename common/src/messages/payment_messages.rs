@@ -1,6 +1,6 @@
 use actix::prelude::*;
 use serde::{Deserialize, Serialize};
-use crate::common::types::payment_status::PaymentActionType;
+use crate::types::payment_status::PaymentActionType;
 use std::net::SocketAddr;
 
 #[derive(Message, Serialize, Deserialize, Debug)]
