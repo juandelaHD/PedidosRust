@@ -1,0 +1,2 @@
+pub const COORDINATE_SCALE: f32 = 50.0;
+pub const SUCCESS_PROBABILITY: f32 = 0.75;
