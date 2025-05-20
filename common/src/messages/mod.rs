@@ -7,10 +7,10 @@ pub mod shared_messages;
 
 // Optional: reexport all together for `use common::messages::*`
 pub use client_messages::*;
+pub use payment_messages::*;
 /*
 pub use restaurant_messages::*;
 pub use delivery_messages::*;
 pub use admin_messages::*;
-pub use payment_messages::*;
 pub use shared_messages::*;
 */
