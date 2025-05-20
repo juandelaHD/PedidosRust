@@ -1,3 +1,4 @@
+use actix::fut::stream;
 use actix::prelude::*;
 use std::net::SocketAddr;
 use serde::Serialize;
@@ -12,28 +13,38 @@ use common::network::socket_writer::{TCPMessage, SocketWriter};
 use common::messages::client_messages::*;
 use common::constants::TIMEOUT_SECONDS;
 use std::time::Duration;
+use std::sync::Arc;
+use tokio::net::TcpStream;
 
 pub struct Client {
+    stream: Option<TcpStream>,
     servers: Vec<SocketAddr>,
-    socket_writer: Option<Addr<SocketWriter>>,
+    socket_writer: Option<Arc<Addr<SocketWriter>>>,
     order_id: String,
     logger: Logger,
     order_submitted: bool,
 }
 
 impl Client {
-    pub fn new(servers: Vec<SocketAddr>) -> Self {
+    pub async fn new(servers: Vec<SocketAddr>) -> Self {
         let order_id = Uuid::new_v4().to_string();
         let logger = Logger::new(format!("CLIENT {}", &order_id[..8]));
-        Self {
-            servers,
-            socket_writer: None,
-            order_id,
-            logger,
-            order_submitted: false,
+        
+        let tcp_stream = connect_please(servers.clone(), &logger).await;
+        if let Some(stream) = tcp_stream {
+            Client {
+                stream: Some(stream),
+                servers,
+                socket_writer: None,
+                order_id,
+                logger,
+                order_submitted: false,
+            }
+        } else {
+            panic!("Unable to connect to any server.");
         }
     }
-
+   
     fn send_message<T: Serialize>(&self, msg: &T) {
         if let Ok(json) = serde_json::to_string(msg) {
             if let Some(writer) = &self.socket_writer {
@@ -60,7 +71,8 @@ impl Handler<UpdateSocketWriter> for Client {
     type Result = ();
 
     fn handle(&mut self, msg: UpdateSocketWriter, _ctx: &mut Context<Self>) {
-        self.socket_writer = Some(msg.0);
+        self.socket_writer = Some(Arc::new(msg.0));
+        self.logger.info("Socket writer updated");
     }
 }
 
@@ -81,13 +93,29 @@ impl Handler<Reconnect> for Client {
 impl Handler<StartRunning> for Client {
     type Result = ();
 
-    fn handle(&mut self, _msg: StartRunning, _ctx: &mut Self::Context) {
-        let (lat, lon) = get_rand_f32_tuple();
-        let nearby_restaurants = RequestNearbyRestaurants {
-            location: (lat, lon),
-        };
-        self.send_message(&nearby_restaurants);
-        self.logger.info(format!("Requesting nearby restaurants at ({}, {})", lat, lon));
+    fn handle(&mut self, _msg: StartRunning, ctx: &mut Self::Context) {
+        if let Some(stream) = self.stream.take() { 
+            let (read_half, write_half) = stream.into_split();
+            let socket_writer = SocketWriter::new(write_half).start();
+            self.socket_writer = Some(Arc::new(socket_writer));
+            self.logger.info("Client started");
+            let _socket_reader = SocketReader::new(read_half, ctx.address()).start();
+            self.logger.info("Socket reader started");
+            
+            // TODO: Handle situation where the user restarts the client and the server is already running
+            // In that case, we should not send the StartRunning message again, just return our status where we left off
+            // Maybe we should send a "RecoverState" message to the server and wait for a response
+
+            let (lat, lon) = get_rand_f32_tuple();
+            let nearby_restaurants = RequestNearbyRestaurants {
+                location: (lat, lon),
+            };
+            self.send_message(&nearby_restaurants);
+            self.logger.info(format!("Requesting nearby restaurants at ({}, {})", lat, lon));
+        } else {
+            self.logger.error("No stream available");
+        }
+
     }
 }
 
@@ -193,4 +221,17 @@ async fn connect_logic(
             tokio::time::sleep(Duration::from_secs(TIMEOUT_SECONDS)).await;
         }
     }
+}
+
+async fn connect_please(
+    servers: Vec<SocketAddr>,
+    logger: &Logger,
+) -> Option<TcpStream> {
+    for addr in servers {
+        logger.info(format!("Trying server: {}", addr));
+        if let Ok(stream) = TcpStream::connect(addr).await {
+            return Some(stream);
+        }
+    }
+    None
 }
