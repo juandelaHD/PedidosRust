@@ -52,11 +52,9 @@ impl Actor for Client {
     type Context = Context<Self>;
 }
 
+#[derive(Message, Debug, Clone)]
+#[rtype(result = "()")]
 pub struct UpdateSocketWriter(pub Addr<SocketWriter>);
-
-impl Message for UpdateSocketWriter {
-    type Result = ();
-}
 
 impl Handler<UpdateSocketWriter> for Client {
     type Result = ();
@@ -77,33 +75,6 @@ impl Handler<Reconnect> for Client {
         ctx.spawn(actix::fut::wrap_future(async move {
             connect_logic(servers, addr, logger).await;
         }));
-    }
-}
-
-async fn connect_logic(
-    servers: Vec<SocketAddr>,
-    addr: Addr<Client>,
-    logger: Logger,
-) {
-    loop {
-        logger.info("Trying to connect to a coordinator...");
-        if let Some(stream) = connect_to_coordinator(servers.clone(), &logger).await {
-            logger.info("Connected to coordinator");
-
-            let (read_half, write_half) = stream.into_split();
-            let socket_writer = SocketWriter::new(write_half).start();
-
-            addr.do_send(UpdateSocketWriter(socket_writer.clone()));
-            let _reader = SocketReader::new(read_half, addr.clone()).start();
-
-            // TODO: Handle situation where the user restarts the client and the server is already running
-            // In that case, we should not send the StartRunning message again, just return our status where we left off
-            addr.do_send(StartRunning); 
-            return;
-        } else {
-            logger.error("Failed to connect. Retrying in 2 seconds...");
-            tokio::time::sleep(Duration::from_secs(TIMEOUT_SECONDS)).await;
-        }
     }
 }
 
@@ -152,6 +123,9 @@ impl Handler<IncomingLine> for Client {
         } else {
             self.logger.warn(format!("Unknown message: {}", line));
         }
+
+        // TODO: Every time we handle a message, we should send the "PersistState" message
+        // to the server to persist our state
     }
 }
 
@@ -190,4 +164,33 @@ pub async fn connect_to_coordinator(
     }
     logger.error("Could not connect to any coordinator.");
     None
+}
+
+
+async fn connect_logic(
+    servers: Vec<SocketAddr>,
+    addr: Addr<Client>,
+    logger: Logger,
+) {
+    loop {
+        logger.info("Trying to connect to a coordinator...");
+        if let Some(stream) = connect_to_coordinator(servers.clone(), &logger).await {
+            logger.info("Connected to coordinator");
+
+            let (read_half, write_half) = stream.into_split();
+            let socket_writer = SocketWriter::new(write_half).start();
+
+            addr.do_send(UpdateSocketWriter(socket_writer.clone()));
+            let _reader = SocketReader::new(read_half, addr.clone()).start();
+
+            // TODO: Handle situation where the user restarts the client and the server is already running
+            // In that case, we should not send the StartRunning message again, just return our status where we left off
+            // Maybe we should send a "RecoverState" message to the server and wait for a response
+            addr.do_send(StartRunning);
+            return;
+        } else {
+            logger.error("Failed to connect. Retrying in 2 seconds...");
+            tokio::time::sleep(Duration::from_secs(TIMEOUT_SECONDS)).await;
+        }
+    }
 }

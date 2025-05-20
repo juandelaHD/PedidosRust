@@ -32,4 +32,4 @@ pub struct OrderConfirmed {
 pub struct OrderRejected {
     pub order_id: String,
     pub reason: String,
-} 
+}
