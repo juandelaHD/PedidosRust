@@ -1,19 +1,17 @@
 use std::net::SocketAddr;
+use actix::prelude::*;
 use common::constants;
 mod client;
+use client::Client;
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let mut servers = Vec::new();
+#[actix::main]
+async fn main() -> std::io::Result<()> {
+    let servers: Vec<SocketAddr> = (0..constants::NUM_COORDINATORS)
+        .map(|i| format!("127.0.0.1:{}", constants::BASE_PORT + i as u16).parse().unwrap())
+        .collect();
 
-    for i in 0..constants::NUM_COORDINATORS {
-        let port = constants::BASE_PORT + i as u16;
-        let server: SocketAddr = format!("127.0.0.1:{}", port).parse()?;
-        servers.push(server);
-    }
-
-    let mut client = client::Client::new(servers).await;
-    client.run().await;
+    Client::new(servers).start();
 
     Ok(())
 }
+

@@ -1,140 +1,178 @@
-use common::messages::client_messages::{
-    NearbyRestaurantsList, OrderConfirmed, OrderRejected, RequestNearbyRestaurants,
-    SubmitOrder,
-};
-use common::messages::shared_messages::{OrderStatusUpdate, WhoIsCoordinator};
-use common::logger::Logger;
-// use common::tcp_sender::TcpMessage;
-use common::utils::get_rand_f32_tuple;
-use std::io;
+use actix::prelude::*;
 use std::net::SocketAddr;
-use std::time::Duration;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, Lines};
-use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
-use tokio::net::TcpStream;
-use tokio::time::timeout;
+use serde::Serialize;
 use uuid::Uuid;
+use common::logger::Logger;
+use common::utils::get_rand_f32_tuple;
+use common::network::socket_reader::{IncomingLine, SocketReader};
+use common::network::socket_writer::{TCPMessage, SocketWriter};
 use common::constants::TIMEOUT_SECONDS;
+use std::time::Duration;
+
+// Mensajes
+#[derive(Message)]
+#[rtype(result = "()")]
+pub struct StartRunning;
+
+#[derive(Message)]
+#[rtype(result = "()")]
+pub struct Reconnect;
 
 pub struct Client {
     servers: Vec<SocketAddr>,
-    reader: Lines<BufReader<OwnedReadHalf>>,
-    writer: OwnedWriteHalf,
+    socket_writer: Option<Addr<SocketWriter>>,
     order_id: String,
     logger: Logger,
+    order_submitted: bool,
 }
 
 impl Client {
-    pub async fn new(servers: Vec<SocketAddr>) -> Self {
-        let mut input = String::new();
-
-        println!("Please, introduce your name:");
-
-        match io::stdin().read_line(&mut input) {
-            Ok(_) => {
-                println!("Welcome to PedidosRust, {}!", input.trim());
-            }
-            Err(error) => {
-                println!("Error reading name: {}", error);
-            }
-        }
-        let logger = Logger::new(format!("CLIENT {}", input.trim()));
-        logger.info("Trying to connect to coordinator...");
-        
-        let stream = connect_to_coordinator(servers.clone(), &logger)
-            .await
-            .expect("Could not connect to any coordinator.");
-        let (rx, tx) = stream.into_split();
-
-        logger.info("Successfully connected to coordinator.");
-
+    pub fn new(servers: Vec<SocketAddr>) -> Self {
+        let order_id = Uuid::new_v4().to_string();
+        let logger = Logger::new(format!("CLIENT {}", &order_id[..8]));
         Self {
             servers,
-            reader: BufReader::new(rx).lines(),
-            writer: tx,
-            order_id: Uuid::new_v4().to_string(),
+            socket_writer: None,
+            order_id,
             logger,
+            order_submitted: false,
         }
     }
 
-    pub async fn run(&mut self) {
-        let location = get_rand_f32_tuple();
-        let request = RequestNearbyRestaurants { location };
-        self.send_message(&request).await;
-
-        let restaurant = self.await_restaurant_choice().await;
-        self.logger
-            .info(format!("Selected restaurant: {}", restaurant));
-
-        let order = SubmitOrder {
-            order_id: self.order_id.clone(),
-            restaurant,
-            items: vec!["Pizza".to_string(), "Coca".to_string()], // TODO: TALK ABOUT IMPLEMENTATION OF POSSIBLE ITEMS
-        };
-        self.send_message(&order).await;
-        self.logger.info(format!("Submitting order {}", self.order_id));
-
-        while let Ok(Some(line)) = self.reader.next_line().await {
-            self.handle_message(line).await;
-        }
-
-        self.logger.warn("Server closed the connection.");
-    }
-
-    async fn await_restaurant_choice(&mut self) -> String {
-        while let Ok(Some(line)) = self.reader.next_line().await {
-            if let Ok(list) = serde_json::from_str::<NearbyRestaurantsList>(&line) {
-                self.logger
-                    .info(format!("Nearby restaurants: {:?}", list.restaurants));
-                return list.restaurants.first().unwrap().clone();
+    fn send_message<T: Serialize>(&self, msg: &T) {
+        if let Ok(json) = serde_json::to_string(msg) {
+            if let Some(writer) = &self.socket_writer {
+                writer.do_send(TCPMessage(json));
             } else {
-                self.logger.warn(format!("Ignored unrelated message: {}", line));
+                self.logger.warn("No socket_writer available");
+            }
+        } else {
+            self.logger.warn("Failed to serialize message");
+        }
+    }
+
+}
+
+impl Actor for Client {
+    type Context = Context<Self>;
+}
+
+pub struct UpdateSocketWriter(pub Addr<SocketWriter>);
+
+impl Message for UpdateSocketWriter {
+    type Result = ();
+}
+
+impl Handler<UpdateSocketWriter> for Client {
+    type Result = ();
+
+    fn handle(&mut self, msg: UpdateSocketWriter, _ctx: &mut Context<Self>) {
+        self.socket_writer = Some(msg.0);
+    }
+}
+
+impl Handler<Reconnect> for Client {
+    type Result = ();
+
+    fn handle(&mut self, _msg: Reconnect, ctx: &mut Context<Self>) {
+        let servers = self.servers.clone();
+        let addr = ctx.address();
+        let logger = self.logger.clone();
+
+        ctx.spawn(actix::fut::wrap_future(async move {
+            connect_logic(servers, addr, logger).await;
+        }));
+    }
+}
+
+async fn connect_logic(
+    servers: Vec<SocketAddr>,
+    addr: Addr<Client>,
+    logger: Logger,
+) {
+    loop {
+        logger.info("Trying to connect to a coordinator...");
+        if let Some(stream) = connect_to_coordinator(servers.clone(), &logger).await {
+            logger.info("Connected to coordinator");
+
+            let (read_half, write_half) = stream.into_split();
+            let socket_writer = SocketWriter::new(write_half).start();
+
+            addr.do_send(UpdateSocketWriter(socket_writer.clone()));
+            let _reader = SocketReader::new(read_half, addr.clone()).start();
+
+            // TODO: Handle situation where the user restarts the client and the server is already running
+            // In that case, we should not send the StartRunning message again, just return our status where we left off
+            addr.do_send(StartRunning); 
+            return;
+        } else {
+            logger.error("Failed to connect. Retrying in 2 seconds...");
+            tokio::time::sleep(Duration::from_secs(TIMEOUT_SECONDS)).await;
+        }
+    }
+}
+
+impl Handler<StartRunning> for Client {
+    type Result = ();
+
+    fn handle(&mut self, _msg: StartRunning, _ctx: &mut Self::Context) {
+        let (lat, lon) = get_rand_f32_tuple();
+        let nearby_restaurants = common::messages::client_messages::RequestNearbyRestaurants {
+            location: (lat, lon),
+        };
+        self.send_message(&nearby_restaurants);
+        self.logger.info(format!("Requesting nearby restaurants at ({}, {})", lat, lon));
+    }
+}
+
+impl Handler<IncomingLine> for Client {
+    type Result = ();
+
+    fn handle(&mut self, msg: IncomingLine, _ctx: &mut Self::Context) {
+        let line = msg.0;
+
+        if !self.order_submitted {
+            if let Ok(list) = serde_json::from_str::<common::messages::client_messages::NearbyRestaurantsList>(&line) {
+                self.logger.info(format!("Nearby restaurants: {:?}", list.restaurants));
+                if let Some(restaurant) = list.restaurants.first() {
+                    let order = common::messages::client_messages::SubmitOrder {
+                        order_id: self.order_id.clone(),
+                        restaurant: restaurant.clone(),
+                        items: vec!["Pizza".to_string(), "Coca".to_string()],
+                    };
+                    self.send_message(&order);
+                    self.logger.info(format!("Submitting order {}", self.order_id));
+                    self.order_submitted = true;
+                }
+                return;
             }
         }
-        panic!("[CLIENT] Did not receive any restaurant list."); // TODO: Handle this case properly
-    }
 
-    async fn handle_message(&mut self, line: String) {
-        if let Ok(msg) = serde_json::from_str::<OrderConfirmed>(&line) {
+        if let Ok(msg) = serde_json::from_str::<common::messages::client_messages::OrderConfirmed>(&line) {
             self.logger.info(format!("Order confirmed: {}", msg.order_id));
-        } else if let Ok(msg) = serde_json::from_str::<OrderRejected>(&line) {
-            self.logger.warn(format!(
-                "Order rejected: {}, reason: {}",
-                msg.order_id, msg.reason
-            ));
-        } else if let Ok(msg) = serde_json::from_str::<OrderStatusUpdate>(&line) {
-            self.logger.info(format!(
-                "Order status update: {}, status: {}",
-                msg.order_id, msg.status
-            ));
+        } else if let Ok(msg) = serde_json::from_str::<common::messages::client_messages::OrderRejected>(&line) {
+            self.logger.warn(format!("Order rejected: {}, reason: {}", msg.order_id, msg.reason));
+        } else if let Ok(msg) = serde_json::from_str::<common::messages::shared_messages::OrderStatusUpdate>(&line) {
+            self.logger.info(format!("Order status update: {}, status: {}", msg.order_id, msg.status));
         } else {
             self.logger.warn(format!("Unknown message: {}", line));
         }
     }
-
-    async fn send_message<T: serde::Serialize>(&mut self, msg: &T) {
-        if let Ok(json) = serde_json::to_string(msg) {
-            if let Err(e) = self
-                .writer
-                .write_all(format!("{}\n", json).as_bytes())
-                .await
-            {
-                self.logger.error(format!("Error sending message: {}", e));
-            }
-        }
-    }
-
 }
 
 
-async fn connect_to_coordinator(
+pub async fn connect_to_coordinator(
     servers: Vec<SocketAddr>,
     logger: &Logger,
-) -> Option<TcpStream> {
+) -> Option<tokio::net::TcpStream> {
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+    use tokio::time::timeout;
+    use common::messages::shared_messages::WhoIsCoordinator;
+
     for addr in servers {
         logger.info(format!("Trying server: {}", addr));
-        if let Ok(mut stream) = TcpStream::connect(addr).await {
-            let who_is_coord = WhoIsCoordinator;                // Serializo el mensaje en JSON + salto de línea para delimitar
+        if let Ok(mut stream) = tokio::net::TcpStream::connect(addr).await {
+            let who_is_coord = WhoIsCoordinator;
             if let Ok(msg_json) = serde_json::to_string(&who_is_coord) {
                 if stream.write_all(format!("{}\n", msg_json).as_bytes()).await.is_ok() {
                     let mut reader = BufReader::new(&mut stream);
@@ -146,7 +184,7 @@ async fn connect_to_coordinator(
                     {
                         if let Ok(coord_info) = serde_json::from_str::<SocketAddr>(line.trim()) {
                             logger.info(format!("Coordinator is at {}", coord_info));
-                            return TcpStream::connect(coord_info).await.ok();
+                            return tokio::net::TcpStream::connect(coord_info).await.ok();
                         } else {
                             logger.warn(format!("Failed to parse coordinator address: {}", line));
                         }
