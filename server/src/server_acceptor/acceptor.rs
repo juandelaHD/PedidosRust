@@ -33,8 +33,7 @@ impl Acceptor {
             match listener.accept().await {
                 Ok((stream, client_addr)) => {
                     self.logger.info(format!("Accepted connection from {}", client_addr));
-                    let server_addr = Server::new_empty(stream, self.addr, client_addr);
-                    server_addr.do_send(StartRunning);
+                    Server::new(stream, self.addr, client_addr);
                 }
                 Err(e) => {
                     self.logger.warn(format!("Failed to accept connection: {}", e));

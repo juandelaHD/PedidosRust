@@ -12,6 +12,7 @@ use std::time::Duration;
 
 pub struct PaymentGatewayActor {
     socket_writer: Addr<SocketWriter>,
+    socket_reader: Addr<SocketReader<PaymentGatewayActor>>,
     logger: Logger,
 }
 
@@ -24,16 +25,18 @@ impl PaymentGatewayActor {
         PaymentGatewayActor::create(|ctx| {
             let logger = Logger::new(format!("PAYMENT_GATEWAY [{}]", addr));
 
-            let (read_half, write_half) = stream.into_split();
+            logger.info(format!("Payment gateway actor started for [{}]", addr));
+            let (read_half, write_half) = tokio::io::split(stream);
 
             // Lector de mensajes
-            let _reader = SocketReader::new(read_half, ctx.address().clone()).start();
+            let socket_reader = SocketReader::new(read_half, ctx.address()).start();
 
             // Escritor de mensajes (actor)
             let socket_writer = SocketWriter::new(write_half).start();
 
             PaymentGatewayActor {
                 socket_writer,
+                socket_reader,
                 logger,
             }
         })

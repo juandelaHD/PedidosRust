@@ -1,14 +1,14 @@
 use actix::dev::ToEnvelope;
 use actix::prelude::*;
-use tokio::io::{AsyncBufReadExt, BufReader};
-use tokio::net::tcp::OwnedReadHalf;
+use tokio::io::{AsyncBufReadExt, BufReader, ReadHalf};
+use tokio::net::TcpStream;
 
 #[derive(Message)]
 #[rtype(result = "()")]
 pub struct IncomingLine(pub String);
 
 pub struct SocketReader<A: Actor + Handler<IncomingLine>> {
-    reader: Option<BufReader<OwnedReadHalf>>,
+    reader: Option<BufReader<ReadHalf<TcpStream>>>,
     destination: Addr<A>,
 }
 
@@ -16,7 +16,7 @@ impl<A> SocketReader<A>
 where
     A: Actor + Handler<IncomingLine>,
 {
-    pub fn new(reader: OwnedReadHalf, destination: Addr<A>) -> Self {
+    pub fn new(reader: ReadHalf<TcpStream>, destination: Addr<A>) -> Self {
         Self {
             reader: Some(BufReader::new(reader)),
             destination,
@@ -46,6 +46,3 @@ where
         );
     }
 }
-
-
-

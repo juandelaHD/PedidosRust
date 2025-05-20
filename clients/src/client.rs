@@ -1,6 +1,6 @@
-use actix::fut::stream;
 use actix::prelude::*;
 use std::net::SocketAddr;
+use std::ops::Add;
 use serde::Serialize;
 use uuid::Uuid;
 use common::logger::Logger;
@@ -15,11 +15,13 @@ use common::constants::TIMEOUT_SECONDS;
 use std::time::Duration;
 use std::sync::Arc;
 use tokio::net::TcpStream;
+use tokio::io::{split};
 
 pub struct Client {
     stream: Option<TcpStream>,
     servers: Vec<SocketAddr>,
     socket_writer: Option<Arc<Addr<SocketWriter>>>,
+    socket_reader: Option<Arc<Addr<SocketReader<Client>>>>,
     order_id: String,
     logger: Logger,
     order_submitted: bool,
@@ -36,6 +38,7 @@ impl Client {
                 stream: Some(stream),
                 servers,
                 socket_writer: None,
+                socket_reader: None,
                 order_id,
                 logger,
                 order_submitted: false,
@@ -95,11 +98,10 @@ impl Handler<StartRunning> for Client {
 
     fn handle(&mut self, _msg: StartRunning, ctx: &mut Self::Context) {
         if let Some(stream) = self.stream.take() { 
-            let (read_half, write_half) = stream.into_split();
-            let socket_writer = SocketWriter::new(write_half).start();
-            self.socket_writer = Some(Arc::new(socket_writer));
+            let (read_half, write_half) = split(stream);
+            self.socket_writer = Some(Arc::new(SocketWriter::new(write_half).start()));
             self.logger.info("Client started");
-            let _socket_reader = SocketReader::new(read_half, ctx.address()).start();
+            self.socket_reader = Some(Arc::new(SocketReader::new(read_half, ctx.address()).start()));
             self.logger.info("Socket reader started");
             
             // TODO: Handle situation where the user restarts the client and the server is already running
@@ -205,11 +207,13 @@ async fn connect_logic(
         if let Some(stream) = connect_to_coordinator(servers.clone(), &logger).await {
             logger.info("Connected to coordinator");
 
-            let (read_half, write_half) = stream.into_split();
-            let socket_writer = SocketWriter::new(write_half).start();
+            // let (read_half, write_half) = split(stream);
+            // let socket_writer = Some(Arc::new(SocketWriter::new(write_half).start()));
+            logger.info("Client started");
+            logger.info("Socket reader started");
 
-            addr.do_send(UpdateSocketWriter(socket_writer.clone()));
-            let _reader = SocketReader::new(read_half, addr.clone()).start();
+            // addr.do_send(UpdateSocketWriter(socket_writer.clone()));
+            // let _reader = SocketReader::new(read_half, addr.clone()).start();
 
             // TODO: Handle situation where the user restarts the client and the server is already running
             // In that case, we should not send the StartRunning message again, just return our status where we left off
