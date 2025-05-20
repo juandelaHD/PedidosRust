@@ -6,8 +6,8 @@ pub mod payment_messages;
 pub mod shared_messages;
 
 // Optional: reexport all together for `use common::messages::*`
-/*
 pub use client_messages::*;
+/*
 pub use restaurant_messages::*;
 pub use delivery_messages::*;
 pub use admin_messages::*;

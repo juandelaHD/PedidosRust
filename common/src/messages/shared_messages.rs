@@ -19,6 +19,14 @@ pub struct LocationUpdate {
 
 #[derive(Message, Debug, Clone, Serialize, Deserialize)]
 #[rtype(result = "()")]
+pub struct StartRunning;
+
+#[derive(Message, Debug, Clone, Serialize, Deserialize)]
+#[rtype(result = "()")]
+pub struct Reconnect;
+
+#[derive(Message, Debug, Clone, Serialize, Deserialize)]
+#[rtype(result = "()")]
 pub struct PersistState;
 
 #[derive(Message, Debug, Clone, Serialize, Deserialize)]

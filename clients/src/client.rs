@@ -4,19 +4,14 @@ use serde::Serialize;
 use uuid::Uuid;
 use common::logger::Logger;
 use common::utils::get_rand_f32_tuple;
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::time::timeout;
+use common::messages::shared_messages::{StartRunning, Reconnect, OrderStatusUpdate, WhoIsCoordinator};
 use common::network::socket_reader::{IncomingLine, SocketReader};
 use common::network::socket_writer::{TCPMessage, SocketWriter};
+use common::messages::client_messages::*;
 use common::constants::TIMEOUT_SECONDS;
 use std::time::Duration;
-
-// Mensajes
-#[derive(Message)]
-#[rtype(result = "()")]
-pub struct StartRunning;
-
-#[derive(Message)]
-#[rtype(result = "()")]
-pub struct Reconnect;
 
 pub struct Client {
     servers: Vec<SocketAddr>,
@@ -117,7 +112,7 @@ impl Handler<StartRunning> for Client {
 
     fn handle(&mut self, _msg: StartRunning, _ctx: &mut Self::Context) {
         let (lat, lon) = get_rand_f32_tuple();
-        let nearby_restaurants = common::messages::client_messages::RequestNearbyRestaurants {
+        let nearby_restaurants = RequestNearbyRestaurants {
             location: (lat, lon),
         };
         self.send_message(&nearby_restaurants);
@@ -132,10 +127,10 @@ impl Handler<IncomingLine> for Client {
         let line = msg.0;
 
         if !self.order_submitted {
-            if let Ok(list) = serde_json::from_str::<common::messages::client_messages::NearbyRestaurantsList>(&line) {
+            if let Ok(list) = serde_json::from_str::<NearbyRestaurantsList>(&line) {
                 self.logger.info(format!("Nearby restaurants: {:?}", list.restaurants));
                 if let Some(restaurant) = list.restaurants.first() {
-                    let order = common::messages::client_messages::SubmitOrder {
+                    let order = SubmitOrder {
                         order_id: self.order_id.clone(),
                         restaurant: restaurant.clone(),
                         items: vec!["Pizza".to_string(), "Coca".to_string()],
@@ -148,11 +143,11 @@ impl Handler<IncomingLine> for Client {
             }
         }
 
-        if let Ok(msg) = serde_json::from_str::<common::messages::client_messages::OrderConfirmed>(&line) {
+        if let Ok(msg) = serde_json::from_str::<OrderConfirmed>(&line) {
             self.logger.info(format!("Order confirmed: {}", msg.order_id));
-        } else if let Ok(msg) = serde_json::from_str::<common::messages::client_messages::OrderRejected>(&line) {
+        } else if let Ok(msg) = serde_json::from_str::<OrderRejected>(&line) {
             self.logger.warn(format!("Order rejected: {}, reason: {}", msg.order_id, msg.reason));
-        } else if let Ok(msg) = serde_json::from_str::<common::messages::shared_messages::OrderStatusUpdate>(&line) {
+        } else if let Ok(msg) = serde_json::from_str::<OrderStatusUpdate>(&line) {
             self.logger.info(format!("Order status update: {}, status: {}", msg.order_id, msg.status));
         } else {
             self.logger.warn(format!("Unknown message: {}", line));
@@ -165,10 +160,6 @@ pub async fn connect_to_coordinator(
     servers: Vec<SocketAddr>,
     logger: &Logger,
 ) -> Option<tokio::net::TcpStream> {
-    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-    use tokio::time::timeout;
-    use common::messages::shared_messages::WhoIsCoordinator;
-
     for addr in servers {
         logger.info(format!("Trying server: {}", addr));
         if let Ok(mut stream) = tokio::net::TcpStream::connect(addr).await {
