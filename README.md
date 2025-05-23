@@ -26,17 +26,13 @@ La consigna del trabajo práctico puede encontrarse [aqui](https://concurrentes-
 ## Índice
 
 1. [Descripción general del sistema](#descripción-general-del-sistema)
-   * [Características Principales](#características-principales)
-   * [Procesos (consolas)](#procesos-del-sistema)
+   * [Características principales](#características-principales)
+   * [Procesos del sistema](#procesos-del-sistema)
    * [Actores por cada proceso](#actores-por-proceso)
    * [Descripción de los mensajes](#descripción-de-los-mensajes)
 6. [Instalación y Ejecución](#instalación-y-ejecución)
 7. [Ejemplo de Ejecución](#ejemplo-de-ejecución)
 8. [Pruebas](#pruebas)
-
----
-
-Claro, acá tenés una versión más clara, formal y completa de la **Descripción general del sistema**, incorporando lo que mencionás sobre exclusión mutua distribuida y el algoritmo del anillo:
 
 ---
 
@@ -188,7 +184,6 @@ Este diseño permite que los distintos actores del sistema interactúen entre s�
 Cada proceso `Server` representa un nodo del sistema. Cada uno de estos procesos se ejecuta en una consola diferente y se comunica a través de mensajes TCP.
 
 A continuación, desarrollaremos en base al proceso `Server1` como ejemplo, pero el funcionamiento es el mismo para los otros procesos `Server`.
-Claro, aquí tenés una versión más clara y profesionalmente redactada del segmento correspondiente al proceso **Server** y sus actores:
 
 ---
 
@@ -202,6 +197,17 @@ Por cada nueva conexión aceptada, se instancian automáticamente los siguientes
 * 📥 [`TCPReceiver`](#comunicación-entre-procesos-tcp-sender-y-tcp-receiver)
 
 Estos actores son los encargados de gestionar la entrada y salida de mensajes TCP entre el `Server` y el nodo conectado, desacoplando así la lógica de transporte del resto del sistema.
+
+##### Estado interno del actor Acceptor
+
+```rust
+pub struct Acceptor {
+    /// Puerto TCP donde escucha nuevas conexiones.
+    pub listen_port: u16,
+    /// Lista de conexiones activas.
+    pub active_connections: HashSet<SocketAddr>,
+}
+```
 
 ---
 
@@ -221,6 +227,20 @@ Responsabilidades:
   * [`AdminCoordinator`](#admincoordinator-async)
   * [`Storage`](#storage-async)
 
+##### Estado interno del actor Admin
+
+```rust
+pub struct Admin {
+    /// Mapa de conexiones activas con clientes, restaurantes, deliverys y gateways.
+    pub communicators: HashMap<SocketAddr, Communicator>,
+    /// Estado de la elección del coordinador y el coordinador actual.
+    pub current_coordinator: Option<SocketAddr>,
+    /// Estado de los pedidos en curso.
+    pub active_orders: HashSet<u64>,
+    
+}
+```
+
 ---
 
 #### 🔗 **AdminCoordinator** *(Async)*
@@ -229,9 +249,22 @@ El actor **AdminCoordinator** es el encargado de la **coordinación distribuida 
 
 Este actor utiliza los `Communicator` previamente establecidos con `Admin2`, `Admin3` y `Admin4` para implementar:
 
-* El algoritmo de **anillo (ring)** para la organización lógica de los servidores.
+* El algoritmo de **anillo (ring)** para la organización lógica de los servidores y elección de líder.
 * Envío de **heartbeats** para detectar fallos.
 * Sincronización periódica del estado del sistema (`Storage`) entre nodos.
+
+##### Estado interno del actor AdminCoordinator
+
+```rust
+pub struct AdminCoordinator {
+    /// Lista ordenada de nodos en el anillo.
+    pub ring_nodes: Vec<SocketAddr>,
+    /// Nodo coordinador actual.
+    pub coordinator: Option<SocketAddr>,
+    /// Timestamps de los últimos heartbeats recibidos por nodo.
+    pub heartbeat_timestamps: HashMap<SocketAddr, Instant>,
+}
+```
 
 ---
 
@@ -250,6 +283,39 @@ Los servicios internos se encargan de tareas especializadas dentro del proceso `
 * **NearbyDeliveryService**
   Encuentra repartidores disponibles próximos a un restaurante para asignar la entrega.
   Se comunica con: `Admin`, `Storage`.
+
+##### Estado interno de OrderService
+
+```rust
+pub struct OrderService {
+   /// Mapa local de órdenes y sus estados.
+   pub orders: HashMap<u64, OrderStatus>,
+   /// Mapa local de clientes y su órden.
+   pub clients_orders: HashMap<String, Vec<u64>>,
+   /// Mapa local de restaurantes y sus órdenes.
+   pub restaurants_orders: HashMap<String, Vec<u64>>,
+   /// Cola de órdenes pendientes para procesamiento.
+   pub pending_orders: Vec<u64>,
+}
+```
+
+##### Estado interno de NearbyDeliveryService
+
+```rust
+pub struct NearbyDeliveryService {
+   /// Cache local de repartidores disponibles con su ubicación.
+   pub available_deliveries: HashMap<String, (f32, f32)>, // delivery_id -> posición (latitud, longitud)
+}
+```
+
+##### Estado interno de NearbyRestaurantService
+
+```rust
+pub struct NearbyRestaurantService {
+   /// Cache local de restaurantes disponibles con su ubicación.
+   pub available_restaurants: HashMap<String, (f32, f32)>, // restaurant_id -> posición (latitud, longitud)
+}
+```
 
 ---
 
@@ -272,69 +338,143 @@ Se comunica directamente con los siguientes actores:
 ##### Estado interno del storage actor
 
 ```rust
-   pub struct ClientEntity {
-      /// Posición actual del cliente en coordenadas 2D.
-      pub client_position: (f32, f32),
-      /// ID unico del cliente
-      pub client_id: String,
-      /// pedido del cliente (id de alimento)
-      pub client_order_id: Option<u64>,
-      /// Marca de tiempo que registra la última actualización del cliente.
-      pub time_stamp: Instant,
-   }
+pub struct ClientEntity {
+    /// Posición actual del cliente en coordenadas 2D.
+    pub client_position: (f32, f32),
+    /// ID único del cliente.
+    pub client_id: String,
+    /// Pedido del cliente (id de alimento).
+    pub client_order_id: Option<u64>,
+    /// Marca de tiempo que registra la última actualización del cliente.
+    pub time_stamp: Instant,
+}
 
-   pub struct RestaurantEntity {
-      /// Posición actual del restaurante en coordenadas 2D.
-      pub restaurant_position: (f32, f32),
-      /// ID unico del restaurante
-      pub restaurant_id: String,
-      /// Pedidos pendientes.
-      pub pending_orders: HashSet<u64>,
-      /// Pedidos listos.
-      pub ready_orders: HashSet<u64>,
-      /// Marca de tiempo que registra la última actualización del restaurant.
-      pub time_stamp: Instant,
-   }
+pub struct RestaurantEntity {
+    /// Posición actual del restaurante en coordenadas 2D.
+    pub restaurant_position: (f32, f32),
+    /// ID único del restaurante.
+    pub restaurant_id: String,
+    /// Pedidos pendientes.
+    pub pending_orders: HashSet<u64>,
+    /// Pedidos listos.
+    pub ready_orders: HashSet<u64>,
+    /// Marca de tiempo que registra la última actualización del restaurante.
+    pub time_stamp: Instant,
+}
 
-   pub struct DeliveryEntity {
-      /// Posición actual del delivery en coordenadas 2D.
-      pub delivery_position: (f32, f32),
-      /// ID único del delivery
-      pub delivery_id: String,
-      /// ID del cliente actual asociado con el delivery (si existe).
-      pub current_client_id: Option<String>,
-      /// ID de la orden actual
-      pub current_order_id: Option<u64>
-      /// Estado actual del delivery.
-      pub status: DeliveryStatus,
-      /// Marca de tiempo que registra la última actualización del delivery.
-      pub time_stamp: Instant,
-   }
+pub struct DeliveryEntity {
+    /// Posición actual del delivery en coordenadas 2D.
+    pub delivery_position: (f32, f32),
+    /// ID único del delivery.
+    pub delivery_id: String,
+    /// ID del cliente actual asociado con el delivery (si existe).
+    pub current_client_id: Option<String>,
+    /// ID de la orden actual.
+    pub current_order_id: Option<u64>,
+    /// Estado actual del delivery.
+    pub status: DeliveryStatus,
+    /// Marca de tiempo que registra la última actualización del delivery.
+    pub time_stamp: Instant,
+}
 
-   pub struct OrderEntity {
-      /// ID de la orden
-      pub order_id: u64,
-      /// ID del cliente asociado a la orden
-      pub client_id: String,
-      /// ID del restaurante asociado a la orden
-      pub restaurant_id: String,
-      /// ID del delivery asociado a la orden
-      pub delivery_id: Option<String>,
-      /// Estado de la orden
-      pub status: OrderStatus,
-      /// Marca de tiempo que registra la última actualización de la orden.
-      pub time_stamp: Instant,
-   }
+pub struct OrderEntity {
+    /// ID de la orden.
+    pub order_id: u64,
+    /// ID del cliente asociado a la orden.
+    pub client_id: String,
+    /// ID del restaurante asociado a la orden.
+    pub restaurant_id: String,
+    /// ID del delivery asociado a la orden.
+    pub delivery_id: Option<String>,
+    /// Estado de la orden.
+    pub status: OrderStatus,
+    /// Marca de tiempo que registra la última actualización de la orden.
+    pub time_stamp: Instant,
+}
 
-   pub struct Storage {
-      /// Diccionario con informacion sobre clientes
-      pub clients: HashMap<SocketAddr, ClientEntity>,
-      /// Diccionario con informacion sobre restaurantes
-      pub restaurants: HashMap<SocketAddr, RestaurantEntity>,
-      /// Diccionario con informacion sobre deliverys
-      pub deliverys: HashMap<SocketAddr, DeliveryEntity>,
-      /// Diccionario de ordenes
-      pub orders: HashMap<u64, OrderEntity>,
-   }
+pub struct Storage {
+    /// Diccionario con información sobre clientes.
+    pub clients: HashMap<SocketAddr, ClientEntity>,
+    /// Diccionario con información sobre restaurantes.
+    pub restaurants: HashMap<SocketAddr, RestaurantEntity>,
+    /// Diccionario con información sobre deliverys.
+    pub deliverys: HashMap<SocketAddr, DeliveryEntity>,
+    /// Diccionario de órdenes.
+    pub orders: HashMap<u64, OrderEntity>,
+}
 ```
+
+---
+
+### **Proceso `Cliente`**
+
+Cada proceso `Cliente` representa a un comensal dentro del sistema. Se ejecuta en una consola independiente y se comunica únicamente con un proceso `Server` mediante mensajes TCP. Su función principal es realizar pedidos, esperar su procesamiento, y recibir notificaciones del estado de su orden.
+
+El proceso está compuesto por dos actores principales:
+
+* [`UIHandler`](#uihandler-async)
+* [`Client`](#client-async)
+
+---
+
+#### 🎛️ **UIHandler** *(Async)*
+
+El actor **UIHandler** representa la interfaz de interacción humano-sistema. Su rol es recolectar inputs del usuario y mostrar por pantalla información relevante que llega desde el sistema.
+
+Responsabilidades:
+
+* Leer inputs del usuario (nombre, pedido y elección de restaurante).
+* Mostrar mensajes y estados del pedido.
+* Comunicarse con el actor `Client` enviando mensajes.
+
+##### Estado interno de `UIHandler`
+
+```rust
+pub struct UIHandler {
+   /// Canal de envío hacia el actor `Client`
+   pub client: Addr<Client>,
+
+}
+```
+
+---
+
+#### 🧠 **Client** *(Async)*
+
+El actor **Client** representa la lógica del comensal. Es el encargado de interactuar con el `Server`, tomar decisiones basadas en la información recibida, y mantener el estado interno del cliente.
+
+Responsabilidades:
+
+1. Conectarse al `Server` (descubrir quién es el coordinador).
+2. Identificarse con su ID único.
+3. Intentar recuperar su estado previo si hubo una desconexión (operación `RECOVER`).
+4. Solicitar restaurantes cercanos a su ubicación.
+5. Enviar la orden al restaurante elegido.
+6. Esperar la aprobación del `PaymentGateway`.
+7. Esperar actualizaciones del estado del pedido.
+8. Finalizar cuando el pedido es recibido o cancelado.
+
+##### Estado interno de `Client`
+
+```rust
+pub struct ClientState {
+   /// Identificador único del comensal
+   pub client_id: String,
+   /// Posición actual del cliente en coordenadas 2D
+   pub position: (f32, f32),
+   /// Estado actual del pedido (si hay uno en curso)
+   pub order_status: Option<OrderStatus>,
+   /// Restaurante elegido para el pedido
+   pub selected_restaurant: Option<String>,
+   /// ID del pedido actual
+   pub order_id: Option<u64>,
+   /// Canal de envío hacia el actor `UIHandler`
+   pub ui_handler: Addr<UIHandler>,
+   /// Comunicador asociado al `Server`
+   pub communicator: Communicator,
+}
+```
+
+---
+
 
