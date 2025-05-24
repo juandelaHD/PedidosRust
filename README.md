@@ -66,11 +66,11 @@ El sistema está conformado por múltiples procesos independientes que se ejecut
 
 Los siguientes procesos representan las distintas funciones centrales del sistema:
 
-* **Server1** — Puerto TCP: `8080`
-* **Server2** — Puerto TCP: `8081`
-* **Server3** — Puerto TCP: `8082`
-* **Server4** — Puerto TCP: `8083`
-* **PaymentGateway** — Puerto TCP: `8084`
+* **PaymentGateway** — Puerto TCP: `8080`
+* **Server1** — Puerto TCP: `8081`
+* **Server2** — Puerto TCP: `8082`
+* **Server3** — Puerto TCP: `8083`
+* **Server4** — Puerto TCP: `8084`
 
 Cada uno de estos servidores ejecuta un `Admin`, coordina actores internos y maneja conexiones con otros nodos del sistema.
 
@@ -416,6 +416,22 @@ El proceso está compuesto por dos actores principales:
 * [`UIHandler`](#uihandler-async)
 * [`Client`](#client-async)
 
+### 📋 Tabla de estados del pedido (desde la perspectiva del Cliente)
+
+| Estado Inicial          | Evento o Acción                     | Estado Final         | Actor Responsable    | Comentario                                                          |
+| ----------------------- | ----------------------------------- | -------------------- | -------------------- | ------------------------------------------------------------------- |
+| `NONE`                  | Cliente realiza un pedido           | `REQUESTED`          | `UIHandler → Client` | El cliente elige restaurante y producto, y envía el pedido inicial. |
+| `REQUESTED`             | Server responde con `AUTHORIZED`    | `AUTHORIZED`         | `Server → Client`    | El pedido fue autorizado por el `PaymentGateway`.                   |
+| `REQUESTED`             | Server responde con `CANCELLED`     | `CANCELLED`          | `Server → Client`    | El pedido fue rechazado por el `PaymentGateway`.                    |
+| `AUTHORIZED`            | Restaurante acepta el pedido        | `PENDING`            | `Server → Client`    | El restaurante acepta preparar el pedido.                           |
+| `AUTHORIZED`            | Restaurante rechaza el pedido       | `CANCELLED`          | `Server → Client`    | El restaurante rechaza el pedido.                                   |
+| `PENDING`               | Pedido asignado a chef              | `PREPARING`          | `Server → Client`    | El pedido comenzó a prepararse en la cocina.                        |
+| `PREPARING`             | Cocina finaliza y pasa a reparto    | `READY_FOR_DELIVERY` | `Server → Client`    | El pedido está listo para ser despachado.                           |
+| `READY_FOR_DELIVERY`    | Pedido asignado a un delivery       | `DELIVERING`         | `Server → Client`    | Un delivery fue asignado y está en camino.                          |
+| `DELIVERING`            | Pedido entregado por el delivery    | `DELIVERED`          | `Server → Client`    | El cliente recibe el pedido.                                        |
+| *Cualquiera intermedio* | Pedido cancelado en cualquier etapa | `CANCELLED`          | `Server → Client`    | Por rechazo de restaurante, problema con delivery u otra razón.     |
+
+
 ---
 
 #### 🎛️ **UIHandler** *(Async)*
@@ -616,3 +632,73 @@ pub struct DeliveryAssigner {
 
 ---
 
+#### **Proceso `Delivery`** *(Async)*
+
+El proceso `Delivery` representa a un repartidor autónomo. Su función es aceptar y realizar entregas de pedidos que ya han sido preparados por un restaurante, coordinándose con el `Server` para recibir asignaciones y reportar finalizaciones. Puede desconectarse y reconectarse, intentando recuperar su estado anterior en caso de haber estado en medio de una entrega.
+
+**Responsabilidades:**
+
+1. Inicializarse con un nombre único y su ubicación actual por línea de comandos.
+2. Descubrir y conectarse con el `Server` (coordinador actual).
+3. Registrarse como disponible para hacer entregas (`IAmAvailable`).
+4. Intentar recuperar su estado anterior en caso de una reconexión (`Recover`).
+5. Recibir ofertas de entrega (`NewOfferToDeliver`) y decidir si aceptarlas.
+6. En caso de aceptar una oferta, esperar la confirmación (`DeliverThisOrder`) para iniciar el reparto.
+7. Simular el viaje y notificar al `Server` con `Delivered`.
+8. Repetir el ciclo o desconectarse temporalmente según preferencia.
+
+---
+
+### Tabla de estados del Delivery
+
+| Estado Actual          | Evento o Acción                     | Nuevo Estado           | Acción del Delivery                        | Comentario                                                                 |
+| ---------------------- | ----------------------------------- | ---------------------- | ------------------------------------------ | -------------------------------------------------------------------------- |
+| `INITIAL`              | Se lanza el proceso                 | `RECONNECTING`         | Establece conexión con `Server`            | Comienza el descubrimiento de coordinador (`who is coord?`).               |
+| `RECONNECTING`         | Se conecta al `Server`              | `RECOVERING`           | Enviar `Recover(delivery_id)`              | Informa su `delivery_id` y solicita estado previo.                         |
+| `RECOVERING`           | Respuesta con datos de entrega      | `DELIVERING`           | Reanuda entrega pendiente                  | Retoma un pedido que había quedado en curso.                               |
+| `RECOVERING`           | Respuesta sin datos                 | `AVAILABLE`            | Enviar `IAmAvailable(delivery_id, pos)`    | No estaba entregando, se registra como disponible.                         |
+| `AVAILABLE`            | Recibe `NewOfferToDeliver`          | `OCCUPIED (tentative)` | Si acepta: enviar `AcceptedOrder(order)`   | Si no acepta, ignora el mensaje y sigue disponible.                        |
+| `OCCUPIED (tentative)` | Recibe `DeliveryNoNeeded`           | `AVAILABLE`            | Espera o decide reconectarse más adelante  | Otro delivery fue asignado más rápido.                                     |
+| `OCCUPIED (tentative)` | Recibe `DeliverThisOrder`           | `DELIVERING`           | Inicia simulación de entrega               | Confirmación final de asignación del pedido.                               |
+| `DELIVERING`           | Termina la entrega (viaje simulado) | `AVAILABLE`            | Enviar `Delivered(order)` + `IAmAvailable` | Informa finalización y vuelve a estar disponible para nuevas asignaciones. |
+
+---
+
+#### **Delivery** *(Async)*
+
+El actor `Delivery` encapsula toda la lógica de un repartidor. Mantiene su estado interno (ubicación, ocupación actual, pedido activo si lo hubiera) y se comunica exclusivamente con el `Server`.
+
+**Responsabilidades:**
+
+* Realizar el proceso de `Recover` para detectar si tiene un pedido en curso.
+* Reportar disponibilidad al `Server`.
+* Evaluar ofertas de entrega y responder si está libre.
+* Ejecutar la entrega una vez confirmada por el `Server`.
+* Simular el tiempo de viaje y finalizar el pedido.
+
+##### Estado interno de `Delivery`
+
+```rust
+pub struct Delivery {
+  /// Identificador único del delivery
+  pub delivery_id: String,
+  /// Posición actual del delivery
+  pub position: (f32, f32),
+  /// Estado actual del delivery: Disponible, Ocupado, Entregando
+  pub status: DeliveryStatus,
+  /// Pedido actual en curso, si lo hay
+  pub current_order: Option<Order>,
+  /// Comunicador asociado al Server
+  pub communicator: Communicator,
+}
+```
+
+##### Enum `DeliveryStatus`
+
+```rust
+pub enum DeliveryStatus {
+  Available,    // Listo para recibir ofertas de pedidos
+  Occupied,     // Esperando confirmación final
+  Delivering,   // En proceso de entrega
+}
+```
