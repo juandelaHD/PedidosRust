@@ -447,21 +447,18 @@ Este proceso se implementa como un actor único:
 
 #### 💀 **Reaper** *(Async)*
 
-El actor **Reaper** escucha mensajes del `Coordinator` sobre desconexiones, y decide si corresponde eliminar definitivamente a un usuario desconectado que no se reconectó a tiempo.
+El actor **Reaper** escucha mensajes del `Coordinator` sobre desconexiones, y espera un tiempo antes de eliminar definitivamente a un usuario desconectado que no se reconectó todavía.
 
 Responsabilidades:
 
 1. Recibir mensajes `ReapUser` desde el `Coordinator` con información del usuario desconectado.
-2. Iniciar un temporizador de algunos segundos por cada entidad.
+2. Iniciar un temporizador de ciertos segundos por cada entidad.
 3. Al finalizar el temporizador, reenviar el mismo mensaje `ReapUser` al `Storage` para que decida si debe eliminarlo (basado en su timestamp más reciente).
-4. Evitar la eliminación si el usuario se reconectó durante ese tiempo (detectado por `Storage`).
 
 ##### Estado interno de `Reaper`
 
 ```rust
 pub struct Reaper {
-  /// Mapa de timers activos para entidades desconectadas
-  pub timers: HashMap<EntityId, Instant>,
   /// Referencia al actor `Storage`
   pub storage: Addr<Storage>,
 }
