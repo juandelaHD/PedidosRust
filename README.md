@@ -508,8 +508,6 @@ El proceso `Restaurante` agrupa múltiples actores que simulan distintas funcion
 7. Solicitar algún repartidor cercano al `Server` cuando un pedido esté listo.
 8. Finalizar su participación en un pedido una vez que ha sido entregado o cancelado.
 
----
-
 ### Tabla de estados del pedido (desde la perspectiva del Restaurante)
 
 | Estado Inicial       | Acción del Restaurante                  | Estado Final             | Actor Responsable           | Comentario                                                |
@@ -646,8 +644,6 @@ El proceso `Delivery` representa a un repartidor autónomo. Su función es acept
 6. En caso de aceptar una oferta, esperar la confirmación (`DeliverThisOrder`) para iniciar el reparto.
 7. Simular el viaje y notificar al `Server` con `Delivered`.
 8. Repetir el ciclo o desconectarse temporalmente según preferencia.
-
----
 
 ### Tabla de estados del Delivery
 
