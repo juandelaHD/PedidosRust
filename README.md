@@ -354,10 +354,11 @@ pub struct RestaurantEntity {
     pub restaurant_position: (f32, f32),
     /// ID único del restaurante.
     pub restaurant_id: String,
+    /// Pedidos autorizados por el PaymentGatewat pero no aceptados todavía
+    /// por el restaurante
+    pub authorized_orders: HashSet<u64>,
     /// Pedidos pendientes.
     pub pending_orders: HashSet<u64>,
-    /// Pedidos listos.
-    pub ready_orders: HashSet<u64>,
     /// Marca de tiempo que registra la última actualización del restaurante.
     pub time_stamp: Instant,
 }
@@ -431,9 +432,8 @@ Responsabilidades:
 
 ```rust
 pub struct UIHandler {
-   /// Canal de envío hacia el actor `Client`
-   pub client: Addr<Client>,
-
+  /// Canal de envío hacia el actor `Client`
+  pub client: Addr<Client>,
 }
 ```
 
@@ -457,24 +457,162 @@ Responsabilidades:
 ##### Estado interno de `Client`
 
 ```rust
-pub struct ClientState {
-   /// Identificador único del comensal
-   pub client_id: String,
-   /// Posición actual del cliente en coordenadas 2D
-   pub position: (f32, f32),
-   /// Estado actual del pedido (si hay uno en curso)
-   pub order_status: Option<OrderStatus>,
-   /// Restaurante elegido para el pedido
-   pub selected_restaurant: Option<String>,
-   /// ID del pedido actual
-   pub order_id: Option<u64>,
-   /// Canal de envío hacia el actor `UIHandler`
-   pub ui_handler: Addr<UIHandler>,
-   /// Comunicador asociado al `Server`
-   pub communicator: Communicator,
+pub struct Client {
+  /// Identificador único del comensal
+  pub client_id: String,
+  /// Posición actual del cliente en coordenadas 2D
+  pub position: (f32, f32),
+  /// Estado actual del pedido (si hay uno en curso)
+  pub order_status: Option<OrderStatus>,
+  /// Restaurante elegido para el pedido
+  pub selected_restaurant: Option<String>,
+  /// ID del pedido actual
+  pub order_id: Option<u64>,
+  /// Canal de envío hacia el actor `UIHandler`
+  pub ui_handler: Addr<UIHandler>,
+  /// Comunicador asociado al `Server`
+  pub communicator: Communicator,
 }
 ```
 
 ---
 
+#### **Proceso `Restaurante`** *(Async)*
+
+El proceso `Restaurante` agrupa múltiples actores que simulan distintas funciones internas de un restaurante (recepción de pedidos, cocina, preparación, entrega). Es el encargado de procesar pedidos entrantes, gestionarlos a través de chefs y despacharlos mediante repartidores cercanos.
+
+**Responsabilidades:**
+
+1. Conectarse al `Server` y registrarse como restaurante disponible.
+2. Intentar recuperar su estado previo si hubo una desconexión (operación `RECOVER`).
+3. Recibir pedidos nuevos (en estado `PENDING` o `AUTHORIZED`) y redirigirlos correctamente.
+4. Decidir si acepta o rechaza pedidos `AUTHORIZED`.
+5. Gestionar una cola de pedidos para preparar.
+6. Coordinar a los `Chef`s para cocinar pedidos.
+7. Solicitar algún repartidor cercano al `Server` cuando un pedido esté listo.
+8. Finalizar su participación en un pedido una vez que ha sido entregado o cancelado.
+
+---
+
+### Tabla de estados del pedido (desde la perspectiva del Restaurante)
+
+| Estado Inicial       | Acción del Restaurante                  | Estado Final             | Actor Responsable           | Comentario                                                |
+| -------------------- | --------------------------------------- | ------------------------ | --------------------------- | --------------------------------------------------------- |
+| `PENDING`            | Pedido recibido y encolado              | `PENDING`                | `OrderReceiver → Kitchen`   | Pasa directo a cocina.                                    |
+| `AUTHORIZED`         | Restaurante lo rechaza                  | `CANCELLED`              | `OrderReceiver`             | Se envía `CancelOrder` al `Server`.                       |
+| `AUTHORIZED`         | Restaurante lo acepta                   | `PENDING`                | `OrderReceiver → Kitchen`   | Se informa al `Server` (y este al `Client`) que fue aceptado. |
+| `PENDING`            | Pedido asignado a chef                  | `PREPARING`              | `Kitchen → Server`          | Se informa al `Server` (y este al `Client`) que comenzó la preparación. |
+| `PREPARING`          | Chef termina la cocción                 | `READY_FOR_DELIVERY`     | `Chef → DeliveryAssigner`   | Se informa al `Server` (y este al `Client`) que está listo para despachar.                 |
+| `READY_FOR_DELIVERY` | Pedido asignado a un delivery           | `DELIVERING`             | `DeliveryAssigner → Server` | Se notifica al `Server` (y este al `Client`) con `DeliverThisOrder`.           |
+
+---
+
+#### **OrderReceiver** *(Async)*
+
+Encargado de recibir nuevos pedidos provenientes del `Server` y reenviarlos al componente adecuado según su estado (`PENDING` o `AUTHORIZED`).
+
+**Responsabilidades:**
+
+* Conectarse al `Server` y realizar el proceso de `Recover`.
+* Recibir nuevos pedidos desde el `Server`.
+* Enviar directamente a `Kitchen` los pedidos `PENDING`.
+* Para pedidos `AUTHORIZED`:
+
+  * Confirmar (enviar a `Kitchen` + `UpdateOrderStatus(Pending)` al `Server`).
+  * O rechazar (`CancelOrder` al `Server`).
+
+##### Estado interno de `OrderReceiver`
+
+```rust
+pub struct OrderReceiver {
+  /// Identificador único del restaurante
+  pub restaurant_id: String,
+  /// Posición actual del restaurante en coordenadas 2D
+  pub position: (f32, f32),
+  /// Canal de envío hacia el actor `Kitchen`
+  pub kitchen_sender: Addr<Kitchen>,
+  /// Comunicador asociado al `Server`
+  pub communicator: Communicator,
+}
+```
+
+---
+
+#### **Kitchen** *(Async)*
+
+Gestiona la cola de pedidos que deben prepararse y coordina a los chefs disponibles.
+
+**Responsabilidades:**
+
+* Mantener la cola de pedidos en espera.
+* Asignar pedidos a chefs disponibles.
+* Informar al `Server` cuando un pedido entra en estado `Preparing`.
+
+##### Estado interno de `Kitchen`
+
+```rust
+pub struct Kitchen {
+  /// Ordenes pendientes para ser preparadas.
+  pub pending_orders: VecDeque<Order>,
+  /// Chef disponible para preparar el pedido.
+  pub chefs_available: Vec<Addr<Chef>>,
+  /// Comunicador asociado al `Server`
+  pub communicator: Communicator,
+}
+```
+
+---
+
+#### 🧑‍🍳 **Chef** *(Async)*
+
+Simula la preparación de un pedido, demora un tiempo artificial y notifica cuando el pedido está listo para ser despachado.
+
+**Responsabilidades:**
+
+* Cocinar los pedidos asignados (delay simulado).
+* Notificar al `DeliveryAssigner` con `SendThisOrder`.
+* Avisar a la `Kitchen` que está disponible nuevamente (`IAmAvailable`).
+
+##### Estado interno de `Chef`
+
+```rust
+pub struct Chef {
+  /// Tiempo estimado para preparar pedidos
+  pub time_to_cook: Duration,
+  /// Pedido que está preparando
+  pub order: Option<Order>,
+  /// Canal de envío hacia el actor `Kitchen`
+  pub kitchen_sender: Addr<Kitchen>,
+  /// Canal de envío hacia el actor `DeliveryAssigner`
+  pub delivery_assigner: Addr<DeliveryAssigner>
+}
+```
+
+---
+
+#### 🚴 **DeliveryAssigner** *(Async)*
+
+Encargado de pedir repartidores al `Server` y asociarlos con pedidos listos para entregar.
+
+**Responsabilidades:**
+
+* Encolar pedidos listos para despacho.
+* Solicitar deliverys al `Server`.
+* Manejar llegadas de `DeliveryAvailable`.
+* Enviar `DeliverThisOrder` al `Server`.
+
+##### Estado interno de `DeliveryAssigner`
+
+```rust
+pub struct DeliveryAssigner {
+  /// Queue de pedidos listos para ser despachados.
+  pub ready_orders: VecDeque<Order>,
+  /// Mapa de ordenes enviadas y su delivery asignado.
+  pub orders_delivery: HashMap<u64, String>,
+  /// Comunicador asociado al `Server`
+  pub communicator: Communicator,
+}
+```
+
+---
 
