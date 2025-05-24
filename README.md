@@ -100,6 +100,7 @@ Cada proceso está compuesto por varios actores, cada uno con una responsabilida
   * Storage
 
 * [**Proceso PaymentGateway**](#proceso-paymentgateway):
+   * Acceptor
    * TCP Sender
    * TCP Receiver
    * PaymentGateway
@@ -221,23 +222,33 @@ Responsabilidades:
 * Enviar mensajes hacia los `TCPSender` asociados a clientes, restaurantes, repartidores y al `Payment Gateway`.
 * Coordinar acciones con los actores internos:
 
-  * [`OrderService`](#️servicios-internos-async)
-  * [`NearbyDeliveryService`](#️servicios-internos-async)
-  * [`NearbyRestaurantService`](#️servicios-internos-async)
-  * [`AdminCoordinator`](#admincoordinator-async)
-  * [`Storage`](#storage-async)
+  * [`AdminCoordinator`](#🔗-admincoordinator-async)
+  * [`OrderService`](#️⚙️-servicios-internos-async)
+  * [`NearbyDeliveryService`](#️⚙️-servicios-internos-async)
+  * [`NearbyRestaurantService`](#️⚙️-servicios-internos-async)
+  * [`Storage`](#🗄️-storage-async)
+  * [`Reaper`](#💀-reaper-async)
 
 ##### Estado interno del actor Admin
 
 ```rust
 pub struct Admin {
-    /// Mapa de conexiones activas con clientes, restaurantes, deliverys y gateways.
-    pub communicators: HashMap<SocketAddr, Communicator>,
-    /// Estado de la elección del coordinador y el coordinador actual.
-    pub current_coordinator: Option<SocketAddr>,
-    /// Estado de los pedidos en curso.
-    pub active_orders: HashSet<u64>,
-    
+  /// Coordinador actual.
+  pub current_coordinator: Option<SocketAddr>,
+  /// Estado de los pedidos en curso.
+  pub active_orders: HashSet<u64>,
+  /// Mapa de conexiones activas con clientes, restaurantes, deliverys y gateways.
+  pub communicators: HashMap<SocketAddr, Communicator>,
+  /// Canal de envío hacia el actor `Storage`. 
+  pub storage: Addr<Storage>,
+  /// Canal de envío hacia el actor `Reaper`.
+  pub reaper: Addr<Reaper>,
+  /// Servicio de órdenes.
+  pub order_service: Addr<OrderService>,
+  /// Servicio de restaurantes cercanos.
+  pub nearby_restaurant_service: Addr<NearbyRestaurantService>,
+  /// Servicio de deliverys cercanos.
+  pub nearby_delivery_service: Addr<NearbyDeliveryService>,
 }
 ```
 
@@ -405,6 +416,27 @@ pub struct Storage {
 }
 ```
 
+#### 💀 **Reaper** *(Async)*
+
+```rust
+/*
+/
+/
+/
+/
+/
+/
+/  ¡ MISSING !
+/
+/
+/
+/
+/
+/
+/
+*/
+```
+
 ---
 
 ### **Proceso `Cliente`**
@@ -416,7 +448,7 @@ El proceso está compuesto por dos actores principales:
 * [`UIHandler`](#uihandler-async)
 * [`Client`](#client-async)
 
-### 📋 Tabla de estados del pedido (desde la perspectiva del Cliente)
+### Tabla de estados del pedido (desde la perspectiva del Cliente)
 
 | Estado Inicial          | Evento o Acción                     | Estado Final         | Actor Responsable    | Comentario                                                          |
 | ----------------------- | ----------------------------------- | -------------------- | -------------------- | ------------------------------------------------------------------- |
