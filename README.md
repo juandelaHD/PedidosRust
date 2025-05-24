@@ -186,6 +186,13 @@ Cada proceso `Server` representa un nodo del sistema. Cada uno de estos procesos
 
 A continuación, desarrollaremos en base al proceso `Server1` como ejemplo, pero el funcionamiento es el mismo para los otros procesos `Server`.
 
+
+<p align="center">
+  <img src="img/server_architecture.png" style="max-width: 100%; height: auto;" alt="Server Architecture">
+
+</p>
+
+
 ---
 
 #### 🔌 **Acceptor** *(Async)*
