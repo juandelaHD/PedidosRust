@@ -1037,7 +1037,7 @@ Cabe destacar que cada instancia solicita actualizaciones cada cierto tiempo det
 
 - Un diccionario de las operaciones necesarias para reconstruir el estado actual del `Storage`. La instancia con la información armó previamente este diccionario de mensajes recorriendo todo el contenido de su `Storage`. La nueva instancia le envía el mensaje `ApplyStorageUpdates` con estos cambios a su `Storage` para poder recuperar el estado.
 
-- El registro de operaciones completo actual. La nueva instancia necesita conocer adicionalmente el registro para poder satisfacer solicitudes de actualización de su siguiente instancia en el anillo, como así también saber a partir de qué número de operación va a solicitar actualizaciones a partir de ese momento.
+- El registro de operaciones completo actual. La nueva instancia necesita conocer adicionalmente el registro para poder satisfacer solicitudes de actualización de su siguiente instancia en el anillo, como así también saber a partir de qué número de operación va a solicitar actualizaciones a partir de ese momento. Para ello, se le envía el mensaje `SetStorageUpdatesLog` (el cual contiene el registro de operaciones completo actual) al `Storage` para que este último guarde sus operaciones sin aplicarlas.
 
 #### Elección de líder
 
