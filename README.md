@@ -6,36 +6,36 @@
 
 [![Review Assignment Due Date](https://classroom.github.com/assets/deadline-readme-button-22041afd0340ce965d47ae6ef1cefeee28c7c493a6346c4f15d667ab976d596c.svg)](https://classroom.github.com/a/YmMajyCa)
 
-**PedidosRust** es un sistema distribuido implementado en Rust que modela la interacción entre *clientes*, *restaurantes*, *repartidores* y un *gateway de pagos*. Cada entidad funciona como una aplicación independiente, comunicándose mediante mensajes TCP.
+**PedidosRust** es un sistema distribuido implementado en Rust que modela la interacción entre _clientes_, _restaurantes_, _repartidores_ y un _gateway de pagos_. Cada entidad funciona como una aplicación independiente, comunicándose mediante mensajes TCP.
 
-La consigna del trabajo práctico puede encontrarse [aqui](https://concurrentes-fiuba.github.io/2025_1C_tp2.html) 
+La consigna del trabajo práctico puede encontrarse [aqui](https://concurrentes-fiuba.github.io/2025_1C_tp2.html)
 
 ---
 
 ## Autores
 
-| Nombre          | Apellido      | Mail                  | Padrón |
-| --------------- | ------------- | --------------------- | ------ |
-| Ian             | von der Heyde | ivon@fi.uba.ar        | 107638 |
-| Agustín         | Altamirano    | aaltamirano@fi.uba.ar | 110237 |
-| Juan Martín     | de la Cruz    | jdelacruz@fi.uba.ar   | 109588 |
-| Santiago Tomás  | Fassio        | sfassio@fi.uba.ar     | 109463 |
+| Nombre         | Apellido      | Mail                  | Padrón |
+| -------------- | ------------- | --------------------- | ------ |
+| Ian            | von der Heyde | ivon@fi.uba.ar        | 107638 |
+| Agustín        | Altamirano    | aaltamirano@fi.uba.ar | 110237 |
+| Juan Martín    | de la Cruz    | jdelacruz@fi.uba.ar   | 109588 |
+| Santiago Tomás | Fassio        | sfassio@fi.uba.ar     | 109463 |
 
 ---
 
 ## Índice
 
 1. [Diseño del sistema](#diseño-del-sistema)
-    * [Características principales](#características-principales)
-    * [Procesos del sistema](#procesos-del-sistema)
-    * [Modelo de comunicación entre procesos](#modelo-de-comunicación-entre-procesos-tcp-sender-y-tcp-receiver)
-    * [Actores y mensajes por cada proceso](#actores-por-proceso)
-      * [Proceso Server](#proceso-server)
-      * [Proceso PaymentGateway](#proceso-paymentgateway)
-      * [Proceso Cliente](#proceso-cliente)
-      * [Proceso Restaurante](#proceso-restaurante)
-      * [Proceso Delivery](#proceso-delivery)
-    * [Modelo de replicación y tolerancia a fallos](#modelo-de-replicación-y-tolerancia-a-fallos)
+   - [Características principales](#características-principales)
+   - [Procesos del sistema](#procesos-del-sistema)
+   - [Modelo de comunicación entre procesos](#modelo-de-comunicación-entre-procesos-tcp-sender-y-tcp-receiver)
+   - [Actores y mensajes por cada proceso](#actores-por-proceso)
+     - [Proceso Server](#proceso-server)
+     - [Proceso PaymentGateway](#proceso-paymentgateway)
+     - [Proceso Cliente](#proceso-cliente)
+     - [Proceso Restaurante](#proceso-restaurante)
+     - [Proceso Delivery](#proceso-delivery)
+   - [Modelo de replicación y tolerancia a fallos](#modelo-de-replicación-y-tolerancia-a-fallos)
 2. [Instalación y Ejecución](#instalación-y-ejecución)
 3. [Ejemplo de Ejecución](#ejemplo-de-ejecución)
 4. [Pruebas](#pruebas)
@@ -46,21 +46,21 @@ La consigna del trabajo práctico puede encontrarse [aqui](https://concurrentes-
 
 ### **Características principales**
 
-* **Modelo de Actores Asincrónicos**
+- **Modelo de Actores Asincrónicos**
   El sistema está construido siguiendo el **modelo de actores**, lo que permite una gestión eficiente y concurrente de mensajes entre múltiples entidades distribuidas. Cada componente del sistema (clientes, restaurantes, repartidores, servidores) está representado por actores independientes que se comunican de forma no bloqueante a través de TCP.
 
-* **Coordinación distribuida y elección de coordinador**
+- **Coordinación distribuida y elección de coordinador**
   Se implementa el **algoritmo del anillo (Ring Algorithm)** para llevar a cabo la **elección de un Coordinator Manager** entre los distintos procesos `Coordinator`. Este mecanismo garantiza que, ante la caída del coordinador actual, el sistema pueda elegir automáticamente un nuevo líder sin necesidad de intervención externa.
 
-* **Exclusión Mutua Distribuida (Centralizada)**
+- **Exclusión Mutua Distribuida (Centralizada)**
   Para operaciones críticas que requieren acceso exclusivo a ciertos recursos (por ejemplo, actualización de datos globales), se utiliza un enfoque de **exclusión mutua distribuida centralizada**. El coordinador electo es el encargado de otorgar el permiso de acceso, garantizando consistencia y evitando condiciones de carrera entre los nodos.
 
-* **Resiliencia y Tolerancia a Fallos**
+- **Resiliencia y Tolerancia a Fallos**
   El sistema está diseñado con foco en la **tolerancia a fallos**, permitiendo que nodos individuales (como clientes, repartidores o restaurantes) puedan desconectarse temporalmente **sin afectar el flujo global del sistema**. Esta resiliencia se logra mediante:
 
-  * **Heartbeats periódicos** entre procesos `Coordinator`, para detectar y responder rápidamente ante fallas.
-  * **Backups sincronizados** del estado del sistema, asegurando persistencia y recuperación consistente.
-  * **Soporte para reconexión de nodos**: los procesos pueden reconectarse automáticamente. Además, según el **estado actual de la orden**, es posible que ciertas operaciones (como la entrega de un pedido) continúen exitosamente **incluso si un cliente u otro nodo se encuentra momentáneamente desconectado**.
+  - **Heartbeats periódicos** entre procesos `Coordinator`, para detectar y responder rápidamente ante fallas.
+  - **Backups sincronizados** del estado del sistema, asegurando persistencia y recuperación consistente.
+  - **Soporte para reconexión de nodos**: los procesos pueden reconectarse automáticamente. Además, según el **estado actual de la orden**, es posible que ciertas operaciones (como la entrega de un pedido) continúen exitosamente **incluso si un cliente u otro nodo se encuentra momentáneamente desconectado**.
 
 ---
 
@@ -72,11 +72,11 @@ El sistema está conformado por múltiples procesos independientes que se ejecut
 
 Los siguientes procesos representan las distintas funciones centrales del sistema:
 
-* **PaymentGateway** — Puerto TCP: `8080`
-* **Server1** — Puerto TCP: `8081`
-* **Server2** — Puerto TCP: `8082`
-* **Server3** — Puerto TCP: `8083`
-* **Server4** — Puerto TCP: `8084`
+- **PaymentGateway** — Puerto TCP: `8080`
+- **Server1** — Puerto TCP: `8081`
+- **Server2** — Puerto TCP: `8082`
+- **Server3** — Puerto TCP: `8083`
+- **Server4** — Puerto TCP: `8084`
 
 Cada uno de estos servidores ejecuta un `Coordinator`, coordina actores internos y maneja conexiones con otros nodos del sistema.
 
@@ -84,9 +84,9 @@ Cada uno de estos servidores ejecuta un `Coordinator`, coordina actores internos
 
 Además, por cada entidad de negocio se lanza un proceso independiente:
 
-* **Cliente** — Un proceso por cada cliente activo.
-* **Restaurante** — Un proceso por cada restaurante disponible.
-* **Delivery** — Un proceso por cada repartidor conectado.
+- **Cliente** — Un proceso por cada cliente activo.
+- **Restaurante** — Un proceso por cada restaurante disponible.
+- **Delivery** — Un proceso por cada repartidor conectado.
 
 Estos procesos se conectan dinámicamente a alguno de los `Server`, y se comunican de forma bidireccional para operar dentro del sistema (por ejemplo, iniciar pedidos, aceptar entregas, recibir actualizaciones, etc.).
 
@@ -96,39 +96,43 @@ Estos procesos se conectan dinámicamente a alguno de los `Server`, y se comunic
 
 Cada proceso está compuesto por varios actores, cada uno con una responsabilidad específica. A continuación se describen los actores de cada proceso:
 
-* [**Proceso Server**](#proceso-server): 
-  * Acceptor
-  * N Communicators -> (TCPSender, TCPReceiver)
-  * Coordinator
-  * CoordinatorManager
-  * OrderService
-  * NearbyDeliveryService
-  * NearbyRestaurantService
-  * Storage
-  * Reaper
+- [**Proceso Server**](#proceso-server):
 
-* [**Proceso PaymentGateway**](#proceso-paymentgateway):
-  * Acceptor
-  * PaymentGateway
-  * N Communicators -> (TCPSender, TCPReceiver)
+  - Acceptor
+  - N Communicators -> (TCPSender, TCPReceiver)
+  - Coordinator
+  - CoordinatorManager
+  - OrderService
+  - NearbyDeliveryService
+  - NearbyRestaurantService
+  - Storage
+  - Reaper
 
-* [**Proceso Cliente**](#proceso-cliente):
-  * Client
-  * UIHandler
-  * Communicator -> (TCPSender, TCPReceiver)
+- [**Proceso PaymentGateway**](#proceso-paymentgateway):
 
-* [**Proceso Restaurante**](#proceso-restaurante):
-  * Restaurant
-  * Kitchen
-  * Chef
-  * DeliveryAssigner
-  * Communicator -> (TCPSender, TCPReceiver)
+  - Acceptor
+  - PaymentGateway
+  - N Communicators -> (TCPSender, TCPReceiver)
 
-* [**Proceso Delivery**](#proceso-delivery):
-  * TCP Sender
-  * TCP Receiver
-  * Delivery
-  * Communicator -> (TCPSender, TCPReceiver)
+- [**Proceso Cliente**](#proceso-cliente):
+
+  - Client
+  - UIHandler
+  - Communicator -> (TCPSender, TCPReceiver)
+
+- [**Proceso Restaurante**](#proceso-restaurante):
+
+  - Restaurant
+  - Kitchen
+  - Chef
+  - DeliveryAssigner
+  - Communicator -> (TCPSender, TCPReceiver)
+
+- [**Proceso Delivery**](#proceso-delivery):
+  - TCP Sender
+  - TCP Receiver
+  - Delivery
+  - Communicator -> (TCPSender, TCPReceiver)
 
 ---
 
@@ -136,7 +140,7 @@ Cada proceso está compuesto por varios actores, cada uno con una responsabilida
 
 La comunicación entre procesos distribuidos en este sistema se realiza a través de **mensajes TCP**. Para abstraer esta comunicación y mantener la lógica del sistema desacoplada del transporte subyacente, se utilizan dos actores especializados:
 
-#### 📤 `TCPSender` *(Async)*
+#### 📤 `TCPSender` _(Async)_
 
 El `TCPSender` es el actor responsable de **enviar mensajes TCP** hacia otro nodo del sistema.
 
@@ -148,11 +152,11 @@ pub struct TCPSender {
 
 Características:
 
-* Utiliza un `BufWriter` sobre la mitad de escritura del socket (`WriteHalf<TcpStream>`).
-* Recibe mensajes desde otros actores del sistema (por ejemplo, `Coordinator`, `Client`, etc.) y los escribe en el socket.
-* Está diseñado para trabajar en paralelo con un `TCPReceiver` que lee de la misma conexión.
+- Utiliza un `BufWriter` sobre la mitad de escritura del socket (`WriteHalf<TcpStream>`).
+- Recibe mensajes desde otros actores del sistema (por ejemplo, `Coordinator`, `Client`, etc.) y los escribe en el socket.
+- Está diseñado para trabajar en paralelo con un `TCPReceiver` que lee de la misma conexión.
 
-#### 📥 `TCPReceiver` *(Async)*
+#### 📥 `TCPReceiver` _(Async)_
 
 El `TCPReceiver` es el actor responsable de **leer mensajes entrantes desde un socket TCP** y reenviarlos al actor de destino adecuado dentro del sistema.
 
@@ -165,9 +169,9 @@ pub struct TCPReceiver {
 
 Características:
 
-* Utiliza un `BufReader` sobre la mitad de lectura del socket (`ReadHalf<TcpStream>`).
-* Deserializa cada línea recibida y la envía como mensaje al actor indicado mediante `destination`.
-* Es genérico en cuanto al actor destino, lo que permite reutilizarlo en múltiples procesos (por ejemplo, `Client`, `Restaurant`, etc.).
+- Utiliza un `BufReader` sobre la mitad de lectura del socket (`ReadHalf<TcpStream>`).
+- Deserializa cada línea recibida y la envía como mensaje al actor indicado mediante `destination`.
+- Es genérico en cuanto al actor destino, lo que permite reutilizarlo en múltiples procesos (por ejemplo, `Client`, `Restaurant`, etc.).
 
 #### 🔄 Emparejamiento mediante `Communicator`
 
@@ -196,17 +200,16 @@ A continuación, desarrollaremos en base al proceso `Server1` como ejemplo, pero
 
 </p>
 
-
 ---
 
-#### 🔌 **Acceptor** *(Async)*
+#### 🔌 **Acceptor** _(Async)_
 
 El actor **Acceptor** es responsable de escuchar el puerto TCP del proceso `Server`, aceptando conexiones entrantes desde diversos tipos de nodos del sistema: clientes, restaurantes, repartidores, otros servidores (`CoordinatorX`) y el `Payment Gateway`.
 
 Por cada nueva conexión aceptada, se instancian automáticamente los siguientes actores de comunicación:
 
-* 📤 [`TCPSender`](#comunicación-entre-procesos-tcp-sender-y-tcp-receiver)
-* 📥 [`TCPReceiver`](#comunicación-entre-procesos-tcp-sender-y-tcp-receiver)
+- 📤 [`TCPSender`](#comunicación-entre-procesos-tcp-sender-y-tcp-receiver)
+- 📥 [`TCPReceiver`](#comunicación-entre-procesos-tcp-sender-y-tcp-receiver)
 
 Estos actores son los encargados de gestionar la entrada y salida de mensajes TCP entre el `Server` y el nodo conectado, desacoplando así la lógica de transporte del resto del sistema.
 
@@ -223,22 +226,22 @@ pub struct Acceptor {
 
 ---
 
-#### 🧠 **Coordinator** *(Async)*
+#### 🧠 **Coordinator** _(Async)_
 
 El actor **Coordinator** es el **componente central de coordinación** del proceso `Server`. Su función principal es recibir, interpretar y direccionar todos los mensajes entrantes del sistema.
 
 Responsabilidades:
 
-* Recibir mensajes provenientes de los `TCPReceiver`.
-* Enviar mensajes hacia los `TCPSender` asociados a clientes, restaurantes, repartidores y al `Payment Gateway`.
-* Coordinar acciones con los actores internos:
+- Recibir mensajes provenientes de los `TCPReceiver`.
+- Enviar mensajes hacia los `TCPSender` asociados a clientes, restaurantes, repartidores y al `Payment Gateway`.
+- Coordinar acciones con los actores internos:
 
-  * [`CoordinatorManager`](#🔗-coordinatormanager-async)
-  * [`OrderService`](#️⚙️-servicios-internos-async)
-  * [`NearbyDeliveryService`](#️⚙️-servicios-internos-async)
-  * [`NearbyRestaurantService`](#️⚙️-servicios-internos-async)
-  * [`Storage`](#🗄️-storage-async)
-  * [`Reaper`](#💀-reaper-async)
+  - [`CoordinatorManager`](#🔗-coordinatormanager-async)
+  - [`OrderService`](#️⚙️-servicios-internos-async)
+  - [`NearbyDeliveryService`](#️⚙️-servicios-internos-async)
+  - [`NearbyRestaurantService`](#️⚙️-servicios-internos-async)
+  - [`Storage`](#🗄️-storage-async)
+  - [`Reaper`](#💀-reaper-async)
 
 ##### Estado interno del actor Coordinator
 
@@ -248,9 +251,13 @@ pub struct Coordinator {
   pub current_coordinator: Option<SocketAddr>,
   /// Estado de los pedidos en curso.
   pub active_orders: HashSet<u64>,
-  /// Diccionario de conexiones activas con clientes, restaurantes, deliverys y gateways.
+  /// Comunicador con el PaymentGateway
+  pub payment_communicator: Communicator
+  /// Diccionario de conexiones activas con clientes, restaurantes y deliverys.
   pub communicators: HashMap<SocketAddr, Communicator>,
-  /// Canal de envío hacia el actor `Storage`. 
+  /// Diccionario de direcciones de usuarios con sus correspondientes IDs.
+  pub user_addresses: HashMap<SocketAddr, ClientId>
+  /// Canal de envío hacia el actor `Storage`.
   pub storage: Addr<Storage>,
   /// Canal de envío hacia el actor `Reaper`.
   pub reaper: Addr<Reaper>,
@@ -265,15 +272,15 @@ pub struct Coordinator {
 
 ---
 
-#### 🔗 **CoordinatorManager** *(Async)*
+#### 🔗 **CoordinatorManager** _(Async)_
 
 El actor **CoordinatorManager** es el encargado de la **coordinación distribuida entre instancias del proceso `Server`** (Coordinators).
 
 Este actor utiliza los `Communicator` previamente establecidos con `Coordinator2`, `Coordinator3` y `Coordinator4` para implementar:
 
-* El algoritmo de **anillo (ring)** para la organización lógica de los servidores y elección de líder.
-* Envío de **heartbeats** para detectar fallos.
-* Sincronización periódica del estado del sistema (`Storage`) entre nodos.
+- El algoritmo de **anillo (ring)** para la organización lógica de los servidores y elección de líder.
+- Envío de **heartbeats** para detectar fallos.
+- Sincronización periódica del estado del sistema (`Storage`) entre nodos.
 
 ##### Estado interno del actor CoordinatorManager
 
@@ -290,19 +297,19 @@ pub struct CoordinatorManager {
 
 ---
 
-#### ⚙️ **Servicios internos** *(Async)*
+#### ⚙️ **Servicios internos** _(Async)_
 
 Los servicios internos se encargan de tareas especializadas dentro del proceso `Server`, accediendo al actor `Storage` para realizar lecturas y actualizaciones consistentes.
 
-* **OrderService**
+- **OrderService**
   Mantiene el estado de las órdenes en curso.
   Se comunica con: `Coordinato`, `Storage`.
 
-* **NearbyRestaurantService**
+- **NearbyRestaurantService**
   Identifica restaurantes cercanos a un cliente para iniciar el proceso de pedido.
   Se comunica con: `Coordinator`, `Storage`.
 
-* **NearbyDeliveryService**
+- **NearbyDeliveryService**
   Encuentra repartidores disponibles próximos a un restaurante para asignar la entrega.
   Se comunica con: `Coordinator`, `Storage`.
 
@@ -341,21 +348,21 @@ pub struct NearbyRestaurantService {
 
 ---
 
-#### 🗄️ **Storage** *(Async)*
+#### 🗄️ **Storage** _(Async)_
 
 El actor **Storage** es responsable de la **persistencia del estado global** del sistema. Administra en memoria la información de entidades del sistema y permite acceder a ellas de forma segura y eficiente.
 
 Gestiona:
 
-* Información de clientes, restaurantes y repartidores.
-* Estado detallado de cada orden.
+- Información de clientes, restaurantes y repartidores.
+- Estado detallado de cada orden.
 
 Se comunica directamente con los siguientes actores:
 
-* `Coordinator`
-* `OrderService`
-* `NearbyDeliveryService`
-* `NearbyRestaurantService`
+- `Coordinator`
+- `OrderService`
+- `NearbyDeliveryService`
+- `NearbyRestaurantService`
 
 ##### Estado interno del storage actor
 
@@ -424,15 +431,15 @@ pub struct Storage {
   pub deliverys: HashMap<String, DeliveryEntity>,
   /// Diccionario de órdenes.
   pub orders: HashMap<u64, OrderEntity>,
-  /// Lista de operaciones recibidas.
-  pub operations: Vec<Message>
+  /// Lista de actualizaciones del storage.
+  pub storage_updates: HashMap<u64, Message>
 
 }
 ```
 
 ---
 
-#### 💀 **Reaper** *(Async)*
+#### 💀 **Reaper** _(Async)_
 
 El actor **Reaper** escucha mensajes del `Coordinator` sobre desconexiones, y espera un tiempo antes de eliminar definitivamente a un usuario desconectado que no se reconectó todavía.
 
@@ -463,42 +470,44 @@ pub struct Reaper {
 
 ### Mensajes del Proceso `Server` (CoordinatorManager, Coordinator, TCP, Servicios)
 
-
 #### Elección de Líder y sincronización entre coordinadores
 
-| Mensaje                     | Emisor                               | Receptor                             | Descripción                                                                              |
-| --------------------------- | ------------------------------------ | ------------------------------------ | ---------------------------------------------------------------------------------------- |
-| `WhoIsLeader`               | `CoordinatorManagerX`                | `CoordinatorManagerY`                | Pregunta quién es el líder actual. Si no hay respuesta, se autoproclama con `IAmLeader`. |
-| `IAmLeader`                 | `CoordinatorManagerX`                | Todos los `CoordinatorManagers`      | Informa que su `Coordinator` fue elegido líder.                                          |
-| `WhoIsLeader`               | `Client` / `Restaurant` / `Delivery` | Todos los `Coordinators`             | Preguntan quién es el líder actual del sistema.                                          |
-| `LeaderIs`                  | Todos los `Coordinators`             | `Client` / `Restaurant` / `Delivery` | Respuesta informando quién es el líder.                                                  |
-| `RequestNewMessages`        | `CoordinatorManagerX`                | `CoordinatorManagerY`                | Solicita actualizaciones para sincronizar mensajes que aún no recibió.                   |
-| `Messages()`                | `CoordinatorManagerY`                | `CoordinatorManagerX`                | Responde con los mensajes faltantes.                                                     |
-| `RunMessages`               | `CoordinatorManagerX`                | `CoordinatorX`                       | Ejecuta los mensajes recuperados en su `Coordinator`.                                    |
-| `StartElections`            | `CoordinatorManagerX`                | `CoordinatorManagerY`                | Inicia una elección para elegir nuevo líder, propagando su ID.                           |
-| `StartReapProcess(UserDTO)` | `Coordinator`                        | `Reaper`                             | Notifica que un socket se cerró; posible desconexión.                                    |
-| `CheckReapUser`             | `Reaper`                             | `Storage`                            | Verifica si el usuario desconectado debe eliminarse (por tiempo).                        |
-| `ForwardMessage(Message)`   | `TCPReceiver`                        | `Coordinator` / `CoordinatorManager` | Encapsula y reenvía mensajes externos entrantes.                                         |
-| `SendToSocket(Message)`     | `Coordinator` / `CoordinatorManager` | `TCPSender`                          | Solicita enviar un mensaje al socket TCP correspondiente.                                |
+| Mensaje                                                                  | Emisor                                  | Receptor                                             | Descripción                                                                                                                                        |
+| ------------------------------------------------------------------------ | --------------------------------------- | ---------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `WhoIsLeader`                                                            | `CoordinatorManagerX`                   | `CoordinatorManagerY`                                | Pregunta quién es el líder actual. Si no hay respuesta, se autoproclama con `IAmLeader`.                                                           |
+| `WhoIsLeader`                                                            | `Client` / `Restaurant` / `Delivery`    | Todos los `Coordinators`                             | Preguntan quién es el líder actual del sistema.                                                                                                    |
+| `IAmLeader(SocketAddr)`                                                  | `CoordinatorManagerX`                   | Todos los `CoordinatorManagers`                      | Informa que el `Coordinator` con dirección `SocketAddr` fue elegido líder.                                                                         |
+| `LeaderIs(SocketAddr)`                                                   | `Coordinator`                           | `Client` / `Restaurant` / `Delivery` / `Coordinator` | Respuesta que informa que el líder es el `Coordinator` con dirección `SocketAddr`.                                                                 |
+| `RequestNewStorageUpdates(u64)`                                          | `CoordinatorManagerX`                   | `CoordinatorManagerY`                                | Solicita actualizaciones (a partir de un determinado índice de operación) para sincronizar los datos almacenados.                                  |
+| `StorageUpdates(HashMap<u64, Message>)`                                  | `CoordinatorManagerY`                   | `CoordinatorManagerX`                                | Respuesta con los mensajes de actualización del `Storage` restantes para estar actualizado.                                                        |
+| `ApplyStorageUpdates(HashMap<u64, Message>)`                             | `CoordinatorManagerX`                   | `StorageX`                                           | Aplica los cambios del `Storage` para mantenerlo actualizado.                                                                                      |
+| `RequestAllStorage`                                                      | `CoordinatorManagerX` (recién iniciado) | `CoordinatorManagerY`                                | Solicita las operaciones necesarias para reconstruir todo el `Storage` actual.                                                                     |
+| `RecoverStorageOperations(HashMap<u64, Message>, HashMap<u64, Message>)` | `CoordinatorManagerY`                   | `CoordinatorManagerX` (recién creado)                | Respuesta que contiene tanto operaciones necesarias para reconstruir todo el `Storage` actual como la totalidad del registro de operaciones actual |
+| `SetStorageUpdatesLog(HashMap<u64, Message>)`                            | `CoordinatorManagerX` (recién creado)   | `StorageX`                                           | Establece el registro de operaciones con el diccionario del payload                                                                                |
+| `SelectNewLeader(Vec<SocketAddr>)`                                       | `CoordinatorManagerX`                   | `CoordinatorManagerY`                                | Propaga por el anillo las IDs (`SocketAddr`) de los `Coordinator` candidatos a líder                                                               |
+| `StartReapProcess(UserID)`                                               | `Coordinator`                           | `Reaper`                                             | Notifica que el socket asociado a un usuario se cerró; posible desconexión.                                                                        |
+| `CheckReapUser(UserId)`                                                  | `Reaper`                                | `Storage`                                            | Verifica si el usuario desconectado debe eliminarse (por tiempo).                                                                                  |
+| `ForwardMessage(SocketAddr, Message)`                                    | `TCPReceiver`                           | `Coordinator` / `CoordinatorManager`                 | Encapsula y reenvía mensajes externos entrantes.                                                                                                   |
+| `SendToSocket(Message)`                                                  | `Coordinator` / `CoordinatorManager`    | `TCPSender`                                          | Solicita enviar un mensaje al socket TCP correspondiente.                                                                                          |
 
 ---
 
 #### Pedidos y Asignaciones
 
-| Mensaje                                 | Emisor                    | Receptor                  | Descripción                                                                                        |
-| --------------------------------------- | ------------------------- | ------------------------- | -------------------------------------------------------------------------------------------------- |
-| `RegisterUser(UserDTO)`                 | `TCPReceiver`             | `Coordinator`             | Un usuario se conecta; se registra.                                                                |
-| `RecoveredUserInfo(Option<UserDTO>)`    | `Coordinator`             | `Client`                  | Si el cliente tenía un pedido activo, se devuelve; si no, se informa que puede comenzar uno nuevo. |
-| `RequestNearbyRestaurants(ClientDTO)`   | `Client`                  | `Coordinator`             | Solicita restaurantes cercanos.                                                                    |
-| `RequestNearbyRestaurants(ClientDTO)`   | `Coordinator`             | `NearbyRestaurantService` | Solicita los restaurantes cercanos a un cliente.                                                   |
-| `NearbyRestaurants(Vec<RestaurantDTO>)` | `NearbyRestaurantService` | `Coordinator`             | Respuesta con la lista de restaurantes.                                                            |
-| `RequestThisOrder(OrderDTO)`            | `Client`                  | `Coordinator`             | El cliente realiza un pedido.                                                                      |
-| `AuthorizationResult(Result)`           | `Coordinator`             | `Client`                  | Resultado de la autorización de pago.                                                              |
-| `NotifyOrderUpdated(OrderDTO)`          | `Coordinator`             | `Client`                  | Notifica actualizaciones en el estado del pedido.                                                  |
-| `OrderFinalized(OrderDTO)`              | `Client`                  | `Coordinator`             | El cliente indica que el pedido finalizó.                                                          |
-| `NewOrder(OrderDTO)`                    | `Coordinator`             | `Restaurant`              | Envía un nuevo pedido al restaurante.                                                              |
-| `CancelOrder(OrderDTO)`                 | `Restaurant`              | `Coordinator`             | El restaurante cancela el pedido.                                                                  |
-| `UpdateOrderStatus(OrderDTO)`           | `Restaurant` / `Delivery` | `Coordinator`             | Informa el nuevo estado de un pedido.                                                              |
+| Mensaje                                 | Emisor                               | Receptor                             | Descripción                                                                                        |
+| --------------------------------------- | ------------------------------------ | ------------------------------------ | -------------------------------------------------------------------------------------------------- |
+| `RegisterUser(UserDTO)`                 | `Client` / `Restaurant` / `Delivery` | `Coordinator`                        | Un usuario se conecta; se registra.                                                                |
+| `RecoveredUserInfo(Option<UserDTO>)`    | `Coordinator`                        | `Client` / `Restaurant` / `Delivery` | Si el usuario tenía un pedido activo, se devuelve; si no, se informa que puede comenzar uno nuevo. |
+| `RequestNearbyRestaurants(ClientDTO)`   | `Client`                             | `Coordinator`                        | Solicita restaurantes cercanos.                                                                    |
+| `RequestNearbyRestaurants(ClientDTO)`   | `Coordinator`                        | `NearbyRestaurantService`            | Solicita los restaurantes cercanos a un cliente.                                                   |
+| `NearbyRestaurants(Vec<RestaurantDTO>)` | `NearbyRestaurantService`            | `Coordinator`                        | Respuesta con la lista de restaurantes.                                                            |
+| `RequestThisOrder(OrderDTO)`            | `Client`                             | `Coordinator`                        | El cliente realiza un pedido.                                                                      |
+| `AuthorizationResult(Result)`           | `Coordinator`                        | `Client`                             | Resultado de la autorización de pago.                                                              |
+| `NotifyOrderUpdated(OrderDTO)`          | `Coordinator`                        | `Client`                             | Notifica actualizaciones en el estado del pedido.                                                  |
+| `OrderFinalized(OrderDTO)`              | `Client`                             | `Coordinator`                        | El cliente indica que el pedido finalizó.                                                          |
+| `NewOrder(OrderDTO)`                    | `Coordinator`                        | `Restaurant`                         | Envía un nuevo pedido al restaurante.                                                              |
+| `CancelOrder(OrderDTO)`                 | `Restaurant`                         | `Coordinator`                        | El restaurante cancela el pedido.                                                                  |
+| `UpdateOrderStatus(OrderDTO)`           | `Restaurant` / `Delivery`            | `Coordinator`                        | Informa el nuevo estado de un pedido.                                                              |
 
 ---
 
@@ -529,14 +538,41 @@ pub struct Reaper {
 
 ---
 
+#### Modificación del `Storage`
+
+| Mensaje                                                        | Emisor                                        | Receptor  | Descripción                                    |
+| -------------------------------------------------------------- | --------------------------------------------- | --------- | ---------------------------------------------- |
+| `AddClient(ClientDTO)`                                         | `Coordinator` o cualquier servicio del server | `Storage` | Guarda un nuevo cliente                        |
+| `AddRestaurant(RestaurantDTO)`                                 | `Coordinator` o cualquier servicio del server | `Storage` | Guarda un nuevo restaurante                    |
+| `AddDelivery(DeliveryDTO)`                                     | `Coordinator` o cualquier servicio del server | `Storage` | Guarda un nuevo repartidor                     |
+| `AddOrder(OrderDTO)`                                           | `Coordinator` o cualquier servicio del server | `Storage` | Guarda un nuevo pedido                         |
+| `RemoveClient(client_id)`                                      | `Coordinator` o cualquier servicio del server | `Storage` | Elimina un cliente                             |
+| `RemoveRestaurant(restaurant_id)`                              | `Coordinator` o cualquier servicio del server | `Storage` | Elimina un restaurante                         |
+| `RemoveDelivery(delivery_id)`                                  | `Coordinator` o cualquier servicio del server | `Storage` | Elimina un repartidor                          |
+| `RemoveOrder(order_id)`                                        | `Coordinator` o cualquier servicio del server | `Storage` | Elimina un nuevo pedido                        |
+| `SetOrderToClient(client_id, order_id)`                        | `Coordinator` o cualquier servicio del server | `Storage` | Asocia una orden con un cliente                |
+| `AddAuthorizedOrderToRestaurant(restaurant_id, order_id)`      | `Coordinator` o cualquier servicio del server | `Storage` | Agrega una orden `AUTHORIZED` al restaurante   |
+| `AddPendingOrderToRestaurant(restauant_id, order_id)`          | `Coordinator` o cualquier servicio del server | `Storage` | Agrega una orden `PENDING` al restaurante      |
+| `RemoveAuthorizedOrderFromRestaurant(restaurant_id, order_id)` | `Coordinator` o cualquier servicio del server | `Storage` | Elimina una orden `AUTHORIZED` del restaurante |
+| `RemovePendingOrderFromRestaurant(restauant_id, order_id)`     | `Coordinator` o cualquier servicio del server | `Storage` | Elimina una orden `PENDING` del restaurante    |
+| `AddAuthorizedOrderToRestaurant(restaurant_id, order_id)`      | `Coordinator` o cualquier servicio del server | `Storage` | Agrega una orden `AUTHORIZED` al restaurante   |
+| `SetDeliveryPosition(delivery_id, (f32, f32))`                 | `Coordinator` o cualquier servicio del server | `Storage` | Guarda la posición del repartidor              |
+| `SetCurrentClientToDelivery(delivery_id, client_id)`           | `Coordinator` o cualquier servicio del server | `Storage` | Guarda el cliente actual del repartidor        |
+| `SetCurrentOrderToDelivery(delivery_id, order_id)`             | `Coordinator` o cualquier servicio del server | `Storage` | Guarda el pedido actual del repartidor         |
+| `SetDeliveryStatus(delivery_id, DeliveryStatus)`               | `Coordinator` o cualquier servicio del server | `Storage` | Guarda el nuevo estado del repartidor          |
+| `SetDeliveryToOrder(order_id, delivery_id)`                    | `Coordinator` o cualquier servicio del server | `Storage` | Guarda el repartidor asignado al pedido        |
+| `SetOrderStatus(order_id, OrderStatus)`                        | `Coordinator` o cualquier servicio del server | `Storage` | Guarda el nuevo estado del pedido              |
+
+---
+
 ### **Proceso `PaymentGateway`**
 
 El proceso `PaymentGateway` simula un gateway de pagos que autoriza y cobra órdenes de pedido. Se ejecuta como un servicio independiente, escuchando conexiones de procesos `Coordinator`, y responde a solicitudes de autorización o cobro. Es responsable de validar pedidos y decidir si se aprueban, así como de efectuar el cobro de órdenes previamente autorizadas.
 
 El proceso está compuesto por dos actores principales:
 
-* [`Acceptor`](#paymentgateway-async)
-* [`PaymentGateway`](#paymentgateway-async)
+- [`Acceptor`](#paymentgateway-async)
+- [`PaymentGateway`](#paymentgateway-async)
 
 Además, contiene un [`Communicator`](#communicator-async) al igual que otros procesos.
 
@@ -551,15 +587,15 @@ Además, contiene un [`Communicator`](#communicator-async) al igual que otros pr
 
 ---
 
-#### 💵 **PaymentGateway** *(Async)*
+#### 💵 **PaymentGateway** _(Async)_
 
 El actor **PaymentGateway** representa el servidor principal que escucha conexiones en el puerto 8080. Su función es aceptar conexiones de Coordinators, y delegar el manejo de cada conexión a un actor `Communicator`.
 
 Responsabilidades:
 
-* Iniciar el socket y aceptar conexiones TCP entrantes.
-* Crear un `Communicator` para cada conexión.
-* Mantener un diccionario de órdenes autorizadas (`order_id → OrderDTO`).
+- Iniciar el socket y aceptar conexiones TCP entrantes.
+- Crear un `Communicator` para cada conexión.
+- Mantener un diccionario de órdenes autorizadas (`order_id → OrderDTO`).
 
 ##### Estado interno de `PaymentGateway`
 
@@ -580,8 +616,8 @@ Cada proceso `Cliente` representa a un comensal dentro del sistema. Se ejecuta e
 
 El proceso está compuesto por dos actores principales:
 
-* [`UIHandler`](#uihandler-async)
-* [`Client`](#client-async)
+- [`UIHandler`](#uihandler-async)
+- [`Client`](#client-async)
 
 #### Tabla de estados del pedido (desde la perspectiva del Cliente)
 
@@ -596,20 +632,19 @@ El proceso está compuesto por dos actores principales:
 | `PREPARING`             | Cocina finaliza y pasa a reparto    | `READY_FOR_DELIVERY` | `Server → Client`    | El pedido está listo para ser despachado.                           |
 | `READY_FOR_DELIVERY`    | Pedido asignado a un delivery       | `DELIVERING`         | `Server → Client`    | Un delivery fue asignado y está en camino.                          |
 | `DELIVERING`            | Pedido entregado por el delivery    | `DELIVERED`          | `Server → Client`    | El cliente recibe el pedido.                                        |
-| *Cualquiera intermedio* | Pedido cancelado en cualquier etapa | `CANCELLED`          | `Server → Client`    | Por rechazo de restaurante, problema con delivery u otra razón.     |
-
+| _Cualquiera intermedio_ | Pedido cancelado en cualquier etapa | `CANCELLED`          | `Server → Client`    | Por rechazo de restaurante, problema con delivery u otra razón.     |
 
 ---
 
-#### 🎛️ **UIHandler** *(Async)*
+#### 🎛️ **UIHandler** _(Async)_
 
 El actor **UIHandler** representa la interfaz de interacción humano-sistema. Su rol es recolectar inputs del usuario y mostrar por pantalla información relevante que llega desde el sistema.
 
 Responsabilidades:
 
-* Leer inputs del usuario (nombre, pedido y elección de restaurante).
-* Mostrar mensajes y estados del pedido.
-* Comunicarse con el actor `Client` enviando mensajes.
+- Leer inputs del usuario (nombre, pedido y elección de restaurante).
+- Mostrar mensajes y estados del pedido.
+- Comunicarse con el actor `Client` enviando mensajes.
 
 ##### Estado interno de `UIHandler`
 
@@ -622,7 +657,7 @@ pub struct UIHandler {
 
 ---
 
-#### 🧠 **Client** *(Async)*
+#### 🧠 **Client** _(Async)_
 
 El actor **Client** representa la lógica del comensal. Es el encargado de interactuar con el `Server`, tomar decisiones basadas en la información recibida, y mantener el estado interno del cliente.
 
@@ -662,26 +697,26 @@ pub struct Client {
 
 ### Mensajes del Proceso `Client`
 
-| Mensaje                                       | Emisor        | Receptor      | Descripción                                                                                                                              |
-| --------------------------------------------- | ------------- | ------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| Mensaje                                       | Emisor        | Receptor                 | Descripción                                                                                                                              |
+| --------------------------------------------- | ------------- | ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------- |
 | `WhoIsLeader`                                 | `Client`      | `Todos los Coordinators` | Consulta inicial para saber quién es el coordinador actual del sistema.                                                                  |
-| `LeaderIs(CoordinatorInfo)`                   | `Coordinator` | `Client`      | Respuesta con la información del coordinador (host, puerto, etc).                                                                        |
-| `RequestID`                                   | `Client`      | `UIHandler`   | Petición al usuario para que ingrese su identificador único.                                                                             |
-| `SendID`                                      | `UIHandler`   | `Client`      | El usuario introduce su ID y lo envía al actor `Client`.                                                                                 |
-| `RegisterUser(ClientDTO)`                   | `Client`      | `Coordinator` | Solicitud para intentar recuperar un pedido anterior en caso de haber sido desconectado.                                                 |
-| `RecoveredInfo(Option<OrderDTO>)`             | `Coordinator` | `Client`      | Si el cliente tenía un pedido activo, se devuelve `OrderDTO` con su estado actual. Si no, se envía `None` para comenzar un nuevo pedido. |
-| `RequestNearbyRestaurants(<ClientDTO>)`       | `Client`      | `Coordinator` | Solicita al coordinador los restaurantes más cercanos según la ubicación del cliente.                                                    |
-| `NearbyRestaurants(Vec<RestaurantDTO>)`       | `Coordinator` | `Client`      | Devuelve una lista de restaurantes cercanos disponibles.                                                                                 |
-| `SelectNearbyRestaurants(Vec<RestaurantDTO>)` | `Client`      | `UIHandler`   | Instrucción al `UIHandler` para que le muestre al usuario la lista de restaurantes y permita elegir uno.                                 |
-| `SendThisOrder(<OrderDTO>)`                   | `UIHandler`   | `Client`      | El usuario completa el pedido (por ejemplo elige restaurante, tipo de comida, etc.) y lo envía al actor `Client`.                        |
-| `RequestThisOrder(<OrderDTO>)`                | `Client`      | `Coordinator` | Solicita al coordinador que autorice el pedido. Éste lo reenvía al `PaymentGateway`.                                                     |
-| `AuthorizationResult(Result)`                 | `Coordinator` | `Client`      | Resultado de la autorización: `Ok` si fue aprobada, `Err` si fue rechazada por el `PaymentGateway`.                                      |
-| `NotifyOrderUpdated(<OrderDTO>)`               | `Coordinator` | `Client`      | Notificación de actualización del estado del pedido (ej. “en preparación”, “en camino”, etc.).                                           |
-| `OrderFinalized(<OrderDTO>)`                  | `Client` | `Coordinator`      | Indica que el pedido fue completado (`Delivered`) o cancelado (`Cancelled`). El proceso del cliente finaliza.                            |
+| `LeaderIs(CoordinatorInfo)`                   | `Coordinator` | `Client`                 | Respuesta con la información del coordinador (host, puerto, etc).                                                                        |
+| `RequestID`                                   | `Client`      | `UIHandler`              | Petición al usuario para que ingrese su identificador único.                                                                             |
+| `SendID`                                      | `UIHandler`   | `Client`                 | El usuario introduce su ID y lo envía al actor `Client`.                                                                                 |
+| `RegisterUser(ClientDTO)`                     | `Client`      | `Coordinator`            | Solicitud para intentar recuperar un pedido anterior en caso de haber sido desconectado.                                                 |
+| `RecoveredInfo(Option<OrderDTO>)`             | `Coordinator` | `Client`                 | Si el cliente tenía un pedido activo, se devuelve `OrderDTO` con su estado actual. Si no, se envía `None` para comenzar un nuevo pedido. |
+| `RequestNearbyRestaurants(<ClientDTO>)`       | `Client`      | `Coordinator`            | Solicita al coordinador los restaurantes más cercanos según la ubicación del cliente.                                                    |
+| `NearbyRestaurants(Vec<RestaurantDTO>)`       | `Coordinator` | `Client`                 | Devuelve una lista de restaurantes cercanos disponibles.                                                                                 |
+| `SelectNearbyRestaurants(Vec<RestaurantDTO>)` | `Client`      | `UIHandler`              | Instrucción al `UIHandler` para que le muestre al usuario la lista de restaurantes y permita elegir uno.                                 |
+| `SendThisOrder(<OrderDTO>)`                   | `UIHandler`   | `Client`                 | El usuario completa el pedido (por ejemplo elige restaurante, tipo de comida, etc.) y lo envía al actor `Client`.                        |
+| `RequestThisOrder(<OrderDTO>)`                | `Client`      | `Coordinator`            | Solicita al coordinador que autorice el pedido. Éste lo reenvía al `PaymentGateway`.                                                     |
+| `AuthorizationResult(Result)`                 | `Coordinator` | `Client`                 | Resultado de la autorización: `Ok` si fue aprobada, `Err` si fue rechazada por el `PaymentGateway`.                                      |
+| `NotifyOrderUpdated(<OrderDTO>)`              | `Coordinator` | `Client`                 | Notificación de actualización del estado del pedido (ej. “en preparación”, “en camino”, etc.).                                           |
+| `OrderFinalized(<OrderDTO>)`                  | `Client`      | `Coordinator`            | Indica que el pedido fue completado (`Delivered`) o cancelado (`Cancelled`). El proceso del cliente finaliza.                            |
 
 ---
 
-#### **Proceso `Restaurante`** *(Async)*
+#### **Proceso `Restaurante`** _(Async)_
 
 El proceso `Restaurante` agrupa múltiples actores que simulan distintas funciones internas de un restaurante (recepción de pedidos, cocina, preparación, entrega). Es el encargado de procesar pedidos entrantes, gestionarlos a través de chefs y despacharlos mediante repartidores cercanos.
 
@@ -698,30 +733,30 @@ El proceso `Restaurante` agrupa múltiples actores que simulan distintas funcion
 
 #### Tabla de estados del pedido (desde la perspectiva del Restaurante)
 
-| Estado Inicial       | Acción del Restaurante                  | Estado Final             | Actor Responsable           | Comentario                                                |
-| -------------------- | --------------------------------------- | ------------------------ | --------------------------- | --------------------------------------------------------- |
-| `PENDING`            | Pedido recibido y encolado              | `PENDING`                | `Restaurant → Kitchen`   | Pasa directo a cocina.                                    |
-| `AUTHORIZED`         | Restaurante lo rechaza                  | `CANCELLED`              | `Restaurant`             | Se envía `CancelOrder` al `Server`.                       |
-| `AUTHORIZED`         | Restaurante lo acepta                   | `PENDING`                | `Restaurant → Kitchen`   | Se informa al `Server` (y este al `Client`) que fue aceptado. |
-| `PENDING`            | Pedido asignado a chef                  | `PREPARING`              | `Kitchen → Server`          | Se informa al `Server` (y este al `Client`) que comenzó la preparación. |
-| `PREPARING`          | Chef termina la cocción                 | `READY_FOR_DELIVERY`     | `Chef → DeliveryAssigner`   | Se informa al `Server` (y este al `Client`) que está listo para despachar.                 |
-| `READY_FOR_DELIVERY` | Pedido asignado a un delivery           | `DELIVERING`             | `DeliveryAssigner → Server` | Se notifica al `Server` (y este al `Client`) con `DeliverThisOrder`.           |
+| Estado Inicial       | Acción del Restaurante        | Estado Final         | Actor Responsable           | Comentario                                                                 |
+| -------------------- | ----------------------------- | -------------------- | --------------------------- | -------------------------------------------------------------------------- |
+| `PENDING`            | Pedido recibido y encolado    | `PENDING`            | `Restaurant → Kitchen`      | Pasa directo a cocina.                                                     |
+| `AUTHORIZED`         | Restaurante lo rechaza        | `CANCELLED`          | `Restaurant`                | Se envía `CancelOrder` al `Server`.                                        |
+| `AUTHORIZED`         | Restaurante lo acepta         | `PENDING`            | `Restaurant → Kitchen`      | Se informa al `Server` (y este al `Client`) que fue aceptado.              |
+| `PENDING`            | Pedido asignado a chef        | `PREPARING`          | `Kitchen → Server`          | Se informa al `Server` (y este al `Client`) que comenzó la preparación.    |
+| `PREPARING`          | Chef termina la cocción       | `READY_FOR_DELIVERY` | `Chef → DeliveryAssigner`   | Se informa al `Server` (y este al `Client`) que está listo para despachar. |
+| `READY_FOR_DELIVERY` | Pedido asignado a un delivery | `DELIVERING`         | `DeliveryAssigner → Server` | Se notifica al `Server` (y este al `Client`) con `DeliverThisOrder`.       |
 
 ---
 
-#### **Restaurant** *(Async)*
+#### **Restaurant** _(Async)_
 
 Encargado de recibir pedidos provenientes del `Server` y reenviarlos al componente adecuado según su estado (`PENDING` o `AUTHORIZED`).
 
 **Responsabilidades:**
 
-* Conectarse al `Server` y realizar el proceso de `Recover`.
-* Recibir nuevos pedidos desde el `Server`.
-* Enviar directamente a `Kitchen` los pedidos `PENDING`.
-* Para pedidos `AUTHORIZED`:
+- Conectarse al `Server` y realizar el proceso de `Recover`.
+- Recibir nuevos pedidos desde el `Server`.
+- Enviar directamente a `Kitchen` los pedidos `PENDING`.
+- Para pedidos `AUTHORIZED`:
 
-  * Confirmar (enviar a `Kitchen` + `UpdateOrderStatus(Pending)` al `Server`).
-  * O rechazar (`CancelOrder` al `Server`).
+  - Confirmar (enviar a `Kitchen` + `UpdateOrderStatus(Pending)` al `Server`).
+  - O rechazar (`CancelOrder` al `Server`).
 
 ##### Estado interno de `Restaurant`
 
@@ -742,15 +777,15 @@ pub struct Restaurant {
 
 ---
 
-#### **Kitchen** *(Async)*
+#### **Kitchen** _(Async)_
 
 Gestiona la cola de pedidos que deben prepararse y coordina a los chefs disponibles.
 
 **Responsabilidades:**
 
-* Mantener la cola de pedidos en espera.
-* Asignar pedidos a chefs disponibles.
-* Informar al `Server` cuando un pedido entra en estado `Preparing`.
+- Mantener la cola de pedidos en espera.
+- Asignar pedidos a chefs disponibles.
+- Informar al `Server` cuando un pedido entra en estado `Preparing`.
 
 ##### Estado interno de `Kitchen`
 
@@ -767,15 +802,15 @@ pub struct Kitchen {
 
 ---
 
-#### 🧑‍🍳 **Chef** *(Async)*
+#### 🧑‍🍳 **Chef** _(Async)_
 
 Simula la preparación de un pedido, demora un tiempo artificial y notifica cuando el pedido está listo para ser despachado.
 
 **Responsabilidades:**
 
-* Cocinar los pedidos asignados (delay simulado).
-* Notificar al `DeliveryAssigner` con `SendThisOrder`.
-* Avisar a la `Kitchen` que está disponible nuevamente (`IAmAvailable`).
+- Cocinar los pedidos asignados (delay simulado).
+- Notificar al `DeliveryAssigner` con `SendThisOrder`.
+- Avisar a la `Kitchen` que está disponible nuevamente (`IAmAvailable`).
 
 ##### Estado interno de `Chef`
 
@@ -794,16 +829,16 @@ pub struct Chef {
 
 ---
 
-#### 🚴 **DeliveryAssigner** *(Async)*
+#### 🚴 **DeliveryAssigner** _(Async)_
 
 Encargado de pedir repartidores al `Server` y asociarlos con pedidos listos para entregar.
 
 **Responsabilidades:**
 
-* Encolar pedidos listos para despacho.
-* Solicitar deliverys al `Server`.
-* Manejar llegadas de `DeliveryAvailable`.
-* Enviar `DeliverThisOrder` al `Server`.
+- Encolar pedidos listos para despacho.
+- Solicitar deliverys al `Server`.
+- Manejar llegadas de `DeliveryAvailable`.
+- Enviar `DeliverThisOrder` al `Server`.
 
 ##### Estado interno de `DeliveryAssigner`
 
@@ -822,25 +857,25 @@ pub struct DeliveryAssigner {
 
 ### Mensajes del Proceso `Restaurant`
 
-| Mensaje                                  | Emisor             | Receptor           | Descripción                                                                                |
-| ---------------------------------------- | ------------------ | ------------------ | ------------------------------------------------------------------------------------------ |
-| `RegisterUser(RestaurantDTO)`    | `Restaurant`    | `Coordinator`           | Mensaje inicial de registro del restaurante en el sistema.                                 |
-| `Recover(RestaurantID)`                  | `Restaurant`    | `Coordinator`           | Intenta recuperar pedidos activos luego de una reconexión.                                 |
-| `NewOrder(OrderDTO)`                     | `Coordinator`           | `Restaurant`    | Llega un nuevo pedido al restaurante. Puede estar en estado `PENDING` o `AUTHORIZED`.      |
-| `SendToKitchen(OrderDTO)`                | `Restaurant`    | `Kitchen`          | Pedido `PENDING` o `AUTHORIZED` aceptado, enviado a la cocina.                             |
-| `CancelOrder(OrderDTO)`                   | `Restaurant`    | `Coordinator`           | El restaurante rechaza un pedido `AUTHORIZED`. Se informa al servidor para que lo cancele. |
-| `UpdateOrderStatus(PENDING)`             | `Restaurant`    | `Coordinator`           | El restaurante acepta un pedido `AUTHORIZED`. Se informa al `Coordinator` (y al `Client`).      |
-| `AssignToChef(Order)`                    | `Kitchen`          | `Chef`             | La cocina asigna un pedido a un chef disponible.                                           |
-| `OrderIsPreparing(OrderDTO)`              | `Kitchen`          | `Coordinator`           | Se informa al `Coordinator` (y al `Client`) que un pedido ha comenzado su preparación.          |
-| `SendThisOrder(Order)`                   | `Chef`             | `DeliveryAssigner` | El chef terminó la preparación y pasa el pedido al despachador.                            |
-| `IAmAvailable`                           | `Chef`             | `Kitchen`          | El chef se libera y notifica a la cocina que puede recibir otro pedido.                    |
-| `RequestDelivery(OrderDTO)`               | `DeliveryAssigner` | `Coordinator`           | Solicita al `Coordinator` un delivery cercano para el pedido listo.                             |
-| `DeliveryAvailable(OrderDTO)` | `Coordinator`           | `DeliveryAssigner` | Llega un delivery disponible para un pedido.                                               |
-| `DeliverThisOrder(OrderDTO)` | `DeliveryAssigner` | `Coordinator`           | Se asocia el pedido con un delivery y se envía al `Coordinator` (y este al `Client`).           |
+| Mensaje                       | Emisor             | Receptor           | Descripción                                                                                |
+| ----------------------------- | ------------------ | ------------------ | ------------------------------------------------------------------------------------------ |
+| `RegisterUser(RestaurantDTO)` | `Restaurant`       | `Coordinator`      | Mensaje inicial de registro del restaurante en el sistema.                                 |
+| `Recover(RestaurantID)`       | `Restaurant`       | `Coordinator`      | Intenta recuperar pedidos activos luego de una reconexión.                                 |
+| `NewOrder(OrderDTO)`          | `Coordinator`      | `Restaurant`       | Llega un nuevo pedido al restaurante. Puede estar en estado `PENDING` o `AUTHORIZED`.      |
+| `SendToKitchen(OrderDTO)`     | `Restaurant`       | `Kitchen`          | Pedido `PENDING` o `AUTHORIZED` aceptado, enviado a la cocina.                             |
+| `CancelOrder(OrderDTO)`       | `Restaurant`       | `Coordinator`      | El restaurante rechaza un pedido `AUTHORIZED`. Se informa al servidor para que lo cancele. |
+| `UpdateOrderStatus(PENDING)`  | `Restaurant`       | `Coordinator`      | El restaurante acepta un pedido `AUTHORIZED`. Se informa al `Coordinator` (y al `Client`). |
+| `AssignToChef(Order)`         | `Kitchen`          | `Chef`             | La cocina asigna un pedido a un chef disponible.                                           |
+| `OrderIsPreparing(OrderDTO)`  | `Kitchen`          | `Coordinator`      | Se informa al `Coordinator` (y al `Client`) que un pedido ha comenzado su preparación.     |
+| `SendThisOrder(Order)`        | `Chef`             | `DeliveryAssigner` | El chef terminó la preparación y pasa el pedido al despachador.                            |
+| `IAmAvailable`                | `Chef`             | `Kitchen`          | El chef se libera y notifica a la cocina que puede recibir otro pedido.                    |
+| `RequestDelivery(OrderDTO)`   | `DeliveryAssigner` | `Coordinator`      | Solicita al `Coordinator` un delivery cercano para el pedido listo.                        |
+| `DeliveryAvailable(OrderDTO)` | `Coordinator`      | `DeliveryAssigner` | Llega un delivery disponible para un pedido.                                               |
+| `DeliverThisOrder(OrderDTO)`  | `DeliveryAssigner` | `Coordinator`      | Se asocia el pedido con un delivery y se envía al `Coordinator` (y este al `Client`).      |
 
 ---
 
-#### **Proceso `Delivery`** *(Async)*
+#### **Proceso `Delivery`** _(Async)_
 
 El proceso `Delivery` representa a un repartidor autónomo. Su función es aceptar y realizar entregas de pedidos que ya han sido preparados por un restaurante, coordinándose con el `Server` para recibir asignaciones y reportar finalizaciones. Puede desconectarse y reconectarse, intentando recuperar su estado anterior en caso de haber estado en medio de una entrega.
 
@@ -857,30 +892,30 @@ El proceso `Delivery` representa a un repartidor autónomo. Su función es acept
 
 #### Tabla de estados del Delivery
 
-| Estado Actual          | Evento o Acción                     | Nuevo Estado           | Acción del Delivery                        | Comentario                                                                 |
-| ---------------------- | ----------------------------------- | ---------------------- | ------------------------------------------ | -------------------------------------------------------------------------- |
-| `INITIAL`              | Se lanza el proceso                 | `RECONNECTING`         | Establece conexión con `Server`            | Comienza el descubrimiento de coordinador (`who is coord?`).               |
-| `RECONNECTING`         | Se conecta al `Server`              | `RECOVERING`           | Enviar `Recover(delivery_id)`              | Informa su `delivery_id` y solicita estado previo.                         |
-| `RECOVERING`           | Respuesta con datos de entrega      | `DELIVERING`           | Reanuda entrega pendiente                  | Retoma un pedido que había quedado en curso.                               |
-| `RECOVERING`           | Respuesta sin datos                 | `AVAILABLE`            | Enviar `IAmAvailable(delivery_id, pos)`    | No estaba entregando, se registra como disponible.                         |
-| `AVAILABLE`            | Recibe `NewOfferToDeliver`          | `WAITINGCONFIRMATION` | Si acepta: enviar `AcceptedOrder(order)`   | Si no acepta, ignora el mensaje y sigue disponible.                        |
-| `WAITINGCONFIRMATION` | Recibe `DeliveryNoNeeded`           | `AVAILABLE`            | Espera o decide reconectarse más adelante  | Otro delivery fue asignado más rápido.                                     |
-| `WAITINGCONFIRMATION` | Recibe `DeliverThisOrder`           | `DELIVERING`           | Inicia simulación de entrega               | Confirmación final de asignación del pedido.                               |
-| `DELIVERING`           | Termina la entrega (viaje simulado) | `AVAILABLE`            | Enviar `Delivered(order)` + `IAmAvailable` | Informa finalización y vuelve a estar disponible para nuevas asignaciones. |
+| Estado Actual         | Evento o Acción                     | Nuevo Estado          | Acción del Delivery                        | Comentario                                                                 |
+| --------------------- | ----------------------------------- | --------------------- | ------------------------------------------ | -------------------------------------------------------------------------- |
+| `INITIAL`             | Se lanza el proceso                 | `RECONNECTING`        | Establece conexión con `Server`            | Comienza el descubrimiento de coordinador (`who is coord?`).               |
+| `RECONNECTING`        | Se conecta al `Server`              | `RECOVERING`          | Enviar `Recover(delivery_id)`              | Informa su `delivery_id` y solicita estado previo.                         |
+| `RECOVERING`          | Respuesta con datos de entrega      | `DELIVERING`          | Reanuda entrega pendiente                  | Retoma un pedido que había quedado en curso.                               |
+| `RECOVERING`          | Respuesta sin datos                 | `AVAILABLE`           | Enviar `IAmAvailable(delivery_id, pos)`    | No estaba entregando, se registra como disponible.                         |
+| `AVAILABLE`           | Recibe `NewOfferToDeliver`          | `WAITINGCONFIRMATION` | Si acepta: enviar `AcceptedOrder(order)`   | Si no acepta, ignora el mensaje y sigue disponible.                        |
+| `WAITINGCONFIRMATION` | Recibe `DeliveryNoNeeded`           | `AVAILABLE`           | Espera o decide reconectarse más adelante  | Otro delivery fue asignado más rápido.                                     |
+| `WAITINGCONFIRMATION` | Recibe `DeliverThisOrder`           | `DELIVERING`          | Inicia simulación de entrega               | Confirmación final de asignación del pedido.                               |
+| `DELIVERING`          | Termina la entrega (viaje simulado) | `AVAILABLE`           | Enviar `Delivered(order)` + `IAmAvailable` | Informa finalización y vuelve a estar disponible para nuevas asignaciones. |
 
 ---
 
-#### **Delivery** *(Async)*
+#### **Delivery** _(Async)_
 
 El actor `Delivery` encapsula toda la lógica de un repartidor. Mantiene su estado interno (ubicación, ocupación actual, pedido activo si lo hubiera) y se comunica exclusivamente con el `Server`.
 
 **Responsabilidades:**
 
-* Realizar el proceso de `Recover` para detectar si tiene un pedido en curso.
-* Reportar disponibilidad al `Server`.
-* Evaluar ofertas de entrega y responder si está libre.
-* Ejecutar la entrega una vez confirmada por el `Server`.
-* Simular el tiempo de viaje y finalizar el pedido.
+- Realizar el proceso de `Recover` para detectar si tiene un pedido en curso.
+- Reportar disponibilidad al `Server`.
+- Evaluar ofertas de entrega y responder si está libre.
+- Ejecutar la entrega una vez confirmada por el `Server`.
+- Simular el tiempo de viaje y finalizar el pedido.
 
 ##### Estado interno de `Delivery`
 
@@ -937,18 +972,18 @@ La resiliencia del sistema se garantiza mediante la ejecución simultánea de **
 
 Las instancias del servidor se organizan siguiendo un **orden total** definido por la IP y el puerto:
 
-* Primero se ordenan por dirección IP (en forma creciente).
-* En caso de IPs iguales, se desempata por el número de puerto (también en forma creciente).
+- Primero se ordenan por dirección IP (en forma creciente).
+- En caso de IPs iguales, se desempata por el número de puerto (también en forma creciente).
 
 Cada instancia mantiene **dos conexiones TCP activas**:
 
-* Una con su **vecino anterior** en el anillo.
-* Otra con su **vecino siguiente**.
+- Una con su **vecino anterior** en el anillo.
+- Otra con su **vecino siguiente**.
 
 Esto reduce el número total de conexiones abiertas y simplifica la lógica de comunicación.
 
 <p align="center">
-  <img src="img/server_architecture.png" style="max-width: 100%; height: auto;" alt="Topología en anillo del servidor">
+  <img src="img/ring_topology.jpg" style="max-width: 100%; height: auto;" alt="Topología en anillo del servidor">
 </p>
 
 ---
@@ -958,7 +993,7 @@ Esto reduce el número total de conexiones abiertas y simplifica la lógica de c
 Cuando una nueva instancia del servidor se inicia:
 
 1. **Carga la lista de IPs y puertos** de todas las posibles instancias del sistema.
-2. Intenta establecer conexión con el resto, una por una.
+2. Intenta establecer conexión con el resto.
 3. A cada servidor conectado le envía un mensaje `WhoIsLeader`.
 4. Los servidores que respondan le devuelven el mensaje `LeaderIs` con la identidad del líder actual.
 5. Una vez identificado el líder, la nueva instancia se considera un **servidor secundario** y se integra al anillo.
@@ -971,24 +1006,46 @@ Cuando una nueva instancia del servidor se inicia:
 
 ---
 
-#### Elección de líder 
+#### Replicación del estado y los datos almacenados
+
+Mientras un coordinador se encuentra activo como líder, todos los clientes, restaurantes y repartidores intercambian mensajes con él, actualizando y consultando su estado interno de manera indirecta. Las otras instancias del servidor no atienden estas solicitudes, por lo que implementan un mecanismo de actualización entre ellas y el líder para poder mantener la misma información.
+
+El mecanismo basa su funcionamiento en el **registro de cambios del `Storage`**. Cada servidor mantiene un diccionario con todas las altas/bajas/modificaciones de los datos almacenados. Cada elemento del diccionario consiste en un índice (numérico), el cual indica un orden cronológico entre operaciones. Los valores son los **mensajes** recibidos por el `Storage`. Cuando una instancia (no líder) desea actualizar su registro de cambios para estar al día, se realizan los siguientes pasos:
+
+1. La instancia envía el mensaje `RequestNewStorageUpdates` a la instancia anterior del anillo (la que es inmediatamente menor). El mensaje contiene el índice de la primera operación que posee en su registro.
+
+2. La instancia anterior a la que desea actualizarse busca todas las operaciones realizadas cuyo índice se encuentre entre el índice recibido y la última disponible, y con ellas le responde a la instancia original mediante un mensaje `StorageUpdates`.
+
+3. La instancia original recibe el mensaje, y con su payload arma y le envía el mensaje `ApplyStorageUpdates` a su `Storage`. Este último maneja el mensaje de diferente forma si la instancia que desea actualizarse es el líder o no:
+
+- Si **es el líder**, elimina directamente todas las operaciones recibidas de su registro, ya que está seguro que esas operaciones dieron toda la vuelta al anillo y todas las instancias ya las registraron.
+
+- Si **no es el líder**, aplica (y guarda en su registro) algunas de las operaciones recibidas, a la vez que borra otras operaciones de su registro. Para entender bien la lógica en este caso, planteemos un ejemplo. Supongamos que el `Storage` de la instancia posee en su registro las operaciones `1, 2, 3, 4`, y recibe el mensaje `ApplyStorageUpdates` con las operaciones `2, 3, 4, 5, 6`. El `Storage` divide a todas estas operaciones en tres grupos:
+  - Operaciones que están en el registro pero NO en el mensaje recibido (`1`): esto quiere decir que la instancia anterior del anillo sabe que esas operaciones ya fueron registradas por todas las instancias y por eso las eliminó. Sabiendo esto, la instancia actual **las elimina de su registro**.
+  - Operaciones que están tanto en el registro como en el mensaje recibido (`2, 3, 4`): estas operaciones ya fueron aplicadas previamente, **no se hace nada con ellas**.
+  - Operaciones que están en el mensaje recibido pero NO en el registro (`5, 6`): estas son operaciones nuevas para la instancia actual, por lo que **las aplica y las guarda en su registro**.
+
+El siguiente diagrama ilustra el funcionamiento del mecanismo de actualización:
+
+<p align="center">
+  <img src="img/storage_update.jpg" style="max-width: 100%; height: auto;" alt="Mecanismo de actualización del storage entre instancias del servidor">
+</p>
+
+Cabe destacar que cada instancia solicita actualizaciones cada cierto tiempo determinado. Así, los mensajes `RequestNewStorageUpdates` cumplen un doble propósito: además de mantener actualizados los datos, sirve de **ping** entre instancias para **detectar instancias caídas**.
+
+¿Y qué sucede cuando una se inicia una nueva instancia, la cual debe solicitar **todo** el contenido del storage actual? En este caso, le envía el mensaje `RequestAllStorage` a la instancia anterior en el anillo. Esta última le responde con un mensaje `RecoverStorageOperations`, el cual contiene:
+
+- Un diccionario de las operaciones necesarias para reconstruir el estado actual del `Storage`. La instancia con la información armó previamente este diccionario de mensajes recorriendo todo el contenido de su `Storage`. La nueva instancia le envía el mensaje `ApplyStorageUpdates` con estos cambios a su `Storage` para poder recuperar el estado.
+
+- El registro de operaciones completo actual. La nueva instancia necesita conocer adicionalmente el registro para poder satisfacer solicitudes de actualización de su siguiente instancia en el anillo, como así también saber a partir de qué número de operación va a solicitar actualizaciones a partir de ese momento.
+
+#### Elección de líder
 
 > WIP: ⚠️ CHECK THIS SECTION ⚠️
 
 La elección del líder sigue un **algoritmo distribuido** que garantiza unicidad:
 
-* Cuando una instancia detecta la caída del líder (por timeout o desconexión), inicia una **elección enviando `StartElections(ID)`** al siguiente nodo del anillo.
-* Cada nodo reenvía el mensaje con el mayor `ID` recibido (donde el `ID` representa su prioridad como líder: IP + puerto).
-* Cuando un nodo recibe su propio ID, sabe que ganó la elección y envía `IAmLeader` a todo el anillo.
-* El nuevo líder se comunica con todos los CoordinatorManagers para propagar su rol y continuar la operación normal del sistema.
-
----
-
-#### Sincronización de estado
-
-Para que el sistema tolere fallos sin perder información:
-
-* El **líder mantiene el estado maestro del sistema** (usuarios conectados, pedidos, etc.).
-* Los Coordinators de las otras instancias mantienen una **réplica sincronizada**.
-* Esta sincronización se logra mediante el intercambio periódico de mensajes `RequestNewMessages` y `Messages` entre CoordinatorManagers.
-* Luego, cada Coordinator ejecuta esos mensajes usando `RunMessages`, asegurando que todos lleguen a un estado coherente.
+- Cuando una instancia detecta la caída del líder (por timeout o desconexión), inicia una **elección enviando `SelectNewLeader`** al siguiente nodo del anillo.
+- Cada nodo reenvía el mensaje con el mayor `ID` recibido (donde el `ID` representa su prioridad como líder: IP + puerto).
+- Cuando un nodo recibe su propio ID, sabe que ganó la elección y envía `IAmLeader` a todo el anillo.
+- El nuevo líder se comunica con todos los CoordinatorManagers para propagar su rol y continuar la operación normal del sistema.
