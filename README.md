@@ -1,5 +1,5 @@
 <p align="center">
-  <img src=img/logo_pedidos_rust.png width="300" alt="Logo PedidosRust">
+  <img src=img/logo_pedidos_rust.png width="350" alt="Logo PedidosRust">
 </p>
 
 # Programacion Concurrente - 2C2025 - PedidosRust
@@ -194,12 +194,11 @@ Este diseño permite que los distintos actores del sistema interactúen entre s�
 
 Cada proceso `Server` representa un nodo del sistema. Cada uno de estos procesos se ejecuta en una consola diferente y se comunica a través de mensajes TCP.
 
-A continuación, desarrollaremos en base al proceso `Server1` como ejemplo, pero el funcionamiento es el mismo para los otros procesos `Server`.
-
 <p align="center">
-  <img src="img/server_architecture.png" style="max-width: 100%; height: auto;" alt="Server Architecture">
-
+  <img src="img/server_architecture.png" style="max-width: 100%; height: auto;" alt="Arquitectura del server">
 </p>
+
+A continuación, desarrollaremos en base al proceso `Server1` como ejemplo, pero el funcionamiento es el mismo para los otros procesos `Server`.
 
 ---
 
@@ -578,6 +577,10 @@ El proceso está compuesto por dos actores principales:
 
 Además, contiene un [`Communicator`](#communicator-async) al igual que otros procesos.
 
+<p align="center">
+  <img src="img/paymentgateway_architecture.jpg" style="max-width: 100%; height: auto;" alt="Arquitectura del PaymentGateway">
+</p>
+
 #### Tabla de estados del pedido (desde la perspectiva del PaymentGateway)
 
 | Estado Inicial     | Evento o Acción              | Estado Final | Actor Responsable | Comentario                                                 |
@@ -620,6 +623,10 @@ El proceso está compuesto por dos actores principales:
 
 - [`UIHandler`](#uihandler-async)
 - [`Client`](#client-async)
+
+<p align="center">
+  <img src="img/client_architecture.jpg" style="max-width: 100%; height: auto;" alt="Client Architecture">
+</p>
 
 #### Tabla de estados del pedido (desde la perspectiva del Cliente)
 
@@ -732,6 +739,10 @@ El proceso `Restaurante` agrupa múltiples actores que simulan distintas funcion
 6. Coordinar a los `Chef`s para cocinar pedidos.
 7. Solicitar algún repartidor cercano al `Server` cuando un pedido esté listo.
 8. Finalizar su participación en un pedido una vez que ha sido entregado o cancelado.
+
+<p align="center">
+  <img src="img/restaurant_architecture.jpgpg" style="max-width: 100%; height: auto;" alt="Restaurant Architecture">
+</p>
 
 #### Tabla de estados del pedido (desde la perspectiva del Restaurante)
 
@@ -892,6 +903,10 @@ El proceso `Delivery` representa a un repartidor autónomo. Su función es acept
 7. Simular el viaje y notificar al `Server` con `Delivered`.
 8. Repetir el ciclo o desconectarse temporalmente según preferencia.
 
+<p align="center">
+  <img src="img/delivery_architecture.jpg" style="max-width: 100%; height: auto;" alt="Delivery Architecture">
+</p>
+
 #### Tabla de estados del Delivery
 
 | Estado Actual         | Evento o Acción                     | Nuevo Estado          | Acción del Delivery                        | Comentario                                                                 |
@@ -1040,6 +1055,8 @@ Cabe destacar que cada instancia solicita actualizaciones cada cierto tiempo det
 - Un diccionario de las operaciones necesarias para reconstruir el estado actual del `Storage`. La instancia con la información armó previamente este diccionario de mensajes recorriendo todo el contenido de su `Storage`. La nueva instancia le envía el mensaje `ApplyStorageUpdates` con estos cambios a su `Storage` para poder recuperar el estado.
 
 - El registro de operaciones completo actual. La nueva instancia necesita conocer adicionalmente el registro para poder satisfacer solicitudes de actualización de su siguiente instancia en el anillo, como así también saber a partir de qué número de operación va a solicitar actualizaciones a partir de ese momento. Para ello, se le envía el mensaje `SetStorageUpdatesLog` (el cual contiene el registro de operaciones completo actual) al `Storage` para que este último guarde sus operaciones sin aplicarlas.
+
+---
 
 ### Elección de líder
 
