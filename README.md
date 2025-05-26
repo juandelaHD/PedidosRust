@@ -741,7 +741,7 @@ El proceso `Restaurante` agrupa múltiples actores que simulan distintas funcion
 8. Finalizar su participación en un pedido una vez que ha sido entregado o cancelado.
 
 <p align="center">
-  <img src="img/restaurant_architecture.jpgpg" style="max-width: 100%; height: auto;" alt="Restaurant Architecture">
+  <img src="img/restaurant_architecture.jpg" style="max-width: 100%; height: auto;" alt="Restaurant Architecture">
 </p>
 
 #### Tabla de estados del pedido (desde la perspectiva del Restaurante)
