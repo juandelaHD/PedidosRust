@@ -1,3 +1,4 @@
+use crate::Chef;
 use actix::Message;
 use common::types::order::OrderDTO;
 use serde::{Deserialize, Serialize};
@@ -23,5 +24,5 @@ pub struct SendThisOrder {
 #[derive(Message, Debug, Clone, Serialize, Deserialize)]
 #[rtype(result = "()")]
 pub struct IAmAvailable {
-    pub order: OrderDTO, // TODO: change to Chef
+    pub order: Chef,
 }
