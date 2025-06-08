@@ -1,38 +1,13 @@
-use actix::Message;
-use std::net::SocketAddr;
+use actix::prelude::*;
 use serde::{Deserialize, Serialize};
-use crate::types::order_status::OrderStatus;
 
-#[derive(Message, Debug, Clone, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Message)]
+#[serde(tag = "type")]
 #[rtype(result = "()")]
-pub struct OrderStatusUpdate {
-    pub order_id: String,
-    pub status: OrderStatus,
-}
-
-#[derive(Message, Debug, Clone, Serialize, Deserialize)]
-#[rtype(result = "()")]
-pub struct LocationUpdate {
-    pub id: String,
-    pub coords: (f32, f32),
+pub enum NetworkMessage {
+    // Agregar todos los mensajes que se envían a través de la red
 }
 
 #[derive(Message, Debug, Clone, Serialize, Deserialize)]
 #[rtype(result = "()")]
 pub struct StartRunning;
-
-#[derive(Message, Debug, Clone, Serialize, Deserialize)]
-#[rtype(result = "()")]
-pub struct Reconnect;
-
-#[derive(Message, Debug, Clone, Serialize, Deserialize)]
-#[rtype(result = "()")]
-pub struct PersistState;
-
-#[derive(Message, Debug, Clone, Serialize, Deserialize)]
-#[rtype(result = "()")]
-pub struct RecoverState;
-
-#[derive(Message, Debug, Clone, Serialize, Deserialize)]
-#[rtype(result = "Result<SocketAddr, ()>")]
-pub struct WhoIsCoordinator;

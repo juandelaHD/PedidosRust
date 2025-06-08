@@ -54,7 +54,7 @@ La consigna del trabajo práctico puede encontrarse [aqui](https://concurrentes-
   Se implementa el **algoritmo del anillo (Ring Algorithm)** para llevar a cabo la **elección de un Coordinator Manager** entre los distintos procesos `Coordinator`. Este mecanismo garantiza que, ante la caída del coordinador actual, el sistema pueda elegir automáticamente un nuevo líder sin necesidad de intervención externa.
 
 - **Exclusión Mutua Distribuida (Centralizada)**
-  Para operaciones críticas que requieren acceso exclusivo a ciertos recursos (por ejemplo, actualización de datos globales), se utiliza un enfoque de **exclusión mutua distribuida centralizada**. El coordinador electo es el encargado de otorgar el permiso de acceso, garantizando consistencia y evitando condiciones de carrera entre los nodos.
+  Dentro del servidor, se encuentra el actor `Storage`, el cual es responsable de almacenar y gestionar el estado global del sistema. Este actor actúa como un repositorio centralizado para la información de clientes, restaurantes, repartidores y órdenes, asegurando que todos los nodos tengan acceso a un estado consistente. Al tratarse de un actor, el acceso a `Storage` está protegido por el modelo de actores, lo que evita problemas de concurrencia y garantiza la **exclusión mutua**, permitiendo que múltiples nodos (clientes, restaurantes, deliveries y el gateway de pagos) interactúen con el estado global sin producirse race conditions.
 
 - **Resiliencia y Tolerancia a Fallos**
   El sistema está diseñado con foco en la **tolerancia a fallos**, permitiendo que nodos individuales (como clientes, repartidores o restaurantes) puedan desconectarse temporalmente **sin afectar el flujo global del sistema**. Esta resiliencia se logra mediante:
@@ -1064,7 +1064,7 @@ El sistema implementa un **algoritmo de elección distribuido** basado en la **t
 
 #### Detección de la caída del líder
 
-La detección de la caída se realiza de forma descentralizada. Cada instancia no líder se mantiene sincronizada con el líder consultando su estado de almacenamiento a intervalos regulares mediante el mensaje `RequestStorageUpdates`. Si no obtiene respuesta dentro de un tiempo predefinido, o si la conexión TCP se pierde, la instancia infiere que el líder ha fallado.
+La detección de la caída se realiza de forma descentralizada. Cada instancia del anillo consulta el estado de la instancia anterior a intervalos regulares mediante el mensaje `RequestStorageUpdates`. Si no obtiene respuesta dentro de un tiempo predefinido, o si la conexión TCP se pierde, la instancia infiere que su anterior ha caído. Si la instancia anterior era el líder, se inicia el proceso de elección de un nuevo líder.
 
 #### Proceso de elección
 

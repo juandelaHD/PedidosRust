@@ -1,17 +1,14 @@
+use crate::messages::shared_messages::NetworkMessage;
 use actix::prelude::*;
 use actix_async_handler::async_handler;
 use tokio::io::{AsyncWriteExt, BufWriter, WriteHalf};
 use tokio::net::TcpStream;
 
-#[derive(Message)]
-#[rtype(result = "()")]
-pub struct TCPMessage(pub String);
-
-pub struct SocketWriter {
+pub struct TCPSender {
     pub writer: Option<BufWriter<WriteHalf<TcpStream>>>,
 }
 
-impl SocketWriter {
+impl TCPSender {
     pub fn new(write_half: WriteHalf<TcpStream>) -> Self {
         Self {
             writer: Some(BufWriter::new(write_half)),
@@ -19,19 +16,26 @@ impl SocketWriter {
     }
 }
 
-impl Actor for SocketWriter {
+impl Actor for TCPSender {
     type Context = Context<Self>;
 }
 
-#[async_handler]
-impl Handler<TCPMessage> for SocketWriter {
-    type Result = ();
+impl Handler<NetworkMessage> for TCPSender {
+    type Result = ResponseActFuture<Self, ()>;
 
-    async fn handle(&mut self, msg: TCPMessage, _ctx: &mut Self::Context) -> Self::Result {
-        let to_send = format!("{}\n", msg.0);
+    fn handle(&mut self, msg: NetworkMessage, _ctx: &mut Self::Context) -> Self::Result {
+        // Serializar el mensaje usando serde_json
+        let serialized = match serde_json::to_string(&msg) {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("Error serializando NetworkMessage: {:?}", e);
+                return Box::pin(async {}.into_actor(self));
+            }
+        };
+        let to_send = format!("{}\n", serialized);
 
         if let Some(mut writer) = self.writer.take() {
-            let ret_writer = async move {
+            let fut = async move {
                 if let Err(e) = writer.write_all(to_send.as_bytes()).await {
                     if e.kind() == std::io::ErrorKind::BrokenPipe {
                         // Pipe roto: limpiar writer
@@ -49,10 +53,16 @@ impl Handler<TCPMessage> for SocketWriter {
                     }
                 }
                 Some(writer)
-            }
-            .await;
-
-            self.writer = ret_writer;
+            };
+            Box::pin(
+                async move { fut.await }
+                    .into_actor(self)
+                    .map(|ret_writer, act, _ctx| {
+                        act.writer = ret_writer;
+                    }),
+            )
+        } else {
+            Box::pin(async {}.into_actor(self))
         }
     }
 }

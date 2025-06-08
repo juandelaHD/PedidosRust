@@ -9,7 +9,7 @@ impl Logger {
     }
 
     pub fn info(&self, msg: impl AsRef<str>) {
-        println!("[INFO][{}] {}",self.name, msg.as_ref());
+        println!("[INFO][{}] {}", self.name, msg.as_ref());
     }
 
     pub fn warn(&self, msg: impl AsRef<str>) {

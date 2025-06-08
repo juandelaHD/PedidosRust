@@ -1,6 +1,6 @@
-use rand::random;
-use crate::constants::SUCCESS_PROBABILITY;
 use crate::constants::COORDINATE_SCALE;
+use crate::constants::SUCCESS_PROBABILITY;
+use rand::random;
 
 pub fn get_rand_f32_tuple() -> (f32, f32) {
     (

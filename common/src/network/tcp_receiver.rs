@@ -1,20 +1,18 @@
 use actix::dev::ToEnvelope;
 use actix::prelude::*;
+// Update the path below if 'common' is a sibling module or crate; adjust as needed:
+use crate::messages::shared_messages::NetworkMessage;
 use tokio::io::{AsyncBufReadExt, BufReader, ReadHalf};
 use tokio::net::TcpStream;
 
-#[derive(Message)]
-#[rtype(result = "()")]
-pub struct IncomingLine(pub String);
-
-pub struct SocketReader<A: Actor + Handler<IncomingLine>> {
+pub struct TCPReceiver<A: Actor + Handler<NetworkMessage>> {
     reader: Option<BufReader<ReadHalf<TcpStream>>>,
     destination: Addr<A>,
 }
 
-impl<A> SocketReader<A>
+impl<A> TCPReceiver<A>
 where
-    A: Actor + Handler<IncomingLine>,
+    A: Actor + Handler<NetworkMessage>,
 {
     pub fn new(reader: ReadHalf<TcpStream>, destination: Addr<A>) -> Self {
         Self {
@@ -24,10 +22,10 @@ where
     }
 }
 
-impl<A> Actor for SocketReader<A>
+impl<A> Actor for TCPReceiver<A>
 where
-    A: Actor + Handler<IncomingLine> + 'static,
-    A::Context: ToEnvelope<A, IncomingLine>,
+    A: Actor + Handler<NetworkMessage> + 'static,
+    A::Context: ToEnvelope<A, NetworkMessage>,
 {
     type Context = Context<Self>;
 
@@ -39,7 +37,11 @@ where
             async move {
                 let mut lines = reader.lines();
                 while let Ok(Some(line)) = lines.next_line().await {
-                    addr.do_send(IncomingLine(line));
+                    if let Ok(msg) = serde_json::from_str::<NetworkMessage>(&line) {
+                        addr.do_send(msg);
+                    } else {
+                        // Manejo de error de deserialización (opcional)
+                    }
                 }
             }
             .into_actor(self),
