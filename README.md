@@ -218,9 +218,7 @@ Estos actores son los encargados de gestionar la entrada y salida de mensajes TC
 ```rust
 pub struct Acceptor {
     /// Puerto TCP donde escucha nuevas conexiones.
-    pub listen_port: u16,
-    /// Lista de conexiones activas.
-    pub active_connections: HashSet<SocketAddr>,
+    pub address: SocketAddr,
 }
 ```
 
@@ -250,7 +248,7 @@ pub struct Coordinator {
   /// Coordinador actual.
   pub current_coordinator: Option<SocketAddr>,
   /// Estado de los pedidos en curso.
-  pub active_orders: HashSet<u64>,
+  // pub active_orders: HashSet<u64>, // TODO: Ver si se puede sacar
   /// Comunicador con el PaymentGateway
   pub payment_communicator: Communicator
   /// Diccionario de conexiones activas con clientes, restaurantes y deliverys.

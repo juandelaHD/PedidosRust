@@ -1,6 +1,8 @@
 //use crate::Chef;
 use actix::Message;
 //use common::types::order::OrderDTO;
+use crate::server_actors::server_actor::Coordinator;
+use common::network::communicator::Communicator;
 use common::types::delivery_status::DeliveryStatus;
 use common::types::dtos::ClientDTO;
 use common::types::dtos::DeliveryDTO;
@@ -8,12 +10,28 @@ use common::types::dtos::OrderDTO;
 use common::types::dtos::RestaurantDTO;
 use common::types::order_status::OrderStatus;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::net::SocketAddr;
+use std::sync::Arc;
+
+/////////////////////////////////////////////////////////////////////
+// Mensajes del Aceptador al Coordinator
+/////////////////////////////////////////////////////////////////////
+#[derive(Message, Debug)]
+#[rtype(result = "()")]
+pub struct RegisterConnection {
+    pub client_addr: SocketAddr,
+    pub communicator: Communicator<Coordinator>,
+}
 
 /////////////////////////////////////////////////////////////////////
 // Mensajes del storage
 /////////////////////////////////////////////////////////////////////
-///
-#[derive(Message, Debug, Clone, Serialize, Deserialize)]
+
+// TODO: Definir un enum StorageMessages para usar en ApplyStorageUpdates y SetStorageUpdatesLog
+
+/*
+#[derive(Message, Debug)]
 #[rtype(result = "()")]
 pub struct ApplyStorageUpdates {
     pub updates: HashMap<u64, Message>,
@@ -140,7 +158,7 @@ pub struct SetDeliveryStatus {
 #[rtype(result = "()")]
 pub struct SetDeliveryToOrder {
     pub order_id: u64,
-    pub delivert_id: string,
+    pub delivert_id: String,
 }
 
 #[derive(Message, Debug, Clone, Serialize, Deserialize)]
@@ -149,6 +167,8 @@ pub struct SetOrderStatus {
     pub order_id: u64,
     pub order_status: OrderStatus,
 }
+
+     */
 
 /////////////////////////////////////////////////////////////////////
 // Mensajes del Reaper
@@ -170,12 +190,12 @@ pub struct CheckReapUser {
 // Mesnajes del comunicador
 /////////////////////////////////////////////////////////////////////
 
-#[derive(Message, Debug, Clone, Serialize, Deserialize)]
-#[rtype(result = "()")]
-pub struct ForwardMessage {
-    pub addr: SocketAddr,
-    pub message: Message,
-}
+// #[derive(Message, Debug, Clone, Serialize, Deserialize)]
+// #[rtype(result = "()")]
+// pub struct ForwardMessage {
+//     pub addr: SocketAddr,
+//     pub message: Message,
+// }
 
 // #[derive(Message, Debug, Clone, Serialize, Deserialize)]
 // #[rtype(result = "()")]

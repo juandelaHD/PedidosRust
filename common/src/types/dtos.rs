@@ -1,8 +1,11 @@
-use std::{collections::HashSet, time::Instant};
+use std::collections::HashSet;
+
+use serde::{Deserialize, Serialize};
 
 use crate::types::delivery_status::DeliveryStatus;
 use crate::types::order_status::OrderStatus;
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ClientDTO {
     /// Posición actual del cliente en coordenadas 2D.
     pub client_position: (f32, f32),
@@ -11,9 +14,10 @@ pub struct ClientDTO {
     /// Pedido del cliente (id de alimento).
     pub client_order_id: Option<u64>,
     /// Marca de tiempo que registra la última actualización del cliente.
-    pub time_stamp: Instant,
+    pub time_stamp: std::time::SystemTime,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RestaurantDTO {
     /// Posición actual del restaurante en coordenadas 2D.
     pub restaurant_position: (f32, f32),
@@ -25,9 +29,10 @@ pub struct RestaurantDTO {
     /// Pedidos pendientes.
     pub pending_orders: HashSet<u64>,
     /// Marca de tiempo que registra la última actualización del restaurante.
-    pub time_stamp: Instant,
+    pub time_stamp: std::time::SystemTime,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeliveryDTO {
     /// Posición actual del delivery en coordenadas 2D.
     pub delivery_position: (f32, f32),
@@ -40,9 +45,10 @@ pub struct DeliveryDTO {
     /// Estado actual del delivery.
     pub status: DeliveryStatus,
     /// Marca de tiempo que registra la última actualización del delivery.
-    pub time_stamp: Instant,
+    pub time_stamp: std::time::SystemTime,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OrderDTO {
     /// ID de la orden.
     pub order_id: u64,
@@ -57,5 +63,5 @@ pub struct OrderDTO {
     /// Estado de la orden.
     pub status: OrderStatus,
     /// Marca de tiempo que registra la última actualización de la orden.
-    pub time_stamp: Instant,
+    pub time_stamp: std::time::SystemTime,
 }
