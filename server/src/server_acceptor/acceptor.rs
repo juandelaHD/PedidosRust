@@ -6,7 +6,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::net::TcpListener;
 
-use crate::messages::m::RegisterConnection;
+use crate::messages::internal_messages::RegisterConnection;
 use crate::server_actors::server_actor::Coordinator;
 
 pub struct Acceptor {

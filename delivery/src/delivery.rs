@@ -1,15 +1,11 @@
 use actix::prelude::*;
 use std::net::SocketAddr;
-use std::sync::Arc;
 use tokio::net::TcpStream;
-
 use common::logger::Logger;
 use common::messages::shared_messages::*;
 use common::network::connections::{connect, connect_to_all};
 use common::network::communicator::Communicator;
 use common::network::peer_types::PeerType;
-use common::network::tcp_receiver::TCPReceiver;
-use common::network::tcp_sender::TCPSender;
 use common::types::dtos::OrderDTO;
 use common::types::delivery_status::DeliveryStatus;
 use std::collections::HashMap;

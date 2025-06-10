@@ -1,7 +1,6 @@
 use std::io::{self, Write};
 use crate::client_actors::client::Client;
 use crate::messages::internal_messages::{SelectNearbyRestaurants, SendThisOrder};
-use common::types::dtos::OrderDTO;
 use common::logger::Logger;
 use actix::prelude::*;
 use common::types::restaurant_info::RestaurantInfo;

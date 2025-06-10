@@ -1,5 +1,4 @@
 use actix::Message;
-use common::types::dtos::OrderDTO;
 use common::types::restaurant_info::RestaurantInfo;
 
 #[derive(Message)]

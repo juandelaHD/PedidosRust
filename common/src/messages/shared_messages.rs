@@ -12,7 +12,6 @@ use crate::messages::restaurant_messages::*;
 use crate::messages::coordinator_messages::*;
 use crate::messages::coordinatormanager_messages::*;
 
-
 #[derive(Serialize, Deserialize, Message)]
 #[serde(tag = "type")]
 #[rtype(result = "()")]

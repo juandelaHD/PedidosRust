@@ -1,5 +1,5 @@
 use actix::prelude::*;
-use common::constants::{self, SUCCESS_PROBABILITY, SERVER_IP_ADDRESS, BASE_PORT, NUM_COORDINATORS};
+use common::constants::{SUCCESS_PROBABILITY, SERVER_IP_ADDRESS, BASE_PORT, NUM_COORDINATORS};
 use common::messages::shared_messages::StartRunning;
 use common::utils::get_rand_f32_tuple;
 use std::env;

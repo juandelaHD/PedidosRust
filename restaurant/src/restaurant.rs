@@ -1,17 +1,14 @@
 use actix::prelude::*;
 use std::net::SocketAddr;
-use std::sync::Arc;
 use tokio::net::TcpStream;
 use common::messages::shared_messages::*;
 use common::network::connections::{connect, connect_to_all};
 use common::logger::Logger;
 use common::network::communicator::Communicator;
 use common::network::peer_types::PeerType;
-use common::types::dtos::OrderDTO;
-
 use std::collections::HashMap;
 use common::types::dtos::UserDTO;
-use crate::kitchen::Kitchen;
+// use crate::kitchen::Kitchen;
 
 
 pub struct Restaurant {

@@ -4,12 +4,10 @@ use common::messages::shared_messages::NetworkMessage;
 use common::messages::shared_messages::WhoIsLeader;
 use common::messages::shared_messages::LeaderIs;
 use common::network::communicator::Communicator;
-use serde::Serialize;
 use std::sync::Arc;
 use std::{collections::HashMap, net::SocketAddr};
-use tokio::io::{AsyncBufReadExt, BufReader};
 
-use crate::messages::m::RegisterConnection;
+use crate::messages::internal_messages::RegisterConnection;
 
 #[derive(Debug)]
 pub struct Coordinator {
@@ -44,7 +42,7 @@ impl Actor for Coordinator {
 
 impl Coordinator {
     pub fn new(srv_addr: SocketAddr) -> Addr<Self> {
-        Coordinator::create(move |ctx| Coordinator {
+        Coordinator::create(move |_ctx| Coordinator {
             my_addr: srv_addr,
             current_coordinator: None,
             communicators: HashMap::new(),
