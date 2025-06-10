@@ -3,11 +3,11 @@ use std::fmt;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum OrderStatus {
-    Created,
-    Confirmed,
+    Requiested,
+    Authorized,
+    Pending,
     Preparing,
-    Ready,
-    PickedUp,
+    ReadyForDelivery,
     Delivering,
     Delivered,
     Cancelled(String), // Optional reason
@@ -16,14 +16,14 @@ pub enum OrderStatus {
 impl fmt::Display for OrderStatus {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            OrderStatus::Created => write!(f, "Created"),
-            OrderStatus::Confirmed => write!(f, "Confirmed"),
+            OrderStatus::Requiested => write!(f, "Requiested"),
+            OrderStatus::Authorized => write!(f, "Authorized"),
+            OrderStatus::Pending => write!(f, "Pending"),
             OrderStatus::Preparing => write!(f, "Preparing"),
-            OrderStatus::Ready => write!(f, "Ready"),
-            OrderStatus::PickedUp => write!(f, "Picked Up"),
+            OrderStatus::ReadyForDelivery => write!(f, "Ready for Delivery"),
             OrderStatus::Delivering => write!(f, "Delivering"),
             OrderStatus::Delivered => write!(f, "Delivered"),
-            OrderStatus::Cancelled(reason) => write!(f, "Cancelled ({})", reason),
+            OrderStatus::Cancelled(reason) => write!(f, "Cancelled: {}", reason),
         }
     }
 }
