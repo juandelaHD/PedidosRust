@@ -1,6 +1,6 @@
 use actix::prelude::*;
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, net::SocketAddr};
+use std::net::SocketAddr;
 use tokio::net::TcpStream;
 use crate::messages::client_messages::*;
 use crate::types::dtos::UserDTO;
@@ -16,26 +16,30 @@ use crate::messages::coordinatormanager_messages::*;
 #[serde(tag = "type")]
 #[rtype(result = "()")]
 pub enum NetworkMessage {
+    // All Users messages
     WhoIsLeader(WhoIsLeader),
-    LeaderIs(LeaderIs),
-    RequestNewStorageUpdates(RequestNewStorageUpdates),
-    StorageUpdates(StorageUpdates),
-    RequestAllStorage(RequestAllStorage),
-    RecoverStorageOperations(RecoverStorageOperations),
-    LeaderElection(LeaderElection),
+    LeaderIs(LeaderIs),    
     RegisterUser(RegisterUser),
     RecoveredInfo(Option<UserDTO>),
 
     // Client messages
+    RequestThisOrder(RequestThisOrder), //
     RequestNearbyRestaurants(RequestNearbyRestaurants),
-    RequestThisOrder(RequestThisOrder),
     OrderFinalized(OrderFinalized),
 
     // Delivery messages
-
+    IAmAvailable(IAmAvailable), // 
+    AcceptOrder(AcceptOrder), // 
+    OrderDelivered(OrderDelivered), // 
+    
     // Payment messages
 
     // Restaurant messages
+    UpdateOrderStatus(UpdateOrderStatus),
+    CancelOrder(CancelOrder),
+    OrderIsPreparing(OrderIsPreparing),
+    RequestDelivery(RequestDelivery),
+    DeliverThisOrder(DeliverThisOrder),
 
     // Coordinator messages
     AuthorizationResult(AuthorizationResult),
@@ -43,6 +47,11 @@ pub enum NetworkMessage {
     NotifyOrderUpdated(NotifyOrderUpdated),
 
     // CoordinatorManager messages
+    RequestNewStorageUpdates(RequestNewStorageUpdates),
+    StorageUpdates(StorageUpdates),
+    RequestAllStorage(RequestAllStorage),
+    RecoverStorageOperations(RecoverStorageOperations),
+    LeaderElection(LeaderElection),
 }
 
 #[derive(Serialize, Deserialize, Message)]
@@ -55,35 +64,6 @@ pub struct WhoIsLeader {
 #[rtype(result = "()")]
 pub struct LeaderIs {
     pub coord_addr: SocketAddr,
-}
-
-#[derive(Serialize, Deserialize, Message)]
-#[rtype(result = "()")]
-pub struct RequestNewStorageUpdates {
-    pub start_index: u64,
-}
-
-#[derive(Serialize, Deserialize, Message)]
-#[rtype(result = "()")]
-pub struct StorageUpdates {
-    pub updates: HashMap<u64, String>,
-}
-
-#[derive(Serialize, Deserialize, Message)]
-#[rtype(result = "()")]
-pub struct RequestAllStorage;
-
-#[derive(Serialize, Deserialize, Message)]
-#[rtype(result = "()")]
-pub struct RecoverStorageOperations {
-    pub storage_recover_msg_list: HashMap<u64, String>,
-    pub current_msg_log: HashMap<u64, String>,
-}
-
-#[derive(Serialize, Deserialize, Message)]
-#[rtype(result = "()")]
-pub struct LeaderElection {
-    pub candidates: Vec<String>,
 }
 
 // TODO: Borrar, quedó viejo

@@ -1,6 +1,5 @@
 use crate::messages::shared_messages::NetworkMessage;
 use actix::prelude::*;
-use actix_async_handler::async_handler;
 use tokio::io::{AsyncWriteExt, BufWriter, WriteHalf};
 use tokio::net::TcpStream;
 

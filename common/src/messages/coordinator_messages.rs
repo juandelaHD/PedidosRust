@@ -12,12 +12,23 @@ pub struct NearbyRestaurants {
 #[derive(Message, Debug, Clone, Serialize, Deserialize)]
 #[rtype(result = "()")]
 pub struct AuthorizationResult {
-    // OK o Err
     pub result: Result<(), String>,
 }
 
 #[derive(Message, Debug, Clone, Serialize, Deserialize)]
 #[rtype(result = "()")]
 pub struct NotifyOrderUpdated {
+    pub order: OrderDTO,
+}
+
+#[derive(Message, Debug, Clone, Serialize, Deserialize)]
+#[rtype(result = "()")]
+pub struct NewOrder {
+    pub order: OrderDTO,
+}
+
+#[derive(Message, Debug, Clone, Serialize, Deserialize)]
+#[rtype(result = "()")]
+pub struct DeliveryAvailable {
     pub order: OrderDTO,
 }

@@ -52,86 +52,6 @@ impl Coordinator {
     }
 }
 
-
-impl Handler<NetworkMessage> for Coordinator {
-    type Result = ();
-    fn handle(&mut self, msg: NetworkMessage, ctx: &mut Self::Context) -> Self::Result {
-        match msg {
-            NetworkMessage::NearbyRestaurants(msg_data) => {
-                self.logger.info(format!(
-                    "Received NearbyRestaurants message with {} restaurants",
-                    msg_data.restaurants.len()));
-            }
-            NetworkMessage::AuthorizationResult(msg_data) => {
-                self.logger.info(format!(
-                    "Received AuthorizationResult message, not implemented yet",));
-            }
-            NetworkMessage::NotifyOrderUpdated(msg_data) => {
-                self.logger.info(format!(
-                    "Received NotifyOrderUpdated message, not implemented yet"));
-            }
-            NetworkMessage::OrderFinalized(msg_data) => {
-                self.logger.info(format!(
-                    "Received OrderFinalized message, not implemented yet"));
-            }
-            NetworkMessage::WhoIsLeader(msg_data) => {
-                self.logger.info("Received WhoIsLeader message");
-                ctx.address().do_send(msg_data);
-            }
-            NetworkMessage::LeaderIs(_msg_data) => {
-                self.logger.info("Received LeaderIs message with addr:");
-            }
-            NetworkMessage::RequestNewStorageUpdates(_msg_data) => {
-                self.logger.info(
-                    "Received RequestNewStorageUpdates message with start_index:",
-                    
-                );
-            }
-            NetworkMessage::StorageUpdates(_msg_data) => {
-                self.logger.info(
-                    "Received StorageUpdates message with updates",
-                    );
-            }
-            NetworkMessage::RequestAllStorage(_msg_data) => {
-                self.logger.info("Received RequestAllStorage message");
-            }
-            NetworkMessage::RecoverStorageOperations(_msg_data) => {
-                self.logger.info(
-                    "Received RecoverStorageOperations message with {} recover msgs and {} log msgs",
-                    
-                );
-            }
-            NetworkMessage::LeaderElection(_msg_data) => {
-                self.logger.info(
-                    "Received LeaderElection message with candidates",
-                
-                );
-            }
-            NetworkMessage::RegisterUser(_msg_data) => {
-                self.logger.info("Received RegisterUser message, handle not implemented");
-                
-
-            }
-            NetworkMessage::RecoveredInfo(_msg_data) => {
-                self.logger.info("Received RecoverdInfo message, handle not implemented");
-                
-            }
-
-
-
-
-            NetworkMessage::RequestNearbyRestaurants(_msg_data) => {
-                self.logger.info("Received RequestNearbyRestaurants message");
-                // Aquí podrías implementar la lógica para manejar la solicitud de restaurantes cercanos
-            }
-            NetworkMessage::RequestThisOrder(_msg_data) => {
-                self.logger.info("Received RequestThisOrder message");
-                // Aquí podrías implementar la lógica para manejar la solicitud de un pedido específico
-            }
-        }
-    }
-}
-
 impl Handler<RegisterConnection> for Coordinator {
     type Result = ();
     fn handle(&mut self, msg: RegisterConnection, _ctx: &mut Self::Context) -> Self::Result {
@@ -170,3 +90,96 @@ impl Handler<WhoIsLeader> for Coordinator {
         }
     }
 }
+
+
+impl Handler<NetworkMessage> for Coordinator {
+    type Result = ();
+    fn handle(&mut self, msg: NetworkMessage, ctx: &mut Self::Context) -> Self::Result {
+        match msg {            
+            // All Users messages
+            NetworkMessage::WhoIsLeader(msg_data) => {
+                self.logger.info("Received WhoIsLeader message");
+                ctx.address().do_send(msg_data);
+            }
+            NetworkMessage::LeaderIs(_msg_data) => {
+                self.logger.info("Received LeaderIs message with addr:");
+            }
+            NetworkMessage::RegisterUser(_msg_data) => {
+                self.logger.info("Received RegisterUser message, not implemented yet");
+            }
+            NetworkMessage::RecoveredInfo(_user_dto_opt) => {
+                self.logger.info("Received RegisterUser message, not implemented yet");
+            }
+
+
+            // Client messages
+            NetworkMessage::NearbyRestaurants(msg_data) => {
+                self.logger.info(format!(
+                    "Received NearbyRestaurants message with {} restaurants",
+                    msg_data.restaurants.len()));
+            }
+            NetworkMessage::AuthorizationResult(_msg_data) => {
+                self.logger.info("Received AuthorizationResult message, not implemented yet");
+            }
+            NetworkMessage::NotifyOrderUpdated(_msg_data) => {
+                self.logger.info("Received NotifyOrderUpdated message, not implemented yet");
+            }
+            NetworkMessage::OrderFinalized(_msg_data) => {
+                self.logger.info("Received OrderFinalized message, not implemented yet");
+            }
+            NetworkMessage::RequestNearbyRestaurants(_msg_data) => {
+                self.logger.info("Received RequestNearbyRestaurants message");
+            }
+            NetworkMessage::RequestThisOrder(_msg_data) => {
+                self.logger.info("Received RequestThisOrder message");
+            }
+
+            // Delivery messages
+            NetworkMessage::IAmAvailable(_msg_data) => {
+                self.logger.info("Received IAmAvailable message, not implemented yet");
+            }
+            NetworkMessage::AcceptOrder(_msg_data) => {
+                self.logger.info("Received AcceptOrder message, not implemented yet");
+            }
+            NetworkMessage::OrderDelivered(_msg_data) => {
+                self.logger.info("Received OrderDelivered message, not implemented yet");
+            }
+
+            
+            // Restaurant messages
+            NetworkMessage::UpdateOrderStatus(_msg_data) => {
+                self.logger.info("Received UpdateOrderStatus message, not implemented yet");
+            }
+            NetworkMessage::CancelOrder(_msg_data) => {
+                self.logger.info("Received CancelOrder message, not implemented yet");
+            }
+            NetworkMessage::OrderIsPreparing(_msg_data) => {
+                self.logger.info("Received OrderIsPreparing message, not implemented yet");
+            }
+            NetworkMessage::RequestDelivery(_msg_data) => {
+                self.logger.info("Received RequestDelivery message, not implemented yet");
+            }
+            NetworkMessage::DeliverThisOrder(_msg_data) => {
+                self.logger.info("Received DeliverThisOrder message, not implemented yet");
+            }
+
+            // Coordinator messages
+            NetworkMessage::RequestNewStorageUpdates(_msg_data) => {
+                self.logger.info("Received RequestNewStorageUpdates message");
+            }
+            NetworkMessage::StorageUpdates(_msg_data) => {
+                self.logger.info("Received StorageUpdates message");
+            }
+            NetworkMessage::RequestAllStorage(_msg_data) => {
+                self.logger.info("Received RequestAllStorage message");
+            }
+            NetworkMessage::RecoverStorageOperations(_msg_data) => {
+                self.logger.info("Received RecoverStorageOperations message");
+            }
+            NetworkMessage::LeaderElection(_msg_data) => {
+                self.logger.info("Received LeaderElection message");
+            }
+        }
+    }
+}
+
