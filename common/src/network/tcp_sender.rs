@@ -54,13 +54,9 @@ impl Handler<NetworkMessage> for TCPSender {
                 }
                 Some(writer)
             };
-            Box::pin(
-                async move { fut.await }
-                    .into_actor(self)
-                    .map(|ret_writer, act, _ctx| {
-                        act.writer = ret_writer;
-                    }),
-            )
+            Box::pin(fut.into_actor(self).map(|ret_writer, act, _ctx| {
+                act.writer = ret_writer;
+            }))
         } else {
             Box::pin(async {}.into_actor(self))
         }

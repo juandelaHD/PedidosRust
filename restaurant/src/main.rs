@@ -41,7 +41,7 @@ async fn main() -> std::io::Result<()> {
     // let kitchen = Kitchen::new(...).start();
 
     // Restaurant necesita la dirección del Kitchen:
-    let kitchen_addr = todo!("Inicializá Kitchen y obtené su Addr");
+    // let kitchen_addr = todo!("Inicializá Kitchen y obtené su Addr");
 
     //let kitchen_addr: Option<Addr<Kitchen>> = None;
 

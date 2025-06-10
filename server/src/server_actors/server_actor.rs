@@ -1,6 +1,8 @@
 use actix::prelude::*;
 use common::logger::Logger;
 use common::messages::shared_messages::NetworkMessage;
+use common::messages::shared_messages::WhoIsLeader;
+use common::messages::shared_messages::LeaderIs;
 use common::network::communicator::Communicator;
 use serde::Serialize;
 use std::sync::Arc;
@@ -12,7 +14,7 @@ use crate::mensajes::m::RegisterConnection;
 #[derive(Debug)]
 pub struct Coordinator {
     /// Dirección de este coordinator.
-    pub addr: SocketAddr,
+    pub my_addr: SocketAddr,
     /// Coordinador actual.
     pub current_coordinator: Option<SocketAddr>,
     /// Estado de los pedidos en curso.
@@ -43,7 +45,7 @@ impl Actor for Coordinator {
 impl Coordinator {
     pub fn new(srv_addr: SocketAddr) -> Addr<Self> {
         Coordinator::create(move |ctx| Coordinator {
-            addr: srv_addr,
+            my_addr: srv_addr,
             current_coordinator: None,
             communicators: HashMap::new(),
             user_addresses: HashMap::new(),
@@ -52,10 +54,45 @@ impl Coordinator {
     }
 }
 
+
 impl Handler<NetworkMessage> for Coordinator {
     type Result = ();
-    fn handle(&mut self, _msg: NetworkMessage, _ctx: &mut Self::Context) -> Self::Result {
-        self.logger.info("Received message\n");
+    fn handle(&mut self, msg: NetworkMessage, ctx: &mut Self::Context) -> Self::Result {
+        match msg {
+            NetworkMessage::WhoIsLeader(msg_data) => {
+                self.logger.info("Received WhoIsLeader message");
+                ctx.address().do_send(msg_data);
+            }
+            NetworkMessage::LeaderIs(msg_data) => {
+                self.logger.info("Received LeaderIs message with addr:");
+            }
+            NetworkMessage::RequestNewStorageUpdates(msg_data) => {
+                self.logger.info(
+                    "Received RequestNewStorageUpdates message with start_index:",
+                    
+                );
+            }
+            NetworkMessage::StorageUpdates(msg_data) => {
+                self.logger.info(
+                    "Received StorageUpdates message with updates",
+                    );
+            }
+            NetworkMessage::RequestAllStorage(msg_data) => {
+                self.logger.info("Received RequestAllStorage message");
+            }
+            NetworkMessage::RecoverStorageOperations(msg_data) => {
+                self.logger.info(
+                    "Received RecoverStorageOperations message with {} recover msgs and {} log msgs",
+                    
+                );
+            }
+            NetworkMessage::LeaderElection(msg_data) => {
+                self.logger.info(
+                    "Received LeaderElection message with candidates",
+                
+                );
+            }
+        }
     }
 }
 
@@ -71,5 +108,29 @@ impl Handler<RegisterConnection> for Coordinator {
         self.logger
             .info(format!("Registered connection from {} ", msg.client_addr));
         // Aquí podrías enviar un mensaje de bienvenida o iniciar alguna lógica adicional
+    }
+}
+
+impl Handler<WhoIsLeader> for Coordinator {
+    type Result = ();
+
+    fn handle(&mut self, msg: WhoIsLeader, ctx: &mut Self::Context) -> Self::Result {
+        // Enviar un mensaje al líder actual o iniciar una elección de líder
+        if let Some(addr) = self.current_coordinator {
+            if let Some(sender) = &self.communicators[&msg.origin_addr].sender {
+                sender.do_send(NetworkMessage::LeaderIs(LeaderIs{coord_addr:(addr)}));
+            } else {
+                self.logger.info(format!("No sender found for {}", msg.origin_addr));
+            }
+        } else {
+            // TODO: check start election if addr is NONE
+            self.logger.info("No current coordinator available. Check Server Election implementation.");
+            // TODO: delete this when election is ready
+            if let Some(sender) = &self.communicators[&msg.origin_addr].sender {
+                sender.do_send(NetworkMessage::LeaderIs(LeaderIs{coord_addr:(self.my_addr)}));
+            } else {
+                self.logger.info(format!("No sender found for {}", msg.origin_addr));
+            }
+        }
     }
 }
