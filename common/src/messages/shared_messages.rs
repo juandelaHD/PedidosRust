@@ -30,6 +30,8 @@ pub enum NetworkMessage {
     // Client messages
     RequestNearbyRestaurants(RequestNearbyRestaurants),
     RequestThisOrder(RequestThisOrder),
+    OrderFinalized(OrderFinalized),
+
 
     // Delivery messages
 
@@ -38,6 +40,9 @@ pub enum NetworkMessage {
     // Restaurant messages
 
     // Coordinator messages
+    AuthorizationResult(AuthorizationResult),
+    NearbyRestaurants(NearbyRestaurants),
+    NotifyOrderUpdated(NotifyOrderUpdated),
 
     // CoordinatorManager messages
 }

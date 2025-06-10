@@ -1,6 +1,6 @@
 use actix::Message;
 use serde::{Deserialize, Serialize};
-use crate::types::{dtos::{ClientDTO, OrderDTO}, restaurant_info::RestaurantInfo};
+use crate::types::dtos::{ClientDTO, OrderDTO};
 
 #[derive(Message, Debug, Clone, Serialize, Deserialize)]
 #[rtype(result = "()")]
@@ -16,6 +16,6 @@ pub struct RequestNearbyRestaurants {
 
 #[derive(Message, Debug, Clone, Serialize, Deserialize)]
 #[rtype(result = "()")]
-pub struct NearbyRestaurants {
-    pub restaurants: Vec<RestaurantInfo>,
+pub struct OrderFinalized {
+    pub order: OrderDTO,
 }

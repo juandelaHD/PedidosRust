@@ -207,13 +207,12 @@ impl Handler<SendThisOrder> for Client {
 
     fn handle(&mut self, msg: SendThisOrder, _ctx: &mut Self::Context) -> Self::Result {
         self.logger.info(format!("Sending order to restaurant {}: {}", msg.selected_restaurant, msg.selected_dish));
-        
-        // CREO UN RANDOM ORDER ID PARA EL PEDIDO
+
         let mut rng = rand::thread_rng();
         let order_id: u64 = rng.gen_range(1..=u64::MAX);
         
         let order = OrderDTO {
-            order_id, // El ID del pedido se asignará en el servidor
+            order_id,
             client_id: self.client_id.clone(),
             restaurant_id: msg.selected_restaurant,
             dish_name: msg.selected_dish,
