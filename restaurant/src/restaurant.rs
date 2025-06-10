@@ -2,7 +2,7 @@ use actix::prelude::*;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::net::TcpStream;
-use common::messages::shared_messages::{NetworkMessage, WhoIsLeader, LeaderIs, StartRunning, NewLeaderConnection};
+use common::messages::shared_messages::*;
 use common::network::connections::{connect, connect_to_all};
 use common::logger::Logger;
 use common::network::communicator::Communicator;
@@ -10,7 +10,7 @@ use common::network::peer_types::PeerType;
 use common::types::dtos::OrderDTO;
 
 use std::collections::HashMap;
-
+use common::types::dtos::UserDTO;
 use crate::kitchen::Kitchen;
 
 
@@ -20,7 +20,7 @@ pub struct Restaurant {
     /// Identificador único del restaurante.
     pub restaurant_id: String,
     /// Posición actual del restaurante en coordenadas 2D.
-    pub position: (f32, f32),
+    pub restaurant_position: (f32, f32),
     /// Probabilidad de aceptar o rechazar un pedido.
     pub probability: f32,
     /// Canal de envío hacia la cocina.
@@ -37,7 +37,7 @@ pub struct Restaurant {
 
 
 impl Restaurant {
-    pub async fn new(servers: Vec<SocketAddr>, id: String, position: (f32, f32), probability: f32) -> Self {
+    pub async fn new(servers: Vec<SocketAddr>, id: String, restaurant_position: (f32, f32), probability: f32) -> Self {
         let pending_streams: HashMap<SocketAddr, TcpStream> = connect_to_all(servers.clone()).await;
 
         let logger = Logger::new(format!("Restaurant {}", &id));
@@ -57,7 +57,7 @@ impl Restaurant {
         Self {
             servers,
             restaurant_id: id,
-            position,
+            restaurant_position,
             probability, // Puedes ajustar la probabilidad según tus necesidades
             actual_communicator_addr: None, // Podés usarlo para el líder actual
             communicators: Some(HashMap::new()), // Inicializamos el hashmap vacío para los communicators
@@ -174,6 +174,21 @@ impl Handler<LeaderIs> for Restaurant {
                     }
                 });
             }
+            println!("Sending msg RegisterUser with ID: {}", self.restaurant_id);
+            self.send_network_message(
+                NetworkMessage::RegisterUser(
+                    RegisterUser {
+                        origin_addr: self.my_socket_addr,
+                        user_id: self.restaurant_id.clone(),
+                    }
+                )
+            );
+            self.logger.info(format!("Sending msg register user with ID: {}", self.restaurant_id));
+
+
+
+
+
         } else {
             self.logger.error("Communicators map not initialized");
         }
@@ -216,6 +231,49 @@ impl Handler<NetworkMessage> for Restaurant {
                 
                 );
             }
+            NetworkMessage::RegisterUser(_msg_data) => {
+                self.logger.error("Received a RegisterUser message, handle not implemented");
+            }
+            NetworkMessage::RecoveredInfo(user_dto_opt) => {
+                match user_dto_opt {
+                    Some(user_dto) => match user_dto {
+                        UserDTO::Restaurant(restaurant_dto) => {
+                            if restaurant_dto.restaurant_id == self.restaurant_id {
+                                self.logger.info(format!(
+                                    "Recovered info for Restaurant ID={}, updating local state...",
+                                    restaurant_dto.restaurant_id
+                                ));
+
+                                self.restaurant_position = restaurant_dto.restaurant_position;
+
+                                ///////////////////////////////////////
+                                //
+                                //
+                                // ACA FALTA RESETEAR LOS PEDIDOS PENDIENTES Y AUTORIZADOS
+                                //
+                                //////////////////////////////////////
+                               
+                            } else {
+                                self.logger.warn(format!(
+                                    "Received recovered info for a different delivery ({}), ignoring",
+                                    restaurant_dto.restaurant_id
+                                ));
+                            }
+                        }
+                        other => {
+                            self.logger.warn(format!(
+                                "Received recovered info of type {:?}, but I'm Delivery. Ignoring.",
+                                other
+                            ));
+                        }
+                    },
+                    None => {
+                        self.logger.info("No recovered info found for this Delivery.");
+                    }
+                }
+            }
+
+
         }
     }
 }

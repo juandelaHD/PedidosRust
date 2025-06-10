@@ -2,6 +2,9 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 use tokio::net::TcpStream;
 
+use crate::logger::Logger;
+use crate::messages::shared_messages::*;
+
 /// Intenta conectarse a todos los `SocketAddr` proporcionados y devuelve
 /// un `HashMap` de direcciones a streams abiertos exitosamente.
 pub async fn connect_to_all(servers: Vec<SocketAddr>) -> HashMap<SocketAddr, TcpStream> {
@@ -29,3 +32,9 @@ pub async fn connect(server_addr: SocketAddr) -> Option<TcpStream> {
         Err(_) => None,
     }
 }
+
+
+
+
+
+

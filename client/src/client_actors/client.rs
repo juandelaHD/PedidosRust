@@ -1,5 +1,5 @@
 use actix::prelude::*;
-use common::messages::shared_messages::{NetworkMessage, WhoIsLeader, LeaderIs, StartRunning, NewLeaderConnection};
+use common::messages::shared_messages::*;
 
 use std::collections::HashMap;
 use std::net::SocketAddr;
@@ -9,12 +9,11 @@ use tokio::net::{tcp, TcpStream};
 use common::logger::Logger;
 use common::network::communicator::Communicator;
 use common::network::peer_types::PeerType;
-use common::network::tcp_receiver::TCPReceiver;
-use common::network::tcp_sender::TCPSender;
+
 use common::types::dtos::OrderDTO;
 use common::network::connections::{connect, connect_to_all};
 
-
+use common::types::dtos::UserDTO;
 
 pub struct Client {
     /// Vector de direcciones de servidores
@@ -22,13 +21,13 @@ pub struct Client {
     /// Identificador único del comensal.
     pub client_id: String,
     /// Posición actual del cliente en coordenadas 2D.
-    pub position: (f32, f32),
+    pub client_position: (f32, f32),
     /// Estado actual del pedido (si hay uno en curso).
     // pub order_status: Option<OrderStatus>,
     /// Restaurante elegido para el pedido.
     // pub selected_restaurant: Option<String>,
-    /// ID del pedido actual.
-    // pub order_id: Option<u64>,
+    /// Pedido actual.
+    pub client_order: Option<OrderDTO>,
     /// Canal de envío hacia el actor `UIHandler`.
     // pub ui_handler: Addr<UIHandler>,
     /// Comunicador asociado al `Server`.
@@ -37,10 +36,11 @@ pub struct Client {
     pub pending_streams: HashMap<SocketAddr, TcpStream>, // Guarda el stream hasta que arranque
     pub my_socket_addr: SocketAddr,
     pub logger: Logger,
+
 }
 
 impl Client {
-    pub async fn new(servers: Vec<SocketAddr>, id: String, position: (f32, f32)) -> Self {
+    pub async fn new(servers: Vec<SocketAddr>, id: String, client_position: (f32, f32)) -> Self {
         let pending_streams: HashMap<SocketAddr, TcpStream> = connect_to_all(servers.clone()).await;
 
         let logger = Logger::new(format!("Client {}", &id));
@@ -60,7 +60,8 @@ impl Client {
         Self {
             servers,
             client_id: id,
-            position,
+            client_position,
+            client_order: None, // Inicializamos el pedido como None
             actual_communicator_addr: None, // Podés usarlo para el líder actual
             communicators: Some(HashMap::new()), // Inicializamos el hashmap vacío para los communicators
             pending_streams: pending_streams,
@@ -176,6 +177,21 @@ impl Handler<LeaderIs> for Client {
                     }
                 });
             }
+
+            println!("Sending msg RegisterUser with ID: {}", self.client_id);
+            self.send_network_message(
+                NetworkMessage::RegisterUser(
+                    RegisterUser {
+                        origin_addr: self.my_socket_addr,
+                        user_id: self.client_id.clone(),
+                    }
+                )
+            );
+            self.logger.info(format!("Sending msg register user with ID: {}", self.client_id));
+
+
+            
+
         } else {
             self.logger.error("Communicators map not initialized");
         }
@@ -217,6 +233,42 @@ impl Handler<NetworkMessage> for Client {
                     "Received LeaderElection message with candidates",
                 
                 );
+            }
+            NetworkMessage::RegisterUser(_msg_data) => {
+                self.logger.error("Received a RegisterUser message, handle not implemented");
+            }
+            NetworkMessage::RecoveredInfo(user_dto_opt) => {
+                match user_dto_opt {
+                    Some(user_dto) => match user_dto {
+                        UserDTO::Client(client_dto) => {
+                            if client_dto.client_id == self.client_id {
+                                self.logger.info(format!(
+                                    "Recovered info for Client ID={}, updating local state...",
+                                    client_dto.client_id
+                                ));
+
+                                self.client_position = client_dto.client_position;
+                                self.client_order = client_dto.client_order;
+                               
+                               
+                            } else {
+                                self.logger.warn(format!(
+                                    "Received recovered info for a different delivery ({}), ignoring",
+                                    client_dto.client_id
+                                ));
+                            }
+                        }
+                        other => {
+                            self.logger.warn(format!(
+                                "Received recovered info of type {:?}, but I'm Delivery. Ignoring.",
+                                other
+                            ));
+                        }
+                    },
+                    None => {
+                        self.logger.info("No recovered info found for this Delivery.");
+                    }
+                }
             }
         }
     }
