@@ -199,6 +199,23 @@ impl Handler<NetworkMessage> for Restaurant {
     type Result = ();
     fn handle(&mut self, msg: NetworkMessage, ctx: &mut Self::Context) -> Self::Result {
         match msg {
+            NetworkMessage::NearbyRestaurants(msg_data) => {
+                self.logger.info(format!(
+                    "Received NearbyRestaurants message with {} restaurants",
+                    msg_data.restaurants.len()));
+            }
+            NetworkMessage::AuthorizationResult(msg_data) => {
+                self.logger.info(format!(
+                    "Received AuthorizationResult message, not implemented yet",));
+            }
+            NetworkMessage::NotifyOrderUpdated(msg_data) => {
+                self.logger.info(format!(
+                    "Received NotifyOrderUpdated message, not implemented yet"));
+            }
+            NetworkMessage::OrderFinalized(msg_data) => {
+                self.logger.info(format!(
+                    "Received OrderFinalized message, not implemented yet"));
+            }
             NetworkMessage::WhoIsLeader(msg_data) => {
                 self.logger.error("Received a WhoIsLeader message, handle not implemented");
             }

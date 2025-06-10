@@ -202,13 +202,24 @@ impl Handler<LeaderIs> for Delivery {
 impl Handler<NetworkMessage> for Delivery {
     type Result = ();
     fn handle(&mut self, msg: NetworkMessage, ctx: &mut Self::Context) -> Self::Result {
-
-
-       
-
-
         match msg {
-
+            NetworkMessage::NearbyRestaurants(msg_data) => {
+                self.logger.info(format!(
+                    "Received NearbyRestaurants message with {} restaurants",
+                    msg_data.restaurants.len()));
+            }
+            NetworkMessage::AuthorizationResult(msg_data) => {
+                self.logger.info(format!(
+                    "Received AuthorizationResult message, not implemented yet",));
+            }
+            NetworkMessage::NotifyOrderUpdated(msg_data) => {
+                self.logger.info(format!(
+                    "Received NotifyOrderUpdated message, not implemented yet"));
+            }
+            NetworkMessage::OrderFinalized(msg_data) => {
+                self.logger.info(format!(
+                    "Received OrderFinalized message, not implemented yet"));
+            }
             NetworkMessage::RequestNearbyRestaurants(_msg_data) => {
                 self.logger.info("Received RequestNearbyRestaurants message");
                 // Aquí podrías implementar la lógica para manejar la solicitud de restaurantes cercanos

@@ -32,7 +32,6 @@ pub enum NetworkMessage {
     RequestThisOrder(RequestThisOrder),
     OrderFinalized(OrderFinalized),
 
-
     // Delivery messages
 
     // Payment messages
