@@ -33,8 +33,8 @@ La consigna del trabajo práctico puede encontrarse [aqui](https://concurrentes-
      - [Proceso Server](#proceso-server)
      - [Proceso PaymentGateway](#proceso-paymentgateway)
      - [Proceso Cliente](#proceso-cliente)
-     - [Proceso Restaurante](#proceso-restaurante)
-     - [Proceso Delivery](#proceso-delivery)
+     - [Proceso Restaurante](#proceso-restaurante-async)
+     - [Proceso Delivery](#proceso-delivery-async)
    - [Modelo de replicación y tolerancia a fallos](#modelo-de-replicación-y-tolerancia-a-fallos)
    - [Elección de líder](#elección-de-líder)
 2. [Instalación y Ejecución](#instalación-y-ejecución)
@@ -54,7 +54,10 @@ La consigna del trabajo práctico puede encontrarse [aqui](https://concurrentes-
   Se implementa el **algoritmo del anillo (Ring Algorithm)** para llevar a cabo la **elección de un Coordinator Manager** entre los distintos procesos `Coordinator`. Este mecanismo garantiza que, ante la caída del coordinador actual, el sistema pueda elegir automáticamente un nuevo líder sin necesidad de intervención externa.
 
 - **Exclusión Mutua Distribuida (Centralizada)**
-  Dentro del servidor, se encuentra el actor `Storage`, el cual es responsable de almacenar y gestionar el estado global del sistema. Este actor actúa como un repositorio centralizado para la información de clientes, restaurantes, repartidores y órdenes, asegurando que todos los nodos tengan acceso a un estado consistente. Al tratarse de un actor, el acceso a `Storage` está protegido por el modelo de actores, lo que evita problemas de concurrencia y garantiza la **exclusión mutua**, permitiendo que múltiples nodos (clientes, restaurantes, deliveries y el gateway de pagos) interactúen con el estado global sin producirse race conditions.
+  Cuando se termina de preparar un pedido, el `DeliveryAssigner` debe asegurarse de que no se produzcan conflictos al asignar un delivery. Para ello, este actúa como punto de **exclusión mutua centralizada**. El `DeliveryAssigner` le envía un mensaje `RequestDelivery` al servidor, el cual notifica a todos los repartidores cercanos que hay un pedido listo para entregar enviándoles el mensaje `NewOfferToDeliver`. Los repartidores interesados envían un mensaje de oferta al servidor (`AcceptedOrder`), el servidor redirige la solicitud al `DeliveryAssigner` enviándole el mensaje `DeliveryAvailable` y este último selecciona al primero que se haya ofrecido, asignándole el pedido con el mensaje `DeliverThisOrder`. El resto de los repartidores reciben una notificación (mensaje `DeliveryNoNeeded`) de que ya no es necesario que se ofrezcan para esa entrega.
+
+- **Serialización de los accesos al estado global**
+  Dentro del servidor, se encuentra el actor `Storage`, el cual es responsable de almacenar y gestionar el estado global del sistema. Este actor actúa como un repositorio centralizado para la información de clientes, restaurantes, repartidores y órdenes, asegurando que todos los nodos tengan acceso a un estado consistente. Al tratarse de un actor, el acceso a `Storage` está protegido por el modelo de actores, lo que evita problemas de concurrencia, permitiendo que múltiples nodos (clientes, restaurantes, deliveries y el gateway de pagos) interactúen con el estado global sin producirse race conditions.
 
 - **Resiliencia y Tolerancia a Fallos**
   El sistema está diseñado con foco en la **tolerancia a fallos**, permitiendo que nodos individuales (como clientes, repartidores o restaurantes) puedan desconectarse temporalmente **sin afectar el flujo global del sistema**. Esta resiliencia se logra mediante:
@@ -218,9 +221,7 @@ Estos actores son los encargados de gestionar la entrada y salida de mensajes TC
 ```rust
 pub struct Acceptor {
     /// Puerto TCP donde escucha nuevas conexiones.
-    pub listen_port: u16,
-    /// Lista de conexiones activas.
-    pub active_connections: HashSet<SocketAddr>,
+    pub address: SocketAddr,
 }
 ```
 
@@ -250,7 +251,7 @@ pub struct Coordinator {
   /// Coordinador actual.
   pub current_coordinator: Option<SocketAddr>,
   /// Estado de los pedidos en curso.
-  pub active_orders: HashSet<u64>,
+  // pub active_orders: HashSet<u64>, // TODO: Ver si se puede sacar
   /// Comunicador con el PaymentGateway
   pub payment_communicator: Communicator
   /// Diccionario de conexiones activas con clientes, restaurantes y deliverys.
