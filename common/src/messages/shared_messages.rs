@@ -2,6 +2,17 @@ use actix::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, net::SocketAddr};
 use tokio::net::TcpStream;
+use crate::messages::client_messages::*;
+
+
+use crate::messages::client_messages::*;
+use crate::messages::delivery_messages::*;
+use crate::messages::payment_messages::*;
+use crate::messages::restaurant_messages::*;
+use crate::messages::coordinator_messages::*;
+use crate::messages::coordinatormanager_messages::*;
+
+
 
 #[derive(Serialize, Deserialize, Message)]
 #[serde(tag = "type")]
@@ -14,6 +25,19 @@ pub enum NetworkMessage {
     RequestAllStorage(RequestAllStorage),
     RecoverStorageOperations(RecoverStorageOperations),
     LeaderElection(LeaderElection),
+
+    // Client messages
+    //RequestNearbyRestaurants(RequestNearbyRestaurants),
+
+    // Delivery messages
+
+    // Payment messages
+
+    // Restaurant messages
+
+    // Coordinator messages
+
+    // CoordinatorManager messages
 }
 
 #[derive(Serialize, Deserialize, Message)]
