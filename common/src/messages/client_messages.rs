@@ -1,35 +1,21 @@
 use actix::Message;
 use serde::{Deserialize, Serialize};
+use crate::types::{dtos::{ClientDTO, OrderDTO}, restaurant_info::RestaurantInfo};
+
+#[derive(Message, Debug, Clone, Serialize, Deserialize)]
+#[rtype(result = "()")]
+pub struct RequestThisOrder {
+    pub order: OrderDTO,
+}
 
 #[derive(Message, Debug, Clone, Serialize, Deserialize)]
 #[rtype(result = "()")]
 pub struct RequestNearbyRestaurants {
-    pub location: (f32, f32),
+    pub client: ClientDTO,
 }
 
 #[derive(Message, Debug, Clone, Serialize, Deserialize)]
 #[rtype(result = "()")]
-pub struct NearbyRestaurantsList {
-    pub restaurants: Vec<String>,
-}
-
-#[derive(Message, Debug, Clone, Serialize, Deserialize)]
-#[rtype(result = "()")]
-pub struct SubmitOrder {
-    pub order_id: String,
-    pub restaurant: String,
-    pub items: Vec<String>,
-}
-
-#[derive(Message, Debug, Clone, Serialize, Deserialize)]
-#[rtype(result = "()")]
-pub struct OrderConfirmed {
-    pub order_id: String,
-}
-
-#[derive(Message, Debug, Clone, Serialize, Deserialize)]
-#[rtype(result = "()")]
-pub struct OrderRejected {
-    pub order_id: String,
-    pub reason: String,
+pub struct NearbyRestaurants {
+    pub restaurants: Vec<RestaurantInfo>,
 }

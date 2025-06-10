@@ -214,6 +214,12 @@ impl Handler<NetworkMessage> for Delivery {
                 
                 );
             }
+            NetworkMessage::RequestNearbyRestaurants(_msg_data) => {
+                self.logger.info("Received RequestNearbyRestaurants message");
+            }
+            NetworkMessage::RequestThisOrder(_msg_data) => {
+                self.logger.info("Received RequestThisOrder message");
+            }
         }
     }
 }

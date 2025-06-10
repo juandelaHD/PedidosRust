@@ -216,6 +216,12 @@ impl Handler<NetworkMessage> for Restaurant {
                 
                 );
             }
+            NetworkMessage::RequestNearbyRestaurants(msg_data) => {
+                self.logger.info("Received RequestNearbyRestaurants message");
+            }
+            NetworkMessage::RequestThisOrder(msg_data) => {
+                self.logger.info("Received RequestThisOrder message");
+            }
         }
     }
 }

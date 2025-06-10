@@ -3,15 +3,12 @@ use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, net::SocketAddr};
 use tokio::net::TcpStream;
 use crate::messages::client_messages::*;
-
-
 use crate::messages::client_messages::*;
 use crate::messages::delivery_messages::*;
 use crate::messages::payment_messages::*;
 use crate::messages::restaurant_messages::*;
 use crate::messages::coordinator_messages::*;
 use crate::messages::coordinatormanager_messages::*;
-
 
 
 #[derive(Serialize, Deserialize, Message)]
@@ -27,7 +24,8 @@ pub enum NetworkMessage {
     LeaderElection(LeaderElection),
 
     // Client messages
-    //RequestNearbyRestaurants(RequestNearbyRestaurants),
+    RequestNearbyRestaurants(RequestNearbyRestaurants),
+    RequestThisOrder(RequestThisOrder),
 
     // Delivery messages
 

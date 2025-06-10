@@ -92,6 +92,14 @@ impl Handler<NetworkMessage> for Coordinator {
                 
                 );
             }
+            NetworkMessage::RequestNearbyRestaurants(_msg_data) => {
+                self.logger.info("Received RequestNearbyRestaurants message");
+                // Aquí podrías implementar la lógica para manejar la solicitud de restaurantes cercanos
+            }
+            NetworkMessage::RequestThisOrder(_msg_data) => {
+                self.logger.info("Received RequestThisOrder message");
+                // Aquí podrías implementar la lógica para manejar la solicitud de un pedido específico
+            }
         }
     }
 }
@@ -114,7 +122,7 @@ impl Handler<RegisterConnection> for Coordinator {
 impl Handler<WhoIsLeader> for Coordinator {
     type Result = ();
 
-    fn handle(&mut self, msg: WhoIsLeader, ctx: &mut Self::Context) -> Self::Result {
+    fn handle(&mut self, msg: WhoIsLeader, _ctx: &mut Self::Context) -> Self::Result {
         // Enviar un mensaje al líder actual o iniciar una elección de líder
         if let Some(addr) = self.current_coordinator {
             if let Some(sender) = &self.communicators[&msg.origin_addr].sender {

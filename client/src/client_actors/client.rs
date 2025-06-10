@@ -1,19 +1,20 @@
 use actix::prelude::*;
 use common::messages::shared_messages::{NetworkMessage, WhoIsLeader, LeaderIs, StartRunning, NewLeaderConnection};
-
+use common::messages::client_messages::*;
 use std::collections::HashMap;
+use std::fmt::format;
 use std::net::SocketAddr;
-use std::sync::Arc;
-use tokio::net::{tcp, TcpStream};
+use tokio::net::{TcpStream};
+use crate::client_actors::ui_handler::UIHandler;
 
 use common::logger::Logger;
 use common::network::communicator::Communicator;
 use common::network::peer_types::PeerType;
-use common::network::tcp_receiver::TCPReceiver;
-use common::network::tcp_sender::TCPSender;
 use common::types::dtos::OrderDTO;
 use common::network::connections::{connect, connect_to_all};
+use common::types::order_status::OrderStatus;
 
+use crate::messages::internal_messages::SendThisOrder;
 
 
 pub struct Client {
@@ -24,13 +25,13 @@ pub struct Client {
     /// Posición actual del cliente en coordenadas 2D.
     pub position: (f32, f32),
     /// Estado actual del pedido (si hay uno en curso).
-    // pub order_status: Option<OrderStatus>,
+    pub order_status: Option<OrderStatus>,
     /// Restaurante elegido para el pedido.
-    // pub selected_restaurant: Option<String>,
+    pub selected_restaurant: Option<String>,
     /// ID del pedido actual.
-    // pub order_id: Option<u64>,
+    pub order_id: Option<u64>,
     /// Canal de envío hacia el actor `UIHandler`.
-    // pub ui_handler: Addr<UIHandler>,
+    pub ui_handler: Option<Addr<UIHandler>>,
     /// Comunicador asociado al `Server`.
     pub actual_communicator_addr: Option<SocketAddr>,
     pub communicators: Option<HashMap<SocketAddr,Communicator<Client>>>,
@@ -61,6 +62,10 @@ impl Client {
             servers,
             client_id: id,
             position,
+            order_status: None, // Inicialmente no hay pedido
+            selected_restaurant: None, // Inicialmente no hay restaurante seleccionado
+            order_id: None, // Inicialmente no hay ID de pedido
+            ui_handler: None, // Inicialmente no hay UIHandler
             actual_communicator_addr: None, // Podés usarlo para el líder actual
             communicators: Some(HashMap::new()), // Inicializamos el hashmap vacío para los communicators
             pending_streams: pending_streams,
@@ -104,6 +109,8 @@ impl Actor for Client {
             self.logger.info(format!("Communicator started for {}", addr));
         }
         self.communicators = Some(communicators_map);
+        let ui_handler = UIHandler::new(ctx.address(), self.logger.clone());
+        self.ui_handler = Some(ui_handler.start());
     }
 }
 
@@ -120,7 +127,6 @@ impl Handler<StartRunning> for Client {
             ));
     }
 }
-
 
 
 impl Handler<NewLeaderConnection> for Client {
@@ -182,11 +188,38 @@ impl Handler<LeaderIs> for Client {
     }
 }
 
+impl Handler<SendThisOrder> for Client {
+    type Result = ();
+
+    fn handle(&mut self, msg: SendThisOrder, _ctx: &mut Self::Context) -> Self::Result {
+        self.logger.info(format!("Sending order to restaurant {}: {}", msg.selected_restaurant, msg.selected_dish));
+        
+        let order = OrderDTO {
+            order_id: self.order_id.unwrap_or(0), // Si no hay ID, usar 0 o generar uno nuevo
+            client_id: self.client_id.clone(),
+            restaurant_id: msg.selected_restaurant,
+            dish_name: msg.selected_dish,
+            status: OrderStatus::Pending, // Estado inicial del pedido
+            delivery_id: None, // No hay delivery asignado aún
+            time_stamp: std::time::SystemTime::now(), // Marca de tiempo actual
+            client_position: self.position, // Posición del cliente
+        };
+
+        // Enviar el pedido al servidor
+        let network_message = NetworkMessage::RequestThisOrder(
+            RequestThisOrder {
+                order
+            }
+        );
+        self.send_network_message(network_message);
+    }
+}
+
 impl Handler<NetworkMessage> for Client {
     type Result = ();
     fn handle(&mut self, msg: NetworkMessage, ctx: &mut Self::Context) -> Self::Result {
         match msg {
-            NetworkMessage::WhoIsLeader(msg_data) => {
+            NetworkMessage::WhoIsLeader(_msg_data) => {
                 self.logger.error("Received a WhoIsLeader message, handle not implemented");
             }
             NetworkMessage::LeaderIs(msg_data) => {
@@ -215,8 +248,16 @@ impl Handler<NetworkMessage> for Client {
             NetworkMessage::LeaderElection(msg_data) => {
                 self.logger.info(
                     "Received LeaderElection message with candidates",
-                
                 );
+            }
+            NetworkMessage::RequestNearbyRestaurants(_msg_data) => {
+                self.logger.error("Received a WhoIsLeader message, handle not implemented");
+                
+                // Aquí podrías enviar una respuesta o manejar la solicitud de restaurantes cercanos  
+            }
+            NetworkMessage::RequestThisOrder(_msg_data) => {
+                self.logger.error("Received a RequestThisOrder message, handle not implemented");
+            
             }
         }
     }
