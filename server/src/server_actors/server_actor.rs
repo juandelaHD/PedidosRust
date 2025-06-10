@@ -63,35 +63,48 @@ impl Handler<NetworkMessage> for Coordinator {
                 self.logger.info("Received WhoIsLeader message");
                 ctx.address().do_send(msg_data);
             }
-            NetworkMessage::LeaderIs(msg_data) => {
+            NetworkMessage::LeaderIs(_msg_data) => {
                 self.logger.info("Received LeaderIs message with addr:");
             }
-            NetworkMessage::RequestNewStorageUpdates(msg_data) => {
+            NetworkMessage::RequestNewStorageUpdates(_msg_data) => {
                 self.logger.info(
                     "Received RequestNewStorageUpdates message with start_index:",
                     
                 );
             }
-            NetworkMessage::StorageUpdates(msg_data) => {
+            NetworkMessage::StorageUpdates(_msg_data) => {
                 self.logger.info(
                     "Received StorageUpdates message with updates",
                     );
             }
-            NetworkMessage::RequestAllStorage(msg_data) => {
+            NetworkMessage::RequestAllStorage(_msg_data) => {
                 self.logger.info("Received RequestAllStorage message");
             }
-            NetworkMessage::RecoverStorageOperations(msg_data) => {
+            NetworkMessage::RecoverStorageOperations(_msg_data) => {
                 self.logger.info(
                     "Received RecoverStorageOperations message with {} recover msgs and {} log msgs",
                     
                 );
             }
-            NetworkMessage::LeaderElection(msg_data) => {
+            NetworkMessage::LeaderElection(_msg_data) => {
                 self.logger.info(
                     "Received LeaderElection message with candidates",
                 
                 );
             }
+            NetworkMessage::RegisterUser(_msg_data) => {
+                self.logger.info("Received RegisterUser message, handle not implemented");
+                
+
+            }
+            NetworkMessage::RecoveredInfo(_msg_data) => {
+                self.logger.info("Received RecoverdInfo message, handle not implemented");
+                
+            }
+
+
+
+
             NetworkMessage::RequestNearbyRestaurants(_msg_data) => {
                 self.logger.info("Received RequestNearbyRestaurants message");
                 // Aquí podrías implementar la lógica para manejar la solicitud de restaurantes cercanos

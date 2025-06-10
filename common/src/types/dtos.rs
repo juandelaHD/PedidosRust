@@ -4,15 +4,29 @@ use serde::{Deserialize, Serialize};
 
 use crate::types::delivery_status::DeliveryStatus;
 use crate::types::order_status::OrderStatus;
+use actix::prelude::*;
+
+
+#[derive(Debug, Serialize, Deserialize, Message)]
+#[serde(tag = "type")]
+#[rtype(result = "()")]
+pub enum UserDTO {
+    Client(ClientDTO),
+    Restaurant(RestaurantDTO),
+    Delivery(DeliveryDTO),
+}
+
+
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+
 pub struct ClientDTO {
     /// Posición actual del cliente en coordenadas 2D.
     pub client_position: (f32, f32),
     /// ID único del cliente.
     pub client_id: String,
-    /// Pedido del cliente (id de alimento).
-    pub client_order_id: Option<u64>,
+    /// Pedido del cliente 
+    pub client_order: Option<OrderDTO>,
     /// Marca de tiempo que registra la última actualización del cliente.
     pub time_stamp: std::time::SystemTime,
 }
@@ -41,7 +55,7 @@ pub struct DeliveryDTO {
     /// ID del cliente actual asociado con el delivery (si existe).
     pub current_client_id: Option<String>,
     /// ID de la orden actual.
-    pub current_order_id: Option<u64>,
+    pub current_order: Option<OrderDTO>,
     /// Estado actual del delivery.
     pub status: DeliveryStatus,
     /// Marca de tiempo que registra la última actualización del delivery.

@@ -4,7 +4,7 @@ use std::sync::Arc;
 use tokio::net::TcpStream;
 
 use common::logger::Logger;
-use common::messages::shared_messages::{NetworkMessage, WhoIsLeader, LeaderIs, StartRunning, NewLeaderConnection};
+use common::messages::shared_messages::*;
 use common::network::connections::{connect, connect_to_all};
 use common::network::communicator::Communicator;
 use common::network::peer_types::PeerType;
@@ -13,6 +13,10 @@ use common::network::tcp_sender::TCPSender;
 use common::types::dtos::OrderDTO;
 use common::types::delivery_status::DeliveryStatus;
 use std::collections::HashMap;
+
+use common::types::dtos::UserDTO;
+
+
 
 pub struct Delivery {
     /// Vector de direcciones de servidores
@@ -109,7 +113,7 @@ impl Handler<StartRunning> for Delivery {
     type Result = ();
 
     fn handle(&mut self, _msg: StartRunning, _ctx: &mut Self::Context) {
-        self.logger.info("Starting client...");
+        self.logger.info("Starting delivery...");
         self.send_network_message(
             NetworkMessage::WhoIsLeader(
                 WhoIsLeader {
@@ -172,53 +176,121 @@ impl Handler<LeaderIs> for Delivery {
                     }
                 });
             }
+            println!("Sending msg RegisterUser with ID: {}", self.delivery_id);
+            self.send_network_message(
+                NetworkMessage::RegisterUser(
+                    RegisterUser {
+                        origin_addr: self.my_socket_addr,
+                        user_id: self.delivery_id.clone(),
+                    }
+                )
+            );
+            self.logger.info(format!("Sending msg register user with ID: {}", self.delivery_id));
+
         } else {
             self.logger.error("Communicators map not initialized");
         }
     }
+
 }
+
+
+
+
+
 
 impl Handler<NetworkMessage> for Delivery {
     type Result = ();
     fn handle(&mut self, msg: NetworkMessage, ctx: &mut Self::Context) -> Self::Result {
+
+
+       
+
+
         match msg {
-            NetworkMessage::WhoIsLeader(msg_data) => {
+
+            NetworkMessage::RequestNearbyRestaurants(_msg_data) => {
+                self.logger.info("Received RequestNearbyRestaurants message");
+                // Aquí podrías implementar la lógica para manejar la solicitud de restaurantes cercanos
+            }
+            NetworkMessage::RequestThisOrder(_msg_data) => {
+                self.logger.info("Received RequestThisOrder message");
+                // Aquí podrías implementar la lógica para manejar la solicitud de un pedido específico
+            }
+
+            NetworkMessage::WhoIsLeader(_msg_data) => {
                 self.logger.error("Received a WhoIsLeader message, handle not implemented");
             }
             NetworkMessage::LeaderIs(msg_data) => {
                 ctx.address().do_send(msg_data)
             }
-            NetworkMessage::RequestNewStorageUpdates(msg_data) => {
+            NetworkMessage::RequestNewStorageUpdates(_msg_data) => {
                 self.logger.info(
                     "Received RequestNewStorageUpdates message with start_index:",
                     
                 );
             }
-            NetworkMessage::StorageUpdates(msg_data) => {
+            NetworkMessage::StorageUpdates(_msg_data) => {
                 self.logger.info(
                     "Received StorageUpdates message with updates",
                     );
             }
-            NetworkMessage::RequestAllStorage(msg_data) => {
+            NetworkMessage::RequestAllStorage(_msg_data) => {
                 self.logger.info("Received RequestAllStorage message");
             }
-            NetworkMessage::RecoverStorageOperations(msg_data) => {
+            NetworkMessage::RecoverStorageOperations(_msg_data) => {
                 self.logger.info(
                     "Received RecoverStorageOperations message with {} recover msgs and {} log msgs",
                     
                 );
             }
-            NetworkMessage::LeaderElection(msg_data) => {
+            NetworkMessage::LeaderElection(_msg_data) => {
                 self.logger.info(
                     "Received LeaderElection message with candidates",
                 
                 );
             }
-            NetworkMessage::RequestNearbyRestaurants(_msg_data) => {
-                self.logger.info("Received RequestNearbyRestaurants message");
+            NetworkMessage::RegisterUser(_msg_data) => {
+                self.logger.error("Received a RegisterUser message, handle not implemented");
             }
-            NetworkMessage::RequestThisOrder(_msg_data) => {
-                self.logger.info("Received RequestThisOrder message");
+            NetworkMessage::RecoveredInfo(user_dto_opt) => {
+                match user_dto_opt {
+                    Some(user_dto) => match user_dto {
+                        UserDTO::Delivery(delivery_dto) => {
+                            if delivery_dto.delivery_id == self.delivery_id {
+                                self.logger.info(format!(
+                                    "Recovered info for Delivery ID={}, updating local state...",
+                                    delivery_dto.delivery_id
+                                ));
+
+                                self.position = delivery_dto.delivery_position;
+                                self.status = delivery_dto.status;
+                                self.current_order = delivery_dto.current_order.clone();
+
+                                self.logger.info(format!(
+                                    "Updated position=({:?}), status={:?}, current_order_id={:?}",
+                                    self.position,
+                                    self.status,
+                                    delivery_dto.current_order.as_ref().map(|o| o.order_id),
+                                ));
+                            } else {
+                                self.logger.warn(format!(
+                                    "Received recovered info for a different delivery ({}), ignoring",
+                                    delivery_dto.delivery_id
+                                ));
+                            }
+                        }
+                        other => {
+                            self.logger.warn(format!(
+                                "Received recovered info of type {:?}, but I'm Delivery. Ignoring.",
+                                other
+                            ));
+                        }
+                    },
+                    None => {
+                        self.logger.info("No recovered info found for this Delivery.");
+                    }
+                }
             }
         }
     }

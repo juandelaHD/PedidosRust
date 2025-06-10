@@ -3,6 +3,8 @@ use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, net::SocketAddr};
 use tokio::net::TcpStream;
 use crate::messages::client_messages::*;
+use crate::types::dtos::UserDTO;
+
 use crate::messages::client_messages::*;
 use crate::messages::delivery_messages::*;
 use crate::messages::payment_messages::*;
@@ -22,6 +24,8 @@ pub enum NetworkMessage {
     RequestAllStorage(RequestAllStorage),
     RecoverStorageOperations(RecoverStorageOperations),
     LeaderElection(LeaderElection),
+    RegisterUser(RegisterUser),
+    RecoveredInfo(Option<UserDTO>),
 
     // Client messages
     RequestNearbyRestaurants(RequestNearbyRestaurants),
@@ -89,4 +93,11 @@ pub struct StartRunning;
 pub struct NewLeaderConnection {
     pub addr: SocketAddr,
     pub stream: TcpStream,
+}
+
+#[derive(Serialize, Deserialize, Message)]
+#[rtype(result = "()")]
+pub struct RegisterUser {
+    pub origin_addr: SocketAddr,
+    pub user_id: String,
 }
