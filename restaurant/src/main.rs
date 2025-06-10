@@ -1,5 +1,5 @@
 use actix::prelude::*;
-use common::constants::{self, SUCCESS_PROBABILITY};
+use common::constants::{self, SUCCESS_PROBABILITY, SERVER_IP_ADDRESS, BASE_PORT, NUM_COORDINATORS};
 use common::messages::shared_messages::StartRunning;
 use common::utils::get_rand_f32_tuple;
 use std::env;
@@ -22,9 +22,9 @@ async fn main() -> std::io::Result<()> {
 
     let id = args[1].clone();
 
-    let servers: Vec<SocketAddr> = (0..constants::NUM_COORDINATORS)
+    let servers: Vec<SocketAddr> = (0..NUM_COORDINATORS)
         .map(|i| {
-            format!("127.0.0.1:{}", constants::BASE_PORT + i as u16)
+            format!("{}:{}", SERVER_IP_ADDRESS, BASE_PORT + i as u16)
                 .parse()
                 .expect("Dirección IP inválida")
         })
@@ -37,26 +37,18 @@ async fn main() -> std::io::Result<()> {
         id, position, SUCCESS_PROBABILITY
     );
 
-    // Si querés también inicializar Kitchen acá y pasarle la dirección al Restaurant:
-    // let kitchen = Kitchen::new(...).start();
-
-    // Restaurant necesita la dirección del Kitchen:
-    // let kitchen_addr = todo!("Inicializá Kitchen y obtené su Addr");
-
-    //let kitchen_addr: Option<Addr<Kitchen>> = None;
-
     let restaurant = Restaurant::new(
         servers.clone(),
         id,
         position,
         SUCCESS_PROBABILITY,
-        //kitchen_addr,
+
     )
     .await;
 
     let addr = restaurant.start();
 
-    //addr.do_send(StartRunning);
+    addr.do_send(StartRunning);
 
     tokio::select! {
         _ = ctrl_c() => {
@@ -66,3 +58,4 @@ async fn main() -> std::io::Result<()> {
 
     Ok(())
 }
+

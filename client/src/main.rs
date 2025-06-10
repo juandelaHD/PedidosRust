@@ -10,10 +10,17 @@ use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::signal::ctrl_c;
+use std::env;
 
 #[actix::main]
 async fn main() -> io::Result<()> {
-    let main_logger = Arc::new(Logger::new("Main"));
+    let args: Vec<String> = env::args().collect();
+    if args.len() < 2 {
+        eprintln!("Uso: {} <client_id>", args[0]);
+        std::process::exit(1);
+    }
+
+    let id = args[1].clone();
 
     let servers: Vec<SocketAddr> = (0..NUM_COORDINATORS)
         .map(|i| {
@@ -25,14 +32,13 @@ async fn main() -> io::Result<()> {
 
     let position = get_rand_f32_tuple();
 
-    const ID_DUMMY: &str = "ABCD";
 
     println!(
         "Creando client con ID: {}, posición: {:?}",
-        ID_DUMMY, position
+        id, position
     );
 
-    let client = Client::new(servers.clone(), ID_DUMMY.to_string(), position).await;
+    let client = Client::new(servers.clone(), id, position).await;
     let addr = client.start();
 
     addr.do_send(StartRunning);

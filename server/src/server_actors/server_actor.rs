@@ -9,7 +9,7 @@ use std::sync::Arc;
 use std::{collections::HashMap, net::SocketAddr};
 use tokio::io::{AsyncBufReadExt, BufReader};
 
-use crate::mensajes::m::RegisterConnection;
+use crate::messages::m::RegisterConnection;
 
 #[derive(Debug)]
 pub struct Coordinator {

@@ -1,6 +1,7 @@
 use actix::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, net::SocketAddr};
+use tokio::net::TcpStream;
 
 #[derive(Serialize, Deserialize, Message)]
 #[serde(tag = "type")]
@@ -60,3 +61,10 @@ pub struct LeaderElection {
 #[derive(Message, Debug, Clone, Serialize, Deserialize)]
 #[rtype(result = "()")]
 pub struct StartRunning;
+
+#[derive(Message)]
+#[rtype(result = "()")]
+pub struct NewLeaderConnection {
+    pub addr: SocketAddr,
+    pub stream: TcpStream,
+}

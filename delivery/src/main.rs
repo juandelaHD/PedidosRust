@@ -1,5 +1,5 @@
 use actix::prelude::*;
-use common::constants::{self, SUCCESS_PROBABILITY};
+use common::constants::{self, SUCCESS_PROBABILITY, SERVER_IP_ADDRESS, BASE_PORT, NUM_COORDINATORS};
 use common::messages::shared_messages::StartRunning;
 use common::utils::get_rand_f32_tuple;
 use std::env;
@@ -19,15 +19,16 @@ async fn main() -> std::io::Result<()> {
 
     let id = args[1].clone();
 
-    let servers: Vec<SocketAddr> = (0..constants::NUM_COORDINATORS)
+    let servers: Vec<SocketAddr> = (0..NUM_COORDINATORS)
         .map(|i| {
-            format!("127.0.0.1:{}", constants::BASE_PORT + i as u16)
+            format!("{}:{}", SERVER_IP_ADDRESS, BASE_PORT + i as u16)
                 .parse()
                 .expect("Dirección IP inválida")
         })
         .collect();
 
     let position = get_rand_f32_tuple();
+
 
     println!(
         "Creando delivery con ID: {}, posición: {:?}, éxito?: {}",
@@ -47,11 +48,3 @@ async fn main() -> std::io::Result<()> {
 
     Ok(())
 }
-
-// fn main() {
-//     println!("This is a placeholder for the delivery service main function.");
-//     // Aquí podrías iniciar el actor Delivery o cualquier otra lógica necesaria.
-//     // Por ejemplo, podrías crear una instancia de Delivery y comenzar su actor.
-//     // let delivery = Delivery::new(...);
-//     // delivery.start();
-// }
