@@ -1,7 +1,7 @@
-use actix::Message;
-use serde::{Deserialize, Serialize};
 use crate::types::dtos::OrderDTO;
 use crate::types::restaurant_info::RestaurantInfo;
+use actix::Message;
+use serde::{Deserialize, Serialize};
 
 #[derive(Message, Debug, Clone, Serialize, Deserialize)]
 #[rtype(result = "()")]

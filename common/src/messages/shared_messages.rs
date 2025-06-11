@@ -1,16 +1,16 @@
+use crate::messages::client_messages::*;
+use crate::types::dtos::UserDTO;
 use actix::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 use tokio::net::TcpStream;
-use crate::messages::client_messages::*;
-use crate::types::dtos::UserDTO;
 
 use crate::messages::client_messages::*;
+use crate::messages::coordinator_messages::*;
+use crate::messages::coordinatormanager_messages::*;
 use crate::messages::delivery_messages::*;
 use crate::messages::payment_messages::*;
 use crate::messages::restaurant_messages::*;
-use crate::messages::coordinator_messages::*;
-use crate::messages::coordinatormanager_messages::*;
 
 #[derive(Serialize, Deserialize, Debug, Message)]
 #[serde(tag = "type")]
@@ -18,7 +18,7 @@ use crate::messages::coordinatormanager_messages::*;
 pub enum NetworkMessage {
     // All Users messages
     WhoIsLeader(WhoIsLeader),
-    LeaderIs(LeaderIs),    
+    LeaderIs(LeaderIs),
     RegisterUser(RegisterUser),
     RecoveredInfo(Option<UserDTO>),
 
@@ -31,10 +31,11 @@ pub enum NetworkMessage {
     IAmAvailable(IAmAvailable),
     AcceptOrder(AcceptOrder),
     OrderDelivered(OrderDelivered),
-    
+
     // Payment messages
 
     // Restaurant messages
+    NewOrder(NewOrder),
     UpdateOrderStatus(UpdateOrderStatus),
     CancelOrder(CancelOrder),
     OrderIsPreparing(OrderIsPreparing),

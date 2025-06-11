@@ -13,3 +13,8 @@ pub fn random_bool_by_probability() -> bool {
     let rand_value: f32 = random();
     rand_value < SUCCESS_PROBABILITY
 }
+
+pub fn random_bool_by_given_probability(probability: f32) -> bool {
+    let rand_value: f32 = random();
+    rand_value < probability
+}
