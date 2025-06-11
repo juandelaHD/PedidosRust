@@ -7,10 +7,16 @@ use common::network::communicator::Communicator;
 use std::sync::Arc;
 use std::{collections::HashMap, net::SocketAddr};
 
+use crate::server_actors::coordinator_manager::CoordinatorManager;
+
+
 use crate::messages::internal_messages::RegisterConnection;
 
 #[derive(Debug)]
 pub struct Coordinator {
+    /// Direcciones de todos los nodos en el anillo.
+    pub ring_nodes: Vec<SocketAddr>, 
+
     /// Dirección de este coordinator.
     pub my_addr: SocketAddr,
     /// Coordinador actual.
@@ -34,6 +40,7 @@ pub struct Coordinator {
     // Servicio de deliverys cercanos.
     // pub nearby_delivery_service: Addr<NearbyDeliveryService>,
     pub logger: Arc<Logger>,
+    pub coordinator_manager: Addr<CoordinatorManager>,
 }
 
 impl Actor for Coordinator {
@@ -41,13 +48,28 @@ impl Actor for Coordinator {
 }
 
 impl Coordinator {
-    pub fn new(srv_addr: SocketAddr) -> Addr<Self> {
-        Coordinator::create(move |_ctx| Coordinator {
-            my_addr: srv_addr,
-            current_coordinator: None,
-            communicators: HashMap::new(),
-            user_addresses: HashMap::new(),
-            logger: Arc::new(Logger::new(format!("Coordinator {}", srv_addr))),
+    pub fn new(
+        srv_addr: SocketAddr,
+        ring_nodes: Vec<SocketAddr>,
+        logger: Arc<Logger>,
+    ) -> Addr<Self> {
+        Coordinator::create(move |ctx| {
+            let coordinator_manager = CoordinatorManager::new(
+                srv_addr,
+                ring_nodes.clone(),
+                ctx.address(),
+                logger.clone(),
+            );
+
+            Coordinator {
+                my_addr: srv_addr,
+                ring_nodes,
+                current_coordinator: None,
+                communicators: HashMap::new(),
+                user_addresses: HashMap::new(),
+                logger: logger.clone(),
+                coordinator_manager,
+            }
         })
     }
 }

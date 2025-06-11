@@ -1,7 +1,7 @@
 use actix::Message;
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, os::unix::net::SocketAddr};
-
+use std::{collections::HashMap};
+use std::net::SocketAddr;
 
 #[derive(Serialize, Deserialize, Debug, Message)]
 #[rtype(result = "()")]
@@ -36,5 +36,5 @@ pub struct SetStorageUpdatesLog {
 #[derive(Serialize, Deserialize, Debug, Message)]
 #[rtype(result = "()")]
 pub struct LeaderElection {
-    pub candidates: Vec<String>,
+    pub candidates: Vec<SocketAddr>,
 }

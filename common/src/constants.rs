@@ -5,4 +5,4 @@ pub const BASE_PORT: u16 = 8080;
 pub const TIMEOUT_SECONDS: u64 = 2;
 
 pub const SERVER_IP_ADDRESS: &str = "127.0.0.1";
-pub const SERVER_PORT: &str = "8080";
+

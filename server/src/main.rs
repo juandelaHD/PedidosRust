@@ -1,38 +1,51 @@
 use actix::prelude::*;
-use common::constants::{SERVER_IP_ADDRESS, SERVER_PORT};
+use common::constants::{SERVER_IP_ADDRESS};
+use std::env;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::signal::ctrl_c;
 use common::logger::Logger;
 use server::server_acceptor::acceptor::Acceptor;
 use server::server_actors::server_actor::Coordinator;
+use common::constants::{BASE_PORT, NUM_COORDINATORS};
+
+
 
 #[actix::main]
 async fn main() {
     println!("Server is starting...");
     let main_logger = Arc::new(Logger::new("Main"));
-    let server_addr_res = format!("{}:{}", SERVER_IP_ADDRESS, SERVER_PORT).parse::<SocketAddr>();
 
-    match server_addr_res {
-        Ok(server_addr) => {
-            main_logger.info(format!(
-                "Server address parsed successfully: {}",
-                server_addr
-            ));
-            // Seguir con la inicialización...
-            let coordinator = Coordinator::new(server_addr);
-            let acceptor = Acceptor::new(server_addr, coordinator.clone());
-            acceptor.start();
-        }
-        Err(e) => {
-            main_logger.error(format!("Failed to parse server address: {}", e));
-            // Quizá salir o intentar fallback
-            return;
-        }
-    }
+    // Permitir pasar el puerto como argumento: ejemplo => cargo run -- 8081
+    let args: Vec<String> = env::args().collect();
+    let port = if args.len() > 1 {
+        args[1].parse::<u16>().expect("Invalid port number")
+    } else {
+        BASE_PORT // default a 8080
+    };
 
-    main_logger.info("Starting the delivery service...");
+    let my_addr = format!("{}:{}", SERVER_IP_ADDRESS, port)
+        .parse::<SocketAddr>()
+        .expect("Failed to parse server address");
 
+    main_logger.info(format!("Starting server at: {}", my_addr));
+
+    // Construir la lista completa de ring_nodes
+    let ip = SERVER_IP_ADDRESS.parse().unwrap();
+    let ring_nodes = (0..NUM_COORDINATORS)
+        .map(|i| SocketAddr::new(ip, BASE_PORT + i as u16))
+        .collect::<Vec<_>>();
+
+    // Inicializar Coordinator
+    let coordinator = Coordinator::new(my_addr, ring_nodes.clone(), main_logger.clone());
+    let acceptor = Acceptor::new(my_addr, coordinator.clone());
+
+    // Arrancar Acceptor
+    acceptor.start();
+
+    main_logger.info("Server fully started and ready.");
+
+    // Esperar señal de apagado
     tokio::select! {
         _ = ctrl_c() => {
             println!("Ctrl-C recibido, apagando...");
