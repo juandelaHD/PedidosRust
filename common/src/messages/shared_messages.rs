@@ -12,7 +12,7 @@ use crate::messages::restaurant_messages::*;
 use crate::messages::coordinator_messages::*;
 use crate::messages::coordinatormanager_messages::*;
 
-#[derive(Serialize, Deserialize, Message)]
+#[derive(Serialize, Deserialize, Debug, Message)]
 #[serde(tag = "type")]
 #[rtype(result = "()")]
 pub enum NetworkMessage {
@@ -23,14 +23,14 @@ pub enum NetworkMessage {
     RecoveredInfo(Option<UserDTO>),
 
     // Client messages
-    RequestThisOrder(RequestThisOrder), //
+    RequestThisOrder(RequestThisOrder),
     RequestNearbyRestaurants(RequestNearbyRestaurants),
     OrderFinalized(OrderFinalized),
 
     // Delivery messages
-    IAmAvailable(IAmAvailable), // 
-    AcceptOrder(AcceptOrder), // 
-    OrderDelivered(OrderDelivered), // 
+    IAmAvailable(IAmAvailable),
+    AcceptOrder(AcceptOrder),
+    OrderDelivered(OrderDelivered),
     
     // Payment messages
 
@@ -54,13 +54,13 @@ pub enum NetworkMessage {
     LeaderElection(LeaderElection),
 }
 
-#[derive(Serialize, Deserialize, Message)]
+#[derive(Serialize, Deserialize, Debug, Message)]
 #[rtype(result = "()")]
 pub struct WhoIsLeader {
     pub origin_addr: SocketAddr,
 }
 
-#[derive(Serialize, Deserialize, Message)]
+#[derive(Serialize, Deserialize, Debug, Message)]
 #[rtype(result = "()")]
 pub struct LeaderIs {
     pub coord_addr: SocketAddr,
@@ -78,7 +78,7 @@ pub struct NewLeaderConnection {
     pub stream: TcpStream,
 }
 
-#[derive(Serialize, Deserialize, Message)]
+#[derive(Serialize, Deserialize, Debug, Message)]
 #[rtype(result = "()")]
 pub struct RegisterUser {
     pub origin_addr: SocketAddr,

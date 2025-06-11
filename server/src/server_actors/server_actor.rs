@@ -111,13 +111,7 @@ impl Handler<NetworkMessage> for Coordinator {
                 self.logger.info("Received RegisterUser message, not implemented yet");
             }
 
-
             // Client messages
-            NetworkMessage::NearbyRestaurants(msg_data) => {
-                self.logger.info(format!(
-                    "Received NearbyRestaurants message with {} restaurants",
-                    msg_data.restaurants.len()));
-            }
             NetworkMessage::AuthorizationResult(_msg_data) => {
                 self.logger.info("Received AuthorizationResult message, not implemented yet");
             }
@@ -163,7 +157,7 @@ impl Handler<NetworkMessage> for Coordinator {
                 self.logger.info("Received DeliverThisOrder message, not implemented yet");
             }
 
-            // Coordinator messages
+            // CoordinatorManager messages
             NetworkMessage::RequestNewStorageUpdates(_msg_data) => {
                 self.logger.info("Received RequestNewStorageUpdates message");
             }
@@ -178,6 +172,13 @@ impl Handler<NetworkMessage> for Coordinator {
             }
             NetworkMessage::LeaderElection(_msg_data) => {
                 self.logger.info("Received LeaderElection message");
+            }
+            
+            _ => {
+                self.logger.info(format!(
+                    "NetworkMessage descartado/no implementado: {:?}",
+                    msg
+                ));
             }
         }
     }
