@@ -153,11 +153,6 @@ impl Handler<LeaderIs> for Client {
     fn handle(&mut self, msg: LeaderIs, ctx: &mut Self::Context) -> Self::Result {
         let leader_addr = msg.coord_addr;
 
-        self.logger.info(format!(
-            "Received LeaderIs message with addr: {}",
-            leader_addr
-        ));
-
         // Verificar si ya tenemos un Communicator para el nuevo líder
         if let Some(communicators_map) = &mut self.communicators {
             if communicators_map.contains_key(&leader_addr) {
@@ -237,58 +232,17 @@ impl Handler<SendThisOrder> for Client {
     }
 }
 
-/*
-    // All Users messages
-    WhoIsLeader(WhoIsLeader),
-    LeaderIs(LeaderIs),
-    RegisterUser(RegisterUser),
-    RecoveredInfo(Option<UserDTO>),
-
-    // Client messages
-    RequestThisOrder(RequestThisOrder), //
-    RequestNearbyRestaurants(RequestNearbyRestaurants),
-    OrderFinalized(OrderFinalized),
-
-    // Delivery messages
-    IAmAvailable(IAmAvailable), //
-    AcceptOrder(AcceptOrder), //
-    OrderDelivered(OrderDelivered), //
-
-    // Payment messages
-
-    // Restaurant messages
-    UpdateOrderStatus(UpdateOrderStatus),
-    CancelOrder(CancelOrder),
-    OrderIsPreparing(OrderIsPreparing),
-    RequestDelivery(RequestDelivery),
-    DeliverThisOrder(DeliverThisOrder),
-
-    // Coordinator messages
-    AuthorizationResult(AuthorizationResult),
-    NearbyRestaurants(NearbyRestaurants),
-    NotifyOrderUpdated(NotifyOrderUpdated),
-
-    // CoordinatorManager messages
-    RequestNewStorageUpdates(RequestNewStorageUpdates),
-    StorageUpdates(StorageUpdates),
-    RequestAllStorage(RequestAllStorage),
-    RecoverStorageOperations(RecoverStorageOperations),
-    LeaderElection(LeaderElection),
-*/
-
 impl Handler<NetworkMessage> for Client {
     type Result = ();
     fn handle(&mut self, msg: NetworkMessage, ctx: &mut Self::Context) -> Self::Result {
         match msg {
             // All Users messages
-            NetworkMessage::WhoIsLeader(_msg_data) => {
-                self.logger
-                    .error("Received a WhoIsLeader message, handle not implemented");
-            }
-            NetworkMessage::LeaderIs(msg_data) => ctx.address().do_send(msg_data),
-            NetworkMessage::RegisterUser(_msg_data) => {
-                self.logger
-                    .info("Received RegisterUser message, not implemented yet");
+            NetworkMessage::LeaderIs(msg_data) => {
+                self.logger.info(format!(
+                    "Received LeaderIs message with addr: {}",
+                    msg_data.coord_addr
+                ));
+                ctx.address().do_send(msg_data)
             }
             NetworkMessage::RecoveredInfo(user_dto_opt) => match user_dto_opt {
                 Some(user_dto) => match user_dto {
@@ -332,22 +286,12 @@ impl Handler<NetworkMessage> for Client {
                 self.logger
                     .info("Received AuthorizationResult message, not implemented yet");
             }
-            NetworkMessage::NotifyOrderUpdated(_msg_data) => {
-                self.logger
-                    .info("Received NotifyOrderUpdated message, not implemented yet");
-            }
+            /*
             NetworkMessage::OrderFinalized(_msg_data) => {
                 self.logger
                     .info("Received OrderFinalized message, not implemented yet");
             }
-            NetworkMessage::RequestNearbyRestaurants(_msg_data) => {
-                self.logger
-                    .info("Received RequestNearbyRestaurants message");
-            }
-            NetworkMessage::RequestThisOrder(_msg_data) => {
-                self.logger.info("Received RequestThisOrder message");
-            }
-
+            */
             _ => {
                 self.logger.info(format!(
                     "NetworkMessage descartado/no implementado: {:?}",
