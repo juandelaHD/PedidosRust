@@ -4,7 +4,9 @@ use common::messages::{NetworkMessage, OrderIsPreparing};
 use common::types::dtos::OrderDTO;
 use common::types::order_status::OrderStatus;
 //use common::messages::shared_messages::{NetworkMessage, OrderDTO};
-use crate::messages::kitchen_messages::{AssignToChef, IAmAvailable, SendToKitchen};
+use crate::messages::kitchen_messages::{
+    AssignToChef, IAmAvailable, SendToKitchen, ShareCommunicator,
+};
 use crate::restaurant_actors::chef::Chef;
 use crate::restaurant_actors::restaurant::Restaurant;
 use common::network::communicator::Communicator;
@@ -19,16 +21,20 @@ pub struct Kitchen {
     // Chefs disponibles para preparar pedidos.
     pub chefs_available: VecDeque<Addr<Chef>>,
     // Comunicador asociado al `Server`.
-    pub communicator: Option<Arc<Communicator<Restaurant>>>,
+    pub communicator: Arc<Communicator<Restaurant>>,
     pub logger: Arc<Logger>,
 }
 
 impl Kitchen {
-    pub fn new(logger: Arc<Logger>) -> Self {
+    pub fn new(
+        logger: Arc<Logger>,
+        communicator: Arc<Communicator<Restaurant>>,
+        chefs: Vec<Addr<Chef>>,
+    ) -> Self {
         Kitchen {
             pending_orders: VecDeque::new(),
-            chefs_available: (0..NUMBER_OF_CHEFS).map(|_| Chef.start()).collect(),
-            communicator: None,
+            chefs_available: VecDeque::from(chefs),
+            communicator,
             logger,
         }
     }
@@ -37,7 +43,7 @@ impl Kitchen {
         while let Some(chef) = self.chefs_available.pop_front() {
             if let Some(mut order) = self.pending_orders.pop_front() {
                 order.status = OrderStatus::Preparing;
-                if let Some(sender) = self.communicator.as_ref().and_then(|c| c.sender.as_ref()) {
+                if let Some(sender) = self.communicator.sender.as_ref() {
                     sender.do_send(NetworkMessage::OrderIsPreparing(OrderIsPreparing {
                         order: order.clone(),
                     }));
@@ -48,7 +54,7 @@ impl Kitchen {
                     ));
                 } else {
                     self.logger.error(
-                        "Communicator or its sender is None. Cannot notify order is preparing."
+                        "Communicator sender is None. Cannot notify order is preparing."
                             .to_string(),
                     );
                     self.pending_orders.push_front(order);
@@ -65,6 +71,18 @@ impl Kitchen {
 
 impl Actor for Kitchen {
     type Context = Context<Self>;
+}
+
+impl Handler<ShareCommunicator> for Kitchen {
+    type Result = ();
+
+    fn handle(&mut self, _msg: ShareCommunicator, _ctx: &mut Self::Context) -> Self::Result {
+        // Ya no se usa Option, así que este handler puede quedar vacío o loguear un warning si se llama
+        self.logger.warn(
+            "ShareCommunicator handler called, but communicator is already set at construction."
+                .to_string(),
+        );
+    }
 }
 
 impl Handler<SendToKitchen> for Kitchen {

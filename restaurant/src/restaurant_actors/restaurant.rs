@@ -1,94 +1,62 @@
-use crate::messages::restaurant_messages::SendToKitchen;
+use crate::messages::restaurant_messages::{SendToKitchen, ShareCommunicator};
 use actix::prelude::*;
 use common::logger::Logger;
 use common::messages::{CancelOrder, NewOrder, UpdateOrderStatus, shared_messages::*};
 use common::network::communicator::Communicator;
-use common::network::connections::{connect, connect_to_all};
-use common::network::peer_types::PeerType;
+// use common::network::connections::{connect, connect_to_all};
+// use common::network::peer_types::PeerType;
 use common::types::dtos::{OrderDTO, UserDTO};
 use common::types::order_status::OrderStatus;
+use common::types::restaurant_info::RestaurantInfo;
 use common::utils::random_bool_by_given_probability;
-use std::collections::HashMap;
+// use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use tokio::net::TcpStream;
+// use tokio::net::TcpStream;
 
+use crate::restaurant_actors::delivery_assigner::DeliveryAssigner;
 use crate::restaurant_actors::kitchen::Kitchen;
 // use crate::kitchen::Kitchen;
 
 pub struct Restaurant {
-    /// Vector de direcciones de servidores
-    pub servers: Vec<SocketAddr>,
-    /// Identificador único del restaurante.
-    pub restaurant_id: String,
-    /// Posición actual del restaurante en coordenadas 2D.
-    pub restaurant_position: (f32, f32),
+    /// Información básica del restaurante
+    pub info: RestaurantInfo,
     /// Probabilidad de aceptar o rechazar un pedido.
     pub probability: f32,
     /// Canal de envío hacia la cocina.
     pub kitchen_sender: Addr<Kitchen>,
-    /// Comunicador asociado al Server.
-    pub actual_communicator_addr: Option<SocketAddr>,
-    pub communicators: Option<HashMap<SocketAddr, Communicator<Restaurant>>>,
-    pub pending_streams: HashMap<SocketAddr, TcpStream>, // Guarda el stream hasta que arranque
+    pub delivery_assigner: Addr<DeliveryAssigner>,
+    pub communicator: Arc<Communicator<Restaurant>>,
     pub my_socket_addr: SocketAddr,
     pub logger: Arc<Logger>,
 }
 
 impl Restaurant {
-    pub async fn new(
-        servers: Vec<SocketAddr>,
-        id: String,
-        restaurant_position: (f32, f32),
+    pub fn new(
+        info: RestaurantInfo,
         probability: f32,
+        kitchen_sender: Addr<Kitchen>,
+        delivery_assigner: Addr<DeliveryAssigner>,
+        communicator: Arc<Communicator<Restaurant>>,
+        my_socket_addr: SocketAddr,
+        logger: Arc<Logger>,
     ) -> Self {
-        let pending_streams: HashMap<SocketAddr, TcpStream> = connect_to_all(servers.clone()).await;
-
-        let logger = Arc::new(Logger::new(format!("Restaurant {}", &id)));
-
-        if pending_streams.is_empty() {
-            panic!("Unable to connect to any server.");
-        }
-
-        // Tomamos la primera conexión como referencia para my_socket_addr
-        let my_socket_addr = pending_streams
-            .values()
-            .next()
-            .expect("No stream available")
-            .local_addr()
-            .expect("Failed to get local socket addr");
-
         Self {
-            servers,
-            restaurant_id: id,
-            restaurant_position,
-            probability, // Puedes ajustar la probabilidad según tus necesidades
-            kitchen_sender: Kitchen::new(logger.clone()).start(), // Iniciamos la cocina y pasamos el logger
-            actual_communicator_addr: None, // Podés usarlo para el líder actual
-            communicators: Some(HashMap::new()), // Inicializamos el hashmap vacío para los communicators
-            pending_streams,
+            info,
+            probability,
+            kitchen_sender,
+            delivery_assigner,
+            communicator,
             my_socket_addr,
             logger,
         }
     }
 
     pub fn send_network_message(&self, message: NetworkMessage) {
-        if let (Some(communicators_map), Some(addr)) =
-            (&self.communicators, self.actual_communicator_addr)
-        {
-            if let Some(communicator) = communicators_map.get(&addr) {
-                if let Some(sender) = &communicator.sender {
-                    sender.do_send(message);
-                } else {
-                    self.logger.error("Sender not initialized in communicator");
-                }
-            } else {
-                self.logger
-                    .error(&format!("Communicator not found for addr {}", addr));
-            }
+        if let Some(sender) = self.communicator.sender.as_ref() {
+            sender.do_send(message);
         } else {
-            self.logger
-                .error("Communicators map or actual_communicator_addr not initialized");
+            self.logger.error("Sender not initialized in communicator");
         }
     }
 }
@@ -96,17 +64,9 @@ impl Restaurant {
 impl Actor for Restaurant {
     type Context = Context<Self>;
 
-    fn started(&mut self, ctx: &mut Self::Context) {
-        let mut communicators_map = HashMap::new();
-
-        for (addr, stream) in self.pending_streams.drain() {
-            let communicator = Communicator::new(stream, ctx.address(), PeerType::RestaurantType);
-            communicators_map.insert(addr, communicator);
-            self.actual_communicator_addr = Some(addr);
-            self.logger
-                .info(format!("Communicator started for {}", addr));
-        }
-        self.communicators = Some(communicators_map);
+    fn started(&mut self, _ctx: &mut Self::Context) {
+        // No es necesario inicializar communicator aquí, ya viene inicializado por el constructor
+        // Si querés enviar un mensaje inicial a la kitchen, podés hacerlo aquí
     }
 }
 
@@ -124,83 +84,27 @@ impl Handler<StartRunning> for Restaurant {
 impl Handler<NewLeaderConnection> for Restaurant {
     type Result = ();
 
-    fn handle(&mut self, msg: NewLeaderConnection, ctx: &mut Self::Context) -> Self::Result {
-        self.logger
-            .info(format!("Creating new Communicator for leader {}", msg.addr));
-
-        let communicator = Communicator::new(msg.stream, ctx.address(), PeerType::RestaurantType);
-
-        if let Some(communicators_map) = &mut self.communicators {
-            communicators_map.insert(msg.addr, communicator);
-            self.actual_communicator_addr = Some(msg.addr);
-            self.logger.info(format!(
-                "New leader Communicator established at {}",
-                msg.addr
-            ));
-        } else {
-            self.logger
-                .error("Communicators map not initialized when creating new leader Communicator");
-        }
+    fn handle(&mut self, _msg: NewLeaderConnection, _ctx: &mut Self::Context) -> Self::Result {
+        self.logger.info("Received NewLeaderConnection, but dynamic communicator switching is not supported en este modelo".to_string());
     }
 }
 
 impl Handler<LeaderIs> for Restaurant {
     type Result = ();
 
-    fn handle(&mut self, msg: LeaderIs, ctx: &mut Self::Context) -> Self::Result {
-        let leader_addr = msg.coord_addr;
-
+    fn handle(&mut self, msg: LeaderIs, _ctx: &mut Self::Context) -> Self::Result {
         self.logger.info(format!(
-            "Received LeaderIs message with addr: {}",
-            leader_addr
+            "Received LeaderIs message with addr: {} (ignored, communicator is static)",
+            msg.coord_addr
         ));
-
-        // Verificar si ya tenemos un Communicator para el nuevo líder
-        if let Some(communicators_map) = &mut self.communicators {
-            if communicators_map.contains_key(&leader_addr) {
-                // Ya tenemos conexión con el líder, actualizar
-                self.actual_communicator_addr = Some(leader_addr);
-                self.logger.info(format!(
-                    "Updated actual_communicator_addr to {}",
-                    leader_addr
-                ));
-            } else {
-                // No existe aún, tenemos que crearla (async dentro de sync handler usando spawn)
-                let restaurant_addr = ctx.address();
-                let logger_clone = self.logger.clone();
-
-                actix::spawn(async move {
-                    logger_clone.info(format!("Connecting to new leader at {}", leader_addr));
-                    if let Some(stream) = connect(leader_addr).await {
-                        logger_clone.info(format!(
-                            "Successfully connected to leader at {}",
-                            leader_addr
-                        ));
-
-                        restaurant_addr.do_send(NewLeaderConnection {
-                            addr: leader_addr,
-                            stream,
-                        });
-                    } else {
-                        logger_clone.error(format!(
-                            "Failed to connect to new leader at {}",
-                            leader_addr
-                        ));
-                    }
-                });
-            }
-            println!("Sending msg RegisterUser with ID: {}", self.restaurant_id);
-            self.send_network_message(NetworkMessage::RegisterUser(RegisterUser {
-                origin_addr: self.my_socket_addr,
-                user_id: self.restaurant_id.clone(),
-            }));
-            self.logger.info(format!(
-                "Sending msg register user with ID: {}",
-                self.restaurant_id
-            ));
-        } else {
-            self.logger.error("Communicators map not initialized");
-        }
+        self.send_network_message(NetworkMessage::RegisterUser(RegisterUser {
+            origin_addr: self.my_socket_addr,
+            user_id: self.info.id.clone(),
+        }));
+        self.logger.info(format!(
+            "Sending msg register user with ID: {}",
+            self.info.id
+        ));
     }
 }
 
@@ -222,13 +126,12 @@ impl Handler<NetworkMessage> for Restaurant {
                 match user_dto_opt {
                     Some(user_dto) => match user_dto {
                         UserDTO::Restaurant(restaurant_dto) => {
-                            if restaurant_dto.restaurant_id == self.restaurant_id {
+                            if restaurant_dto.restaurant_id == self.info.id {
                                 self.logger.info(format!(
                                     "Recovered info for Restaurant ID={}, updating local state...",
                                     restaurant_dto.restaurant_id
                                 ));
-
-                                self.restaurant_position = restaurant_dto.restaurant_position;
+                                // Si querés actualizar info, deberías hacerlo con interior mutability o reemplazar el struct
 
                                 ///////////////////////////////////////
                                 //
@@ -299,7 +202,7 @@ impl Handler<NewOrder> for Restaurant {
             .info(format!("Received NewOrder message: {:?}", msg));
         // Aquí podrías implementar la lógica para manejar un nuevo pedido
         // Por ejemplo, enviar un mensaje a la cocina o actualizar el estado del restaurante
-        let new_order: OrderDTO = msg.order;
+        let mut new_order: OrderDTO = msg.order;
         match new_order.status {
             OrderStatus::Pending => {
                 self.logger
@@ -313,7 +216,7 @@ impl Handler<NewOrder> for Restaurant {
                     // Simulamos que el restaurante acepta el pedido
                     self.logger.info(format!(
                         "Restaurant {} accepted order {}",
-                        self.restaurant_id, new_order.order_id
+                        self.info.id, new_order.order_id
                     ));
                     new_order.status = OrderStatus::Pending;
                     self.kitchen_sender
@@ -325,7 +228,7 @@ impl Handler<NewOrder> for Restaurant {
                     // Simulamos que el restaurante rechaza el pedido
                     self.logger.info(format!(
                         "Restaurant {} rejected order {}",
-                        self.restaurant_id, new_order.order_id
+                        self.info.id, new_order.order_id
                     ));
                     new_order.status =
                         OrderStatus::Cancelled("The restaurant rejected the order".to_string());
