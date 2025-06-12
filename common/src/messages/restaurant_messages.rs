@@ -1,8 +1,6 @@
+use crate::types::{dtos::OrderDTO, restaurant_info::RestaurantInfo};
 use actix::Message;
 use serde::{Deserialize, Serialize};
-use crate::types::{dtos::{OrderDTO}, restaurant_info::RestaurantInfo};
-
-
 
 #[derive(Message, Debug, Clone, Serialize, Deserialize)]
 #[rtype(result = "()")]
@@ -33,5 +31,4 @@ pub struct RequestDelivery {
 #[rtype(result = "()")]
 pub struct DeliverThisOrder {
     pub order: OrderDTO,
-    pub restaurant_info: RestaurantInfo,
 }

@@ -1,5 +1,5 @@
 use actix::prelude::*;
-use common::constants::{SUCCESS_PROBABILITY, SERVER_IP_ADDRESS, BASE_PORT, NUM_COORDINATORS};
+use common::constants::{BASE_PORT, NUM_COORDINATORS, SERVER_IP_ADDRESS, SUCCESS_PROBABILITY};
 use common::messages::shared_messages::StartRunning;
 use common::utils::get_rand_f32_tuple;
 use std::env;
@@ -37,14 +37,7 @@ async fn main() -> std::io::Result<()> {
         id, position, SUCCESS_PROBABILITY
     );
 
-    let restaurant = Restaurant::new(
-        servers.clone(),
-        id,
-        position,
-        SUCCESS_PROBABILITY,
-
-    )
-    .await;
+    let restaurant = Restaurant::new(servers.clone(), id, position, SUCCESS_PROBABILITY).await;
 
     let addr = restaurant.start();
 
@@ -58,4 +51,3 @@ async fn main() -> std::io::Result<()> {
 
     Ok(())
 }
-

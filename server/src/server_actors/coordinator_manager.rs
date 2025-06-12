@@ -1,17 +1,16 @@
-use std::{collections::HashMap, net::SocketAddr, time::{Instant, Duration}};
-
+use std::{
+    collections::HashMap,
+    net::SocketAddr,
+    time::{Duration, Instant},
+};
 
 use actix::prelude::*;
 use common::logger::Logger;
-use common::messages::shared_messages::{NetworkMessage};
 use common::messages::coordinatormanager_messages::LeaderElection;
-
+use common::messages::shared_messages::NetworkMessage;
 
 use crate::server_actors::server_actor::Coordinator;
 use std::sync::Arc;
-
-
-
 
 #[derive(Debug)]
 pub struct CoordinatorManager {
@@ -21,7 +20,6 @@ pub struct CoordinatorManager {
     pub coordinator: Option<SocketAddr>,
     /// Timestamps de los últimos heartbeats recibidos por nodo.
     pub heartbeat_timestamps: HashMap<SocketAddr, Instant>,
-
 
     /// Dirección de este servidor.
     pub my_addr: SocketAddr,
@@ -92,9 +90,13 @@ impl CoordinatorManager {
                 candidates: vec![self.my_addr],
             };
 
-            match self.coordinator_addr.try_send(NetworkMessage::LeaderElection(election_msg)) {
+            match self
+                .coordinator_addr
+                .try_send(NetworkMessage::LeaderElection(election_msg))
+            {
                 Ok(()) => {
-                    self.logger.info(format!("Sent LeaderElection to {}", next_node));
+                    self.logger
+                        .info(format!("Sent LeaderElection to {}", next_node));
                 }
                 Err(e) => {
                     self.logger.error(format!(
@@ -128,7 +130,10 @@ impl CoordinatorManager {
             self.coordinator_addr.do_send(message);
         } else {
             // Aquí pondrías la lógica para enviar a otro nodo (ej: vía TCP o algún actor remoto)
-            self.logger.warn(format!("Sending to external node {} no implementado aún", target));
+            self.logger.warn(format!(
+                "Sending to external node {} no implementado aún",
+                target
+            ));
         }
     }
 
@@ -136,7 +141,10 @@ impl CoordinatorManager {
     fn ask_for_leader(&self, ctx: &mut Context<Self>) {
         for node in &self.ring_nodes {
             if *node != self.my_addr {
-                self.send_network_message(*node, NetworkMessage::LeaderElection(LeaderElection { candidates: vec![] }));
+                self.send_network_message(
+                    *node,
+                    NetworkMessage::LeaderElection(LeaderElection { candidates: vec![] }),
+                );
             }
         }
         // Si no recibimos respuesta en X segundos, podemos autoproclamarnos líderes (pendiente de implementar)
@@ -146,9 +154,12 @@ impl CoordinatorManager {
     fn broadcast_leader(&self, ctx: &mut Context<Self>) {
         if let Some(leader) = self.coordinator {
             for node in &self.ring_nodes {
-                self.send_network_message(*node, NetworkMessage::LeaderElection(LeaderElection {
-                    candidates: vec![leader],
-                }));
+                self.send_network_message(
+                    *node,
+                    NetworkMessage::LeaderElection(LeaderElection {
+                        candidates: vec![leader],
+                    }),
+                );
             }
         }
     }
@@ -169,13 +180,17 @@ impl Handler<LeaderElection> for CoordinatorManager {
             // El mensaje dio la vuelta al nodo iniciador, elegir líder
             if let Some(new_leader) = candidates.iter().min() {
                 self.coordinator = Some(*new_leader);
-                self.logger.info(format!("New leader elected: {}", new_leader));
+                self.logger
+                    .info(format!("New leader elected: {}", new_leader));
                 self.broadcast_leader(ctx);
             }
         } else {
             // Reenviar al siguiente nodo en el anillo con la lista actualizada de candidatos
             if let Some(next_node) = self.next_node_in_ring() {
-                self.send_network_message(next_node, NetworkMessage::LeaderElection(LeaderElection { candidates }));
+                self.send_network_message(
+                    next_node,
+                    NetworkMessage::LeaderElection(LeaderElection { candidates }),
+                );
             }
         }
     }

@@ -1,21 +1,20 @@
 use actix::prelude::*;
 use common::logger::Logger;
+use common::messages::shared_messages::LeaderIs;
 use common::messages::shared_messages::NetworkMessage;
 use common::messages::shared_messages::WhoIsLeader;
-use common::messages::shared_messages::LeaderIs;
 use common::network::communicator::Communicator;
 use std::sync::Arc;
 use std::{collections::HashMap, net::SocketAddr};
 
 use crate::server_actors::coordinator_manager::CoordinatorManager;
 
-
 use crate::messages::internal_messages::RegisterConnection;
 
 #[derive(Debug)]
 pub struct Coordinator {
     /// Direcciones de todos los nodos en el anillo.
-    pub ring_nodes: Vec<SocketAddr>, 
+    pub ring_nodes: Vec<SocketAddr>,
 
     /// Dirección de este coordinator.
     pub my_addr: SocketAddr,
@@ -96,28 +95,32 @@ impl Handler<WhoIsLeader> for Coordinator {
         // Enviar un mensaje al líder actual o iniciar una elección de líder
         if let Some(addr) = self.current_coordinator {
             if let Some(sender) = &self.communicators[&msg.origin_addr].sender {
-                sender.do_send(NetworkMessage::LeaderIs(LeaderIs{coord_addr:(addr)}));
+                sender.do_send(NetworkMessage::LeaderIs(LeaderIs { coord_addr: (addr) }));
             } else {
-                self.logger.info(format!("No sender found for {}", msg.origin_addr));
+                self.logger
+                    .info(format!("No sender found for {}", msg.origin_addr));
             }
         } else {
             // TODO: check start election if addr is NONE
-            self.logger.info("No current coordinator available. Check Server Election implementation.");
+            self.logger
+                .info("No current coordinator available. Check Server Election implementation.");
             // TODO: delete this when election is ready
             if let Some(sender) = &self.communicators[&msg.origin_addr].sender {
-                sender.do_send(NetworkMessage::LeaderIs(LeaderIs{coord_addr:(self.my_addr)}));
+                sender.do_send(NetworkMessage::LeaderIs(LeaderIs {
+                    coord_addr: (self.my_addr),
+                }));
             } else {
-                self.logger.info(format!("No sender found for {}", msg.origin_addr));
+                self.logger
+                    .info(format!("No sender found for {}", msg.origin_addr));
             }
         }
     }
 }
 
-
 impl Handler<NetworkMessage> for Coordinator {
     type Result = ();
     fn handle(&mut self, msg: NetworkMessage, ctx: &mut Self::Context) -> Self::Result {
-        match msg {            
+        match msg {
             // All Users messages
             NetworkMessage::WhoIsLeader(msg_data) => {
                 self.logger.info("Received WhoIsLeader message");
@@ -127,24 +130,30 @@ impl Handler<NetworkMessage> for Coordinator {
                 self.logger.info("Received LeaderIs message with addr:");
             }
             NetworkMessage::RegisterUser(_msg_data) => {
-                self.logger.info("Received RegisterUser message, not implemented yet");
+                self.logger
+                    .info("Received RegisterUser message, not implemented yet");
             }
             NetworkMessage::RecoveredInfo(_user_dto_opt) => {
-                self.logger.info("Received RegisterUser message, not implemented yet");
+                self.logger
+                    .info("Received RegisterUser message, not implemented yet");
             }
 
             // Client messages
             NetworkMessage::AuthorizationResult(_msg_data) => {
-                self.logger.info("Received AuthorizationResult message, not implemented yet");
+                self.logger
+                    .info("Received AuthorizationResult message, not implemented yet");
             }
             NetworkMessage::NotifyOrderUpdated(_msg_data) => {
-                self.logger.info("Received NotifyOrderUpdated message, not implemented yet");
+                self.logger
+                    .info("Received NotifyOrderUpdated message, not implemented yet");
             }
             NetworkMessage::OrderFinalized(_msg_data) => {
-                self.logger.info("Received OrderFinalized message, not implemented yet");
+                self.logger
+                    .info("Received OrderFinalized message, not implemented yet");
             }
             NetworkMessage::RequestNearbyRestaurants(_msg_data) => {
-                self.logger.info("Received RequestNearbyRestaurants message");
+                self.logger
+                    .info("Received RequestNearbyRestaurants message");
             }
             NetworkMessage::RequestThisOrder(_msg_data) => {
                 self.logger.info("Received RequestThisOrder message");
@@ -152,36 +161,44 @@ impl Handler<NetworkMessage> for Coordinator {
 
             // Delivery messages
             NetworkMessage::IAmAvailable(_msg_data) => {
-                self.logger.info("Received IAmAvailable message, not implemented yet");
+                self.logger
+                    .info("Received IAmAvailable message, not implemented yet");
             }
             NetworkMessage::AcceptOrder(_msg_data) => {
-                self.logger.info("Received AcceptOrder message, not implemented yet");
+                self.logger
+                    .info("Received AcceptOrder message, not implemented yet");
             }
             NetworkMessage::OrderDelivered(_msg_data) => {
-                self.logger.info("Received OrderDelivered message, not implemented yet");
+                self.logger
+                    .info("Received OrderDelivered message, not implemented yet");
             }
 
-            
             // Restaurant messages
             NetworkMessage::UpdateOrderStatus(_msg_data) => {
-                self.logger.info("Received UpdateOrderStatus message, not implemented yet");
+                self.logger
+                    .info("Received UpdateOrderStatus message, not implemented yet");
             }
             NetworkMessage::CancelOrder(_msg_data) => {
-                self.logger.info("Received CancelOrder message, not implemented yet");
+                self.logger
+                    .info("Received CancelOrder message, not implemented yet");
             }
             NetworkMessage::OrderIsPreparing(_msg_data) => {
-                self.logger.info("Received OrderIsPreparing message, not implemented yet");
+                self.logger
+                    .info("Received OrderIsPreparing message, not implemented yet");
             }
             NetworkMessage::RequestDelivery(_msg_data) => {
-                self.logger.info("Received RequestDelivery message, not implemented yet");
+                self.logger
+                    .info("Received RequestDelivery message, not implemented yet");
             }
             NetworkMessage::DeliverThisOrder(_msg_data) => {
-                self.logger.info("Received DeliverThisOrder message, not implemented yet");
+                self.logger
+                    .info("Received DeliverThisOrder message, not implemented yet");
             }
 
             // CoordinatorManager messages
             NetworkMessage::RequestNewStorageUpdates(_msg_data) => {
-                self.logger.info("Received RequestNewStorageUpdates message");
+                self.logger
+                    .info("Received RequestNewStorageUpdates message");
             }
             NetworkMessage::StorageUpdates(_msg_data) => {
                 self.logger.info("Received StorageUpdates message");
@@ -190,12 +207,13 @@ impl Handler<NetworkMessage> for Coordinator {
                 self.logger.info("Received RequestAllStorage message");
             }
             NetworkMessage::RecoverStorageOperations(_msg_data) => {
-                self.logger.info("Received RecoverStorageOperations message");
+                self.logger
+                    .info("Received RecoverStorageOperations message");
             }
             NetworkMessage::LeaderElection(_msg_data) => {
                 self.logger.info("Received LeaderElection message");
             }
-            
+
             _ => {
                 self.logger.info(format!(
                     "NetworkMessage descartado/no implementado: {:?}",
@@ -205,4 +223,3 @@ impl Handler<NetworkMessage> for Coordinator {
         }
     }
 }
-

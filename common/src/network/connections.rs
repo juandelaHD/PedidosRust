@@ -29,9 +29,3 @@ pub async fn connect(server_addr: SocketAddr) -> Option<TcpStream> {
         Err(_) => None,
     }
 }
-
-
-
-
-
-

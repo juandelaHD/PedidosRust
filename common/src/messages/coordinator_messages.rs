@@ -1,7 +1,7 @@
-use actix::Message;
-use serde::{Deserialize, Serialize};
 use crate::types::dtos::OrderDTO;
 use crate::types::restaurant_info::RestaurantInfo;
+use actix::Message;
+use serde::{Deserialize, Serialize};
 
 #[derive(Message, Debug, Clone, Serialize, Deserialize)]
 #[rtype(result = "()")]
@@ -30,5 +30,17 @@ pub struct NewOrder {
 #[derive(Message, Debug, Clone, Serialize, Deserialize)]
 #[rtype(result = "()")]
 pub struct DeliveryAvailable {
+    pub order: OrderDTO,
+}
+
+#[derive(Message, Debug, Clone, Serialize, Deserialize)]
+#[rtype(result = "()")]
+pub struct NewOfferToDeliver {
+    pub order: OrderDTO,
+}
+
+#[derive(Message, Debug, Clone, Serialize, Deserialize)]
+#[rtype(result = "()")]
+pub struct DeliveryNoNeeded {
     pub order: OrderDTO,
 }

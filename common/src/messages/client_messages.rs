@@ -1,6 +1,6 @@
+use crate::types::dtos::{ClientDTO, OrderDTO};
 use actix::Message;
 use serde::{Deserialize, Serialize};
-use crate::types::dtos::{ClientDTO, OrderDTO};
 
 #[derive(Message, Debug, Clone, Serialize, Deserialize)]
 #[rtype(result = "()")]

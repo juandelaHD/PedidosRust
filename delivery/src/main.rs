@@ -1,11 +1,10 @@
 use actix::prelude::*;
-use common::constants::{SUCCESS_PROBABILITY, SERVER_IP_ADDRESS, BASE_PORT, NUM_COORDINATORS};
+use common::constants::{BASE_PORT, NUM_COORDINATORS, SERVER_IP_ADDRESS, SUCCESS_PROBABILITY};
 use common::messages::shared_messages::StartRunning;
 use common::utils::get_rand_f32_tuple;
+use delivery::delivery_actors::delivery::Delivery;
 use std::env;
 use std::net::SocketAddr;
-mod delivery;
-use delivery::Delivery;
 
 use tokio::signal::ctrl_c;
 
@@ -28,12 +27,6 @@ async fn main() -> std::io::Result<()> {
         .collect();
 
     let position = get_rand_f32_tuple();
-
-
-    println!(
-        "Creando delivery con ID: {}, posición: {:?}, éxito?: {}",
-        id, position, SUCCESS_PROBABILITY
-    );
 
     let delivery = Delivery::new(servers.clone(), id, position, SUCCESS_PROBABILITY).await;
     let addr = delivery.start();

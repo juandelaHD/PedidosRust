@@ -1,15 +1,13 @@
 use actix::prelude::*;
-use common::constants::{SERVER_IP_ADDRESS};
+use common::constants::SERVER_IP_ADDRESS;
+use common::constants::{BASE_PORT, NUM_COORDINATORS};
+use common::logger::Logger;
+use server::server_acceptor::acceptor::Acceptor;
+use server::server_actors::server_actor::Coordinator;
 use std::env;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::signal::ctrl_c;
-use common::logger::Logger;
-use server::server_acceptor::acceptor::Acceptor;
-use server::server_actors::server_actor::Coordinator;
-use common::constants::{BASE_PORT, NUM_COORDINATORS};
-
-
 
 #[actix::main]
 async fn main() {

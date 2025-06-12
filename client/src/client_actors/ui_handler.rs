@@ -1,10 +1,9 @@
-use std::io::{self, Write};
 use crate::client_actors::client::Client;
 use crate::messages::internal_messages::{SelectNearbyRestaurants, SendThisOrder};
-use common::logger::Logger;
 use actix::prelude::*;
+use common::logger::Logger;
 use common::types::restaurant_info::RestaurantInfo;
-
+use std::io::{self, Write};
 
 /// Actor UIHandler: Interfaz humano-sistema
 pub struct UIHandler {
@@ -15,17 +14,23 @@ pub struct UIHandler {
 
 impl UIHandler {
     pub fn new(client: Addr<Client>, logger: Logger) -> Self {
-        UIHandler {
-            client,
-            logger,
-        }
+        UIHandler { client, logger }
     }
-    fn ask_user_order(&self, _ctx: &mut Context<Self>, possible_restaurants: Vec<RestaurantInfo>) -> (String, String) {
+    fn ask_user_order(
+        &self,
+        _ctx: &mut Context<Self>,
+        possible_restaurants: Vec<RestaurantInfo>,
+    ) -> (String, String) {
         // Simula la interacción con el usuario para seleccionar un restaurante y un plato
         self.logger.info("Por favor, seleccione un restaurante:");
 
         for (i, restaurant) in possible_restaurants.iter().enumerate() {
-            self.logger.info(format!("{}: {} - {}", i + 1, restaurant.name, restaurant.id));
+            self.logger.info(format!(
+                "{}: {} - {}",
+                i + 1,
+                restaurant.name,
+                restaurant.id
+            ));
         }
 
         // Selección de restaurante válida
@@ -41,12 +46,18 @@ impl UIHandler {
 
             match input.trim().parse::<usize>() {
                 Ok(num) if num >= 1 && num <= possible_restaurants.len() => break num - 1,
-                _ => println!("Por favor ingrese un número válido entre 1 y {}", possible_restaurants.len()),
+                _ => println!(
+                    "Por favor ingrese un número válido entre 1 y {}",
+                    possible_restaurants.len()
+                ),
             }
         };
 
         let selected_restaurant = &possible_restaurants[selected_index];
-        println!("Seleccionó: {} (ID: {})", selected_restaurant.name, selected_restaurant.id);
+        println!(
+            "Seleccionó: {} (ID: {})",
+            selected_restaurant.name, selected_restaurant.id
+        );
 
         // Ingreso del nombre del plato
         let dish_name = loop {
@@ -71,7 +82,6 @@ impl UIHandler {
         // Retorna el restaurante seleccionado y el plato
         (selected_restaurant.id.clone(), dish_name)
     }
-    
 }
 
 impl Actor for UIHandler {
@@ -86,9 +96,13 @@ impl Handler<SelectNearbyRestaurants> for UIHandler {
     type Result = ();
 
     fn handle(&mut self, msg: SelectNearbyRestaurants, ctx: &mut Self::Context) {
-        self.logger.info(format!("Seleccionando restaurantes cercanos: {:?}", msg.nearby_restaurants));
+        self.logger.info(format!(
+            "Seleccionando restaurantes cercanos: {:?}",
+            msg.nearby_restaurants
+        ));
         if msg.nearby_restaurants.is_empty() {
-            self.logger.warn("No hay restaurantes cercanos disponibles.");
+            self.logger
+                .warn("No hay restaurantes cercanos disponibles.");
             // TODO: Handlear el caso de no tener restaurantes cercanos
             return;
         }

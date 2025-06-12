@@ -6,7 +6,6 @@ use crate::types::delivery_status::DeliveryStatus;
 use crate::types::order_status::OrderStatus;
 use actix::prelude::*;
 
-
 #[derive(Debug, Serialize, Deserialize, Message)]
 #[serde(tag = "type")]
 #[rtype(result = "()")]
@@ -16,8 +15,6 @@ pub enum UserDTO {
     Delivery(DeliveryDTO),
 }
 
-
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 
 pub struct ClientDTO {
@@ -25,7 +22,7 @@ pub struct ClientDTO {
     pub client_position: (f32, f32),
     /// ID único del cliente.
     pub client_id: String,
-    /// Pedido del cliente 
+    /// Pedido del cliente
     pub client_order: Option<OrderDTO>,
     /// Marca de tiempo que registra la última actualización del cliente.
     pub time_stamp: std::time::SystemTime,

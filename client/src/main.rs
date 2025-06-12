@@ -3,10 +3,10 @@ use client::client_actors::client::Client;
 use common::constants::{BASE_PORT, NUM_COORDINATORS, SERVER_IP_ADDRESS};
 use common::messages::shared_messages::StartRunning;
 use common::utils::get_rand_f32_tuple;
+use std::env;
 use std::io::{self};
 use std::net::SocketAddr;
 use tokio::signal::ctrl_c;
-use std::env;
 
 #[actix::main]
 async fn main() -> io::Result<()> {
@@ -28,11 +28,7 @@ async fn main() -> io::Result<()> {
 
     let position = get_rand_f32_tuple();
 
-
-    println!(
-        "Creando client con ID: {}, posición: {:?}",
-        id, position
-    );
+    println!("Creando client con ID: {}, posición: {:?}", id, position);
 
     let client = Client::new(servers.clone(), id, position).await;
     let addr = client.start();

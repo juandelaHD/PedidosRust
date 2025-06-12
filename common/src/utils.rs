@@ -13,3 +13,9 @@ pub fn random_bool_by_probability() -> bool {
     let rand_value: f32 = random();
     rand_value < SUCCESS_PROBABILITY
 }
+
+pub fn calculate_distance(point1: (f32, f32), point2: (f32, f32)) -> f32 {
+    let dx = (point1.0 - point2.0).abs();
+    let dy = (point1.1 - point2.1).abs();
+    dx + dy
+}

@@ -1,6 +1,6 @@
 use actix::Message;
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap};
+use std::collections::HashMap;
 use std::net::SocketAddr;
 
 #[derive(Serialize, Deserialize, Debug, Message)]
