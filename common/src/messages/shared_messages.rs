@@ -20,7 +20,8 @@ pub enum NetworkMessage {
     WhoIsLeader(WhoIsLeader),
     LeaderIs(LeaderIs),
     RegisterUser(RegisterUser),
-    RecoveredInfo(Option<UserDTO>),
+    RecoveredInfo(UserDTO),
+    NoRecoveredInfo,
 
     // Client messages
     RequestThisOrder(RequestThisOrder),
@@ -62,6 +63,7 @@ pub enum NetworkMessage {
 #[rtype(result = "()")]
 pub struct WhoIsLeader {
     pub origin_addr: SocketAddr,
+    pub user_id: String,
 }
 
 #[derive(Serialize, Deserialize, Debug, Message)]
@@ -87,4 +89,10 @@ pub struct NewLeaderConnection {
 pub struct RegisterUser {
     pub origin_addr: SocketAddr,
     pub user_id: String,
+}
+
+#[derive(Message, Debug, Clone, Serialize, Deserialize)]
+#[rtype(result = "()")]
+pub struct RecoverProcedure {
+    pub user_info: UserDTO,
 }

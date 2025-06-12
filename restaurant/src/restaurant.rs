@@ -110,6 +110,7 @@ impl Handler<StartRunning> for Restaurant {
         self.logger.info("Starting restaurant...");
         self.send_network_message(NetworkMessage::WhoIsLeader(WhoIsLeader {
             origin_addr: self.my_socket_addr,
+            user_id: self.restaurant_id.clone(),
         }));
     }
 }
@@ -211,41 +212,35 @@ impl Handler<NetworkMessage> for Restaurant {
                 self.logger
                     .info("Received RegisterUser message, not implemented yet");
             }
-            NetworkMessage::RecoveredInfo(user_dto_opt) => {
-                match user_dto_opt {
-                    Some(user_dto) => match user_dto {
-                        UserDTO::Restaurant(restaurant_dto) => {
-                            if restaurant_dto.restaurant_id == self.restaurant_id {
-                                self.logger.info(format!(
-                                    "Recovered info for Restaurant ID={}, updating local state...",
-                                    restaurant_dto.restaurant_id
-                                ));
+            NetworkMessage::RecoveredInfo(user_dto) => {
+                match user_dto {
+                    UserDTO::Restaurant(restaurant_dto) => {
+                        if restaurant_dto.restaurant_id == self.restaurant_id {
+                            self.logger.info(format!(
+                                "Recovered info for Restaurant ID={}, updating local state...",
+                                restaurant_dto.restaurant_id
+                            ));
 
-                                self.restaurant_position = restaurant_dto.restaurant_position;
+                            self.restaurant_position = restaurant_dto.restaurant_position;
 
-                                ///////////////////////////////////////
-                                //
-                                //
-                                // ACA FALTA RESETEAR LOS PEDIDOS PENDIENTES Y AUTORIZADOS
-                                //
-                                //////////////////////////////////////
-                            } else {
-                                self.logger.warn(format!(
-                                    "Received recovered info for a different delivery ({}), ignoring",
-                                    restaurant_dto.restaurant_id
-                                ));
-                            }
-                        }
-                        other => {
+                            ///////////////////////////////////////
+                            //
+                            //
+                            // ACA FALTA RESETEAR LOS PEDIDOS PENDIENTES Y AUTORIZADOS
+                            //
+                            //////////////////////////////////////
+                        } else {
                             self.logger.warn(format!(
-                                "Received recovered info of type {:?}, but I'm Delivery. Ignoring.",
-                                other
+                                "Received recovered info for a different delivery ({}), ignoring",
+                                restaurant_dto.restaurant_id
                             ));
                         }
-                    },
-                    None => {
-                        self.logger
-                            .info("No recovered info found for this Delivery.");
+                    }
+                    other => {
+                        self.logger.warn(format!(
+                            "Received recovered info of type {:?}, but I'm Delivery. Ignoring.",
+                            other
+                        ));
                     }
                 }
             }

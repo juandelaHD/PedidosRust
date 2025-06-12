@@ -6,7 +6,7 @@ use crate::types::delivery_status::DeliveryStatus;
 use crate::types::order_status::OrderStatus;
 use actix::prelude::*;
 
-#[derive(Debug, Serialize, Deserialize, Message)]
+#[derive(Debug, Serialize, Deserialize, Message, Clone)]
 #[serde(tag = "type")]
 #[rtype(result = "()")]
 pub enum UserDTO {

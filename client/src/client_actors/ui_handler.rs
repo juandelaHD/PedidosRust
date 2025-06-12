@@ -3,6 +3,7 @@ use crate::messages::internal_messages::{SelectNearbyRestaurants, SendThisOrder}
 use actix::prelude::*;
 use common::logger::Logger;
 use common::types::restaurant_info::RestaurantInfo;
+use core::panic;
 use std::io::{self, Write};
 
 /// Actor UIHandler: Interfaz humano-sistema
@@ -16,57 +17,55 @@ impl UIHandler {
     pub fn new(client: Addr<Client>, logger: Logger) -> Self {
         UIHandler { client, logger }
     }
+
     fn ask_user_order(
         &self,
         _ctx: &mut Context<Self>,
         possible_restaurants: Vec<RestaurantInfo>,
     ) -> (String, String) {
-        // Simula la interacción con el usuario para seleccionar un restaurante y un plato
-        self.logger.info("Por favor, seleccione un restaurante:");
-
         for (i, restaurant) in possible_restaurants.iter().enumerate() {
-            self.logger.info(format!(
-                "{}: {} - {}",
-                i + 1,
-                restaurant.name,
-                restaurant.id
-            ));
+            self.logger.info(format!("{}: {}", i + 1, restaurant.id));
         }
 
         // Selección de restaurante válida
         let selected_index = loop {
-            print!("Ingrese el número del restaurante deseado: ");
+            self.logger.info("Select a restaurant by number:");
             io::stdout().flush().unwrap();
 
             let mut input = String::new();
             if let Err(e) = io::stdin().read_line(&mut input) {
-                println!("Error leyendo entrada: {}", e);
+                self.logger.error(format!(
+                    "Error leyendo entrada: {}. Por favor, inténtelo de nuevo.",
+                    e
+                ));
                 continue;
             }
 
             match input.trim().parse::<usize>() {
                 Ok(num) if num >= 1 && num <= possible_restaurants.len() => break num - 1,
-                _ => println!(
-                    "Por favor ingrese un número válido entre 1 y {}",
-                    possible_restaurants.len()
-                ),
+                _ => {
+                    self.logger.warn(
+                        "Invalid selection. Please enter a number corresponding to a restaurant.",
+                    );
+                    continue;
+                }
             }
         };
 
         let selected_restaurant = &possible_restaurants[selected_index];
-        println!(
-            "Seleccionó: {} (ID: {})",
-            selected_restaurant.name, selected_restaurant.id
-        );
 
         // Ingreso del nombre del plato
         let dish_name = loop {
-            print!("Ingrese el nombre del plato que desea pedir: ");
+            self.logger
+                .info("Please enter the name of the dish you want to order:");
             io::stdout().flush().unwrap();
 
             let mut dish_input = String::new();
             if let Err(e) = io::stdin().read_line(&mut dish_input) {
-                println!("Error leyendo entrada: {}", e);
+                self.logger.error(format!(
+                    "Error while reading dish input: {}. Please try again.",
+                    e
+                ));
                 continue;
             }
 
@@ -74,11 +73,16 @@ impl UIHandler {
             if !dish.is_empty() {
                 break dish.to_string();
             } else {
-                println!("El nombre del plato no puede estar vacío.");
+                self.logger
+                    .warn("Dish name cannot be empty. Please enter a valid dish name.");
+                continue;
             }
         };
 
-        println!("Ha seleccionado el plato: {}", dish_name);
+        self.logger.info(format!(
+            "You selected restaurant: {} and dish: {}",
+            selected_restaurant.id, dish_name
+        ));
         // Retorna el restaurante seleccionado y el plato
         (selected_restaurant.id.clone(), dish_name)
     }
@@ -96,16 +100,13 @@ impl Handler<SelectNearbyRestaurants> for UIHandler {
     type Result = ();
 
     fn handle(&mut self, msg: SelectNearbyRestaurants, ctx: &mut Self::Context) {
+        if msg.nearby_restaurants.is_empty() {
+            panic!("No nearby restaurants found. Please try again later.");
+        }
         self.logger.info(format!(
-            "Seleccionando restaurantes cercanos: {:?}",
+            "Selecting nearby restaurants: {:?}",
             msg.nearby_restaurants
         ));
-        if msg.nearby_restaurants.is_empty() {
-            self.logger
-                .warn("No hay restaurantes cercanos disponibles.");
-            // TODO: Handlear el caso de no tener restaurantes cercanos
-            return;
-        }
         // Llama a la función para pedir al usuario que seleccione un restaurante y un plato
         let (restaurant_id, dish_name) = self.ask_user_order(ctx, msg.nearby_restaurants);
         // Envía el pedido al actor Client

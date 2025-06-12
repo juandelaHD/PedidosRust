@@ -2,16 +2,17 @@ use crate::client_actors::ui_handler::UIHandler;
 use crate::messages::internal_messages::*;
 use actix::prelude::*;
 use common::logger::Logger;
+use common::messages::NearbyRestaurants;
 use common::messages::client_messages::*;
 use common::messages::shared_messages::*;
 use common::network::communicator::Communicator;
 use common::network::connections::{connect, connect_to_all};
 use common::network::peer_types::PeerType;
+use common::types::dtos::ClientDTO;
 use common::types::dtos::OrderDTO;
 use common::types::order_status::OrderStatus;
 use rand::Rng;
 use std::collections::HashMap;
-use std::fmt::format;
 use std::net::SocketAddr;
 use tokio::net::TcpStream;
 
@@ -22,8 +23,6 @@ pub struct Client {
     pub servers: Vec<SocketAddr>,
     /// Identificador único del comensal.
     pub client_id: String,
-    /// Estado actual del pedido (si hay uno en curso).
-    pub order_status: Option<OrderStatus>,
     /// Posición actual del cliente en coordenadas 2D.
     pub client_position: (f32, f32),
     /// Restaurante elegido para el pedido.
@@ -61,7 +60,6 @@ impl Client {
         Self {
             servers,
             client_id: id,
-            order_status: None, // Inicializamos el estado del pedido como None
             client_position,
             client_order: None,             // Inicializamos el pedido como None
             ui_handler: None, // Inicializamos el canal de envío hacia UIHandler como None
@@ -120,6 +118,7 @@ impl Handler<StartRunning> for Client {
         self.logger.info("Starting client...");
         self.send_network_message(NetworkMessage::WhoIsLeader(WhoIsLeader {
             origin_addr: self.my_socket_addr,
+            user_id: self.client_id.clone(),
         }));
     }
 }
@@ -143,6 +142,72 @@ impl Handler<NewLeaderConnection> for Client {
         } else {
             self.logger
                 .error("Communicators map not initialized when creating new leader Communicator");
+        }
+    }
+}
+
+// RecoverProcedure
+impl Handler<RecoverProcedure> for Client {
+    type Result = ();
+
+    fn handle(&mut self, msg: RecoverProcedure, _ctx: &mut Self::Context) -> Self::Result {
+        match msg.user_info {
+            UserDTO::Client(client_dto) => {
+                if client_dto.client_id == self.client_id {
+                    self.logger.info(format!(
+                        "Recovering info for Client ID={}, updating local state...",
+                        client_dto.client_id
+                    ));
+                    self.client_position = client_dto.client_position;
+                    self.client_order = client_dto.client_order;
+
+                    // Si tengo una orden activa, chequeo su estado
+                    if let Some(client_dto) = &self.client_order {
+                        self.logger.info(format!(
+                            "Client ID={} tiene una orden activa con estado: {}",
+                            client_dto.client_id, client_dto.status
+                        ));
+
+                        // Imprime los posibles estados del pedido
+                        match client_dto.status {
+                            OrderStatus::Cancelled => {
+                                panic!("{}", client_dto.status)
+                            }
+                            _ => {
+                                self.logger.info(format!("Estado: {}", client_dto.status));
+                            }
+                        }
+                    } else {
+                        // Si no tengo una orden activa, informo y solicito restaurantes cercanos
+                        self.logger.info(format!(
+                            "Client ID={} no tiene orden activa.",
+                            self.client_id
+                        ));
+                        let new_client_dto = ClientDTO {
+                            client_position: self.client_position,
+                            client_id: self.client_id.clone(),
+                            client_order: None, // No hay orden activa
+                            time_stamp: std::time::SystemTime::now(),
+                        };
+                        self.send_network_message(NetworkMessage::RequestNearbyRestaurants(
+                            RequestNearbyRestaurants {
+                                client: new_client_dto.clone(),
+                            },
+                        ));
+                    }
+                } else {
+                    self.logger.warn(format!(
+                        "Received recovered info for a different client ({}), ignoring",
+                        client_dto.client_id
+                    ));
+                }
+            }
+            other => {
+                self.logger.warn(format!(
+                    "Received recovered info of type {:?}, but I'm Client. Ignoring.",
+                    other
+                ));
+            }
         }
     }
 }
@@ -187,16 +252,14 @@ impl Handler<LeaderIs> for Client {
                     }
                 });
             }
-
-            println!("Sending msg RegisterUser with ID: {}", self.client_id);
-            self.send_network_message(NetworkMessage::RegisterUser(RegisterUser {
-                origin_addr: self.my_socket_addr,
-                user_id: self.client_id.clone(),
-            }));
             self.logger.info(format!(
                 "Sending msg register user with ID: {}",
                 self.client_id
             ));
+            self.send_network_message(NetworkMessage::RegisterUser(RegisterUser {
+                origin_addr: self.my_socket_addr,
+                user_id: self.client_id.clone(),
+            }));
         } else {
             self.logger.error("Communicators map not initialized");
         }
@@ -232,6 +295,24 @@ impl Handler<SendThisOrder> for Client {
     }
 }
 
+impl Handler<NearbyRestaurants> for Client {
+    type Result = ();
+
+    fn handle(&mut self, msg: NearbyRestaurants, _ctx: &mut Self::Context) -> Self::Result {
+        self.logger.info(format!(
+            "Received NearbyRestaurants with {} restaurants",
+            msg.restaurants.len()
+        ));
+        if let Some(ui_handler) = &self.ui_handler {
+            ui_handler.do_send(SelectNearbyRestaurants {
+                nearby_restaurants: msg.restaurants,
+            });
+        } else {
+            self.logger.error("UIHandler not initialized");
+        }
+    }
+}
+
 impl Handler<NetworkMessage> for Client {
     type Result = ();
     fn handle(&mut self, msg: NetworkMessage, ctx: &mut Self::Context) -> Self::Result {
@@ -244,36 +325,46 @@ impl Handler<NetworkMessage> for Client {
                 ));
                 ctx.address().do_send(msg_data)
             }
-            NetworkMessage::RecoveredInfo(user_dto_opt) => match user_dto_opt {
-                Some(user_dto) => match user_dto {
-                    UserDTO::Client(client_dto) => {
-                        if client_dto.client_id == self.client_id {
-                            self.logger.info(format!(
-                                "Recovered info for Client ID={}, updating local state...",
-                                client_dto.client_id
-                            ));
-
-                            self.client_position = client_dto.client_position;
-                            self.client_order = client_dto.client_order;
-                        } else {
-                            self.logger.warn(format!(
-                                "Received recovered info for a different delivery ({}), ignoring",
-                                client_dto.client_id
-                            ));
-                        }
-                    }
-                    other => {
+            NetworkMessage::RecoveredInfo(user_dto) => match user_dto {
+                UserDTO::Client(client_dto) => {
+                    if client_dto.client_id == self.client_id {
+                        self.logger.info(format!(
+                            "Recovered info for Client ID={}, updating local state...",
+                            client_dto.client_id
+                        ));
+                        ctx.address().do_send(RecoverProcedure {
+                            user_info: UserDTO::Client(client_dto.clone()),
+                        });
+                    } else {
                         self.logger.warn(format!(
-                            "Received recovered info of type {:?}, but I'm Delivery. Ignoring.",
-                            other
+                            "Received recovered info for a different delivery ({}), ignoring",
+                            client_dto.client_id
                         ));
                     }
-                },
-                None => {
-                    self.logger
-                        .info("No recovered info found for this Delivery.");
+                }
+                other => {
+                    self.logger.warn(format!(
+                        "Received recovered info of type {:?}, but I'm Delivery. Ignoring.",
+                        other
+                    ));
                 }
             },
+            NetworkMessage::NoRecoveredInfo => {
+                self.logger
+                    .info("No recovered info received, proceeding with normal flow");
+                // Aquí podrías enviar un mensaje para solicitar restaurantes cercanos
+                let new_client_dto = ClientDTO {
+                    client_position: self.client_position,
+                    client_id: self.client_id.clone(),
+                    client_order: None, // No hay orden activa
+                    time_stamp: std::time::SystemTime::now(),
+                };
+                self.send_network_message(NetworkMessage::RequestNearbyRestaurants(
+                    RequestNearbyRestaurants {
+                        client: new_client_dto,
+                    },
+                ));
+            }
 
             // Client messages
             NetworkMessage::NearbyRestaurants(msg_data) => {
@@ -281,6 +372,7 @@ impl Handler<NetworkMessage> for Client {
                     "Received NearbyRestaurants message with {} restaurants",
                     msg_data.restaurants.len()
                 ));
+                ctx.address().do_send(msg_data);
             }
             NetworkMessage::AuthorizationResult(_msg_data) => {
                 self.logger

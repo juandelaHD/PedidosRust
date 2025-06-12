@@ -1,4 +1,3 @@
-use crate::messages::internal_messages::RecoverProcedure;
 use actix::prelude::*;
 use common::constants::BASE_DELAY_MILLIS;
 use common::logger::Logger;
@@ -121,6 +120,7 @@ impl Handler<StartRunning> for Delivery {
         self.status = DeliveryStatus::Reconnecting;
         self.send_network_message(NetworkMessage::WhoIsLeader(WhoIsLeader {
             origin_addr: self.my_socket_addr,
+            user_id: self.delivery_id.clone(),
         }));
     }
 }
@@ -212,7 +212,14 @@ impl Handler<RecoverProcedure> for Delivery {
             "Handling RecoverProcedure for Delivery ID={}",
             self.delivery_id
         ));
-        let delivery_dto = msg.delivery_info;
+        let delivery_dto = match msg.user_info {
+            UserDTO::Delivery(delivery_dto) => delivery_dto,
+            _ => {
+                self.logger
+                    .error("RecoverProcedure: user_info no es DeliveryDTO");
+                return;
+            }
+        };
         let order_dto = delivery_dto.current_order.clone();
 
         // Actualizar el estado del delivery con la información recuperada
@@ -239,6 +246,7 @@ impl Handler<RecoverProcedure> for Delivery {
                     .info("Delivery is in Reconnecting state, sending WhoIsLeader");
                 self.send_network_message(NetworkMessage::WhoIsLeader(WhoIsLeader {
                     origin_addr: self.my_socket_addr,
+                    user_id: self.delivery_id.clone(),
                 }));
             }
             /*
@@ -260,20 +268,16 @@ impl Handler<RecoverProcedure> for Delivery {
                         "Delivery is WaitingConfirmation for order {}",
                         order.order_id
                     ));
-                    if self.current_order.is_none() {
-                        self.logger
-                            .warn("No current order available while in WaitingConfirmation state.");
-                        self.status = DeliveryStatus::Available;
-                        self.send_network_message(NetworkMessage::IAmAvailable(IAmAvailable {
-                            delivery_info: delivery_dto.clone(),
-                        }));
-                    }
                     self.send_network_message(NetworkMessage::AcceptOrder(AcceptOrder {
                         order: order.clone(),
                     }));
                 } else {
                     self.logger
                         .warn("No current order available while in WaitingConfirmation state.");
+                    self.status = DeliveryStatus::Available;
+                    self.send_network_message(NetworkMessage::IAmAvailable(IAmAvailable {
+                        delivery_info: delivery_dto.clone(),
+                    }));
                 }
             }
             DeliveryStatus::Delivering => {
@@ -459,7 +463,7 @@ impl Handler<NetworkMessage> for Delivery {
             // Users messages
             NetworkMessage::LeaderIs(msg_data) => ctx.address().do_send(msg_data),
             NetworkMessage::RecoveredInfo(user_dto_opt) => match user_dto_opt {
-                Some(user_dto) => match user_dto {
+                user_dto => match user_dto {
                     UserDTO::Delivery(delivery_dto) => {
                         if delivery_dto.delivery_id == self.delivery_id {
                             self.logger.info(format!(
@@ -467,7 +471,7 @@ impl Handler<NetworkMessage> for Delivery {
                                 delivery_dto.delivery_id
                             ));
                             ctx.address().do_send(RecoverProcedure {
-                                delivery_info: delivery_dto.clone(),
+                                user_info: UserDTO::Delivery(delivery_dto.clone()),
                             });
                         } else {
                             self.logger.warn(format!(
@@ -483,11 +487,8 @@ impl Handler<NetworkMessage> for Delivery {
                         ));
                     }
                 },
-                None => {
-                    self.logger
-                        .info("No recovered info found for this  Delivery.");
-                }
             },
+            // TODO: Handle NoRecoveredInfo if needed
             NetworkMessage::NewOfferToDeliver(msg_data) => {
                 self.logger.info(format!(
                     "Received NewOfferToDeliver for order ID: {}",
