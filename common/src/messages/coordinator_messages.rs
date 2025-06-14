@@ -1,4 +1,4 @@
-use crate::types::dtos::OrderDTO;
+use crate::types::dtos::{ClientDTO, DeliveryDTO, OrderDTO};
 use crate::types::restaurant_info::RestaurantInfo;
 use actix::Message;
 use serde::{Deserialize, Serialize};
@@ -6,13 +6,8 @@ use serde::{Deserialize, Serialize};
 #[derive(Message, Debug, Clone, Serialize, Deserialize)]
 #[rtype(result = "()")]
 pub struct NearbyRestaurants {
+    pub client: ClientDTO,
     pub restaurants: Vec<RestaurantInfo>,
-}
-
-#[derive(Message, Debug, Clone, Serialize, Deserialize)]
-#[rtype(result = "()")]
-pub struct AuthorizationResult {
-    pub result: Result<(), String>,
 }
 
 #[derive(Message, Debug, Clone, Serialize, Deserialize)]
@@ -43,4 +38,11 @@ pub struct NewOfferToDeliver {
 #[rtype(result = "()")]
 pub struct DeliveryNoNeeded {
     pub order: OrderDTO,
+}
+
+#[derive(Message, Debug, Clone, Serialize, Deserialize)]
+#[rtype(result = "()")]
+pub struct NearbyDeliveries {
+    pub order: OrderDTO,
+    pub deliveries: Vec<DeliveryDTO>,
 }

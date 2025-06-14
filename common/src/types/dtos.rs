@@ -36,12 +36,13 @@ pub struct RestaurantDTO {
     pub restaurant_id: String,
     /// Pedidos autorizados por el PaymentGatewat pero no aceptados todavía
     /// por el restaurante
-    pub authorized_orders: HashSet<u64>,
+    pub authorized_orders: HashSet<OrderDTO>,
     /// Pedidos pendientes.
-    pub pending_orders: HashSet<u64>,
+    pub pending_orders: HashSet<OrderDTO>,
     /// Marca de tiempo que registra la última actualización del restaurante.
     pub time_stamp: std::time::SystemTime,
 }
+
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeliveryDTO {
@@ -77,4 +78,18 @@ pub struct OrderDTO {
     pub client_position: (f32, f32), // Útil para calcular distancias
     /// Marca de tiempo que registra la última actualización de la orden.
     pub time_stamp: std::time::SystemTime,
+}
+
+impl Eq for OrderDTO {}
+
+impl PartialEq for OrderDTO {
+    fn eq(&self, other: &Self) -> bool {
+        self.order_id == other.order_id
+    }
+}
+
+impl std::hash::Hash for OrderDTO {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.order_id.hash(state);
+    }
 }

@@ -226,7 +226,7 @@ impl Handler<NetworkMessage> for Restaurant {
                 self.logger
                     .info("Received OrderIsPreparing message, not implemented yet");
             }
-            NetworkMessage::RequestDelivery(_msg_data) => {
+            NetworkMessage::RequestNearbyDelivery(_msg_data) => {
                 self.logger
                     .info("Received RequestDelivery message, not implemented yet");
             }

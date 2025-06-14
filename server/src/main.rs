@@ -21,7 +21,7 @@ async fn main() {
         .parse::<SocketAddr>()
         .expect("Failed to parse server address");
     // Construir la lista completa de ring_nodes
-    let ip = SERVER_IP_ADDRESS.parse().unwrap();
+    let ip: std::net::IpAddr = SERVER_IP_ADDRESS.parse().unwrap();
     let ring_nodes = (0..NUM_COORDINATORS)
         .map(|i| SocketAddr::new(ip, BASE_PORT + i as u16))
         .filter(|addr| *addr != my_addr)

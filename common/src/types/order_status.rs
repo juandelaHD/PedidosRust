@@ -5,7 +5,8 @@ use std::fmt;
 pub enum OrderStatus {
     Requested,        // Se ha solicitado el pedido por el cliente
     Authorized,       // El pedido ha sido autorizado por el PaymentGateway
-    Pending,          // El pedido está pendiente de ser aceptado por el restaurante
+    Unauthorized,     // El pedido no ha sido autorizado por el PaymentGateway
+    Pending,          // El pedido está aceptado, esperando por entrar a la kitchen
     Preparing,        // El restaurante ha aceptado el pedido y está en proceso de preparación
     ReadyForDelivery, // El pedido está listo para ser entregado
     Delivering,       // El pedido está siendo entregado
@@ -16,7 +17,8 @@ pub enum OrderStatus {
 impl fmt::Display for OrderStatus {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            OrderStatus::Requested => write!(f, "Requiested"),
+            OrderStatus::Requested => write!(f, "Requested"),
+            OrderStatus::Unauthorized => write!(f, "Unauthorized"),
             OrderStatus::Authorized => write!(f, "Authorized"),
             OrderStatus::Pending => write!(f, "Pending"),
             OrderStatus::Preparing => write!(f, "Preparing"),

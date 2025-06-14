@@ -10,6 +10,7 @@ use common::types::dtos::ClientDTO;
 use common::types::dtos::DeliveryDTO;
 use common::types::dtos::OrderDTO;
 use common::types::dtos::RestaurantDTO;
+use common::types::restaurant_info::RestaurantInfo;
 use common::types::order_status::OrderStatus;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -48,20 +49,50 @@ pub struct RegisterConnectionManager {
 // Mensajes del storage
 /////////////////////////////////////////////////////////////////////
 
-// TODO: Definir un enum StorageMessages para usar en ApplyStorageUpdates y SetStorageUpdatesLog
-
-/*
 #[derive(Message, Debug)]
 #[rtype(result = "()")]
 pub struct ApplyStorageUpdates {
-    pub updates: HashMap<u64, Message>,
+    pub updates: HashMap<u64, StorageLogMessage>,
 }
 
 #[derive(Message, Debug, Clone, Serialize, Deserialize)]
 #[rtype(result = "()")]
 pub struct SetStorageUpdatesLog {
-    pub updates_log: HashMap<u64, Message>,
+    pub updates_log: HashMap<u64, StorageLogMessage>,
 }
+// TODO: Definir un enum StorageMessages para usar en ApplyStorageUpdates y SetStorageUpdatesLog
+
+#[derive(Serialize, Deserialize, Debug, Message, Clone)]
+#[serde(tag = "type")]
+#[rtype(result = "()")]
+pub enum StorageLogMessage {
+
+
+    AddClient(AddClient),
+    AddRestaurant(AddRestaurant),
+    AddDelivery(AddDelivery),
+    RemoveClient(RemoveClient),
+    RemoveRestaurant(RemoveRestaurant),
+    RemoveDelivery(RemoveDelivery),
+    GetRestaurants(GetRestaurants),
+    SetDeliveryPosition(SetDeliveryPosition),
+    SetCurrentClientToDelivery(SetCurrentClientToDelivery),
+    SetDeliveryStatus(SetDeliveryStatus),
+
+
+    /// mensajes con order service
+    AddOrder(AddOrder),
+    RemoveOrder(RemoveOrder),
+    AddAuthorizedOrderToRestaurant(AddAuthorizedOrderToRestaurant),
+    AddPendingOrderToRestaurant(AddPendingOrderToRestaurant),
+    RemoveAuthorizedOrderToRestaurant(RemoveAuthorizedOrderToRestaurant),
+    RemovePendingOrderToRestaurant(RemovePendingOrderToRestaurant),
+    SetCurrentOrderToDelivery(SetCurrentOrderToDelivery),
+    SetDeliveryToOrder(SetDeliveryToOrder),
+    SetOrderStatus(SetOrderStatus),
+    // SetOrderToClient(SetOrderToClient),
+}
+
 
 #[derive(Message, Debug, Clone, Serialize, Deserialize)]
 #[rtype(result = "()")]
@@ -111,12 +142,12 @@ pub struct RemoveOrder {
     pub order_id: u64,
 }
 
-#[derive(Message, Debug, Clone, Serialize, Deserialize)]
-#[rtype(result = "()")]
-pub struct SetOrderToClient {
-    pub client_id: String,
-    pub order_id: u64,
-}
+// #[derive(Message, Debug, Clone, Serialize, Deserialize)]
+// #[rtype(result = "()")]
+// pub struct SetOrderToClient {
+//     pub client_id: String,
+//     pub order_id: u64,
+// }
 
 #[derive(Message, Debug, Clone, Serialize, Deserialize)]
 #[rtype(result = "()")]
@@ -145,6 +176,15 @@ pub struct RemovePendingOrderToRestaurant {
     pub restaurant_id: String,
     pub order_id: u64,
 }
+
+#[derive(Message, Debug, Clone, Serialize, Deserialize)]
+#[rtype(result = "Vec<RestaurantDTO>")]
+pub struct GetRestaurants;
+
+#[derive(Message, Debug, Clone, Serialize, Deserialize)]
+#[rtype(result = "Vec<RestaurantInfo>")]
+pub struct GetAllRestaurantsInfo;
+
 
 #[derive(Message, Debug, Clone, Serialize, Deserialize)]
 #[rtype(result = "()")]
@@ -178,8 +218,16 @@ pub struct SetDeliveryStatus {
 #[rtype(result = "()")]
 pub struct SetDeliveryToOrder {
     pub order_id: u64,
-    pub delivert_id: String,
+    pub delivery_id: String,
 }
+
+#[derive(Message, Debug, Clone, Serialize, Deserialize)]
+#[rtype(result = "Vec<DeliveryDTO>")]
+pub struct GetDeliveries;
+
+#[derive(Message, Debug, Clone, Serialize, Deserialize)]
+#[rtype(result = "Vec<DeliveryDTO>")]
+pub struct GetAllAvailableDeliveries;
 
 #[derive(Message, Debug, Clone, Serialize, Deserialize)]
 #[rtype(result = "()")]
@@ -188,7 +236,6 @@ pub struct SetOrderStatus {
     pub order_status: OrderStatus,
 }
 
-     */
 
 /////////////////////////////////////////////////////////////////////
 // Mensajes del Reaper
@@ -226,6 +273,7 @@ pub struct CheckReapUser {
 /////////////////////////////////////////////////////////////////////
 // Mensajes de servicios internos
 /////////////////////////////////////////////////////////////////////
+
 
 
 /////////////////////////////////////////////////////////////////////

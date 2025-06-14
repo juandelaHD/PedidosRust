@@ -1,17 +1,14 @@
 use crate::messages::client_messages::*;
-use crate::types::dtos::UserDTO;
-use actix::prelude::*;
-use serde::{Deserialize, Serialize};
-use std::net::SocketAddr;
-use tokio::net::TcpStream;
-
-use crate::messages::client_messages::*;
 use crate::messages::coordinator_messages::*;
 use crate::messages::coordinatormanager_messages::*;
 use crate::messages::delivery_messages::*;
 use crate::messages::payment_messages::*;
 use crate::messages::restaurant_messages::*;
-use crate::network::communicator::Communicator;
+use crate::types::dtos::UserDTO;
+use actix::prelude::*;
+use serde::{Deserialize, Serialize};
+use std::net::SocketAddr;
+use tokio::net::TcpStream;
 
 #[derive(Serialize, Deserialize, Debug, Message, Clone)]
 #[serde(tag = "type")]
@@ -35,16 +32,18 @@ pub enum NetworkMessage {
     OrderDelivered(OrderDelivered),
 
     // Payment messages
+    RequestAuthorization(RequestAuthorization),
+    AuthorizationResult(AuthorizationResult),
 
     // Restaurant messages
     UpdateOrderStatus(UpdateOrderStatus),
     CancelOrder(CancelOrder),
     OrderIsPreparing(OrderIsPreparing),
-    RequestDelivery(RequestDelivery),
+    RequestNearbyDelivery(RequestNearbyDelivery),
     DeliverThisOrder(DeliverThisOrder),
+    NearbyDeliveries(NearbyDeliveries),
 
     // Coordinator messages
-    AuthorizationResult(AuthorizationResult),
     NearbyRestaurants(NearbyRestaurants),
     NotifyOrderUpdated(NotifyOrderUpdated),
     NewOrder(NewOrder),

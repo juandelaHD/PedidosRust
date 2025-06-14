@@ -22,7 +22,7 @@ pub struct OrderIsPreparing {
 
 #[derive(Message, Debug, Clone, Serialize, Deserialize)]
 #[rtype(result = "()")]
-pub struct RequestDelivery {
+pub struct RequestNearbyDelivery {
     pub order: OrderDTO,
     pub restaurant_info: RestaurantInfo,
 }
