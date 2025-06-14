@@ -4,10 +4,14 @@ use common::network::communicator::Communicator;
 use common::network::peer_types::PeerType;
 use std::net::SocketAddr;
 use std::sync::Arc;
+use tokio::io::AsyncReadExt;
 use tokio::net::TcpListener;
+use tokio::net::TcpStream;
 
-use crate::messages::internal_messages::RegisterConnection;
+use crate::messages::internal_messages::{RegisterConnection, RegisterConnectionManager};
+use crate::server_actors::coordinator_manager::CoordinatorManager;
 use crate::server_actors::server_actor::Coordinator;
+use tokio::io::{AsyncBufReadExt, BufReader, ReadHalf};
 
 pub struct Acceptor {
     addr: SocketAddr,
@@ -16,7 +20,10 @@ pub struct Acceptor {
 }
 
 impl Acceptor {
-    pub fn new(addr: SocketAddr, coordinator_address: Addr<Coordinator>) -> Self {
+    pub fn new(
+        addr: SocketAddr,
+        coordinator_address: Addr<Coordinator>,
+    ) -> Self {
         Self {
             addr,
             coordinator_address,
@@ -25,49 +32,125 @@ impl Acceptor {
     }
 }
 
-// Hacemos que Acceptor sea un Actor
 impl Actor for Acceptor {
     type Context = Context<Self>;
 
     fn started(&mut self, ctx: &mut Self::Context) {
         let addr = self.addr;
-        let coordinator_address = self.coordinator_address.clone();
+
+        let acceptor_addr = ctx.address();
         let logger = self.logger.clone();
 
-        // Spawn del future async dentro del contexto de Actix
         ctx.spawn(
             async move {
                 match TcpListener::bind(addr).await {
                     Ok(listener) => {
-                        logger.info(format!("Acceptor started, listening on {}", addr));
+                        logger.info(format!("Acceptor started on {}", addr));
 
                         loop {
                             match listener.accept().await {
-                                Ok((stream, client_addr)) => {
-                                    logger
-                                        .info(format!("Accepted connection from {}", client_addr));
-                                    let communicator = Communicator::new(
-                                        stream,
-                                        coordinator_address.clone(),
-                                        PeerType::ClientType,
-                                    );
-                                    coordinator_address.do_send(RegisterConnection {
-                                        client_addr,
-                                        communicator,
-                                    });
+                                Ok((mut stream, remote_addr)) => {
+                                    let mut peer_type_byte = [0u8; 1];
+
+                                    match stream.read_exact(&mut peer_type_byte).await {
+                                        Ok(_) => {
+                                            if let Some(peer_type) =
+                                                PeerType::from_u8(peer_type_byte[0])
+                                            {
+                                            let mut addr_line = String::new();
+                                            let mut reader = tokio::io::BufReader::new(&mut stream);
+                                            reader.read_line(&mut addr_line).await.unwrap_or_else(|_| {
+                                                logger.info(format!(
+                                                    "Error leyendo dirección desde {}",
+                                                    remote_addr
+                                                ));
+                                                0
+                                            });
+
+                                            let peer_listen_addr: Option<SocketAddr> = serde_json::from_str(addr_line.trim()).unwrap_or(None);
+                                            let peer_listen_addr = peer_listen_addr.unwrap_or(remote_addr);
+                                            acceptor_addr.do_send(HandleConnection {
+                                                stream,
+                                                remote_addr,
+                                                peer_listen_addr,
+                                                peer_type,
+                                            });
+                                            } else {
+                                                logger.info(format!(
+                                                    "Tipo de peer inválido desde {}",
+                                                    remote_addr
+                                                ));
+                                            }
+                                        }
+                                        Err(e) => {
+                                            logger.info(format!(
+                                                "Error leyendo tipo de peer desde {}: {}",
+                                                remote_addr, e
+                                            ));
+                                        }
+                                    }
                                 }
                                 Err(e) => {
-                                    logger.warn(format!("Failed to accept connection: {}", e));
+                                    logger.info(format!("Error aceptando conexión: {}", e));
                                 }
                             }
                         }
                     }
                     Err(e) => {
-                        logger.error(format!("Failed to bind to {}: {}", addr, e));
+                        logger.info(format!("Error al bindear TCP listener: {}", e));
                     }
                 }
             }
             .into_actor(self),
         );
+    }
+}
+
+#[derive(Message)]
+#[rtype(result = "()")]
+struct HandleConnection {
+    stream: TcpStream,
+    remote_addr: SocketAddr,        // puerto efímero
+    peer_listen_addr: SocketAddr,   // puerto de escucha real del peer
+    peer_type: PeerType,
+}
+
+impl Handler<HandleConnection> for Acceptor {
+    type Result = ();
+
+    fn handle(&mut self, msg: HandleConnection, _: &mut Context<Self>) {
+        let HandleConnection {
+            stream,
+            remote_addr,
+            peer_listen_addr,
+            peer_type,
+        } = msg;
+
+        match peer_type {
+            PeerType::CoordinatorType => {
+                let communicator =
+                    Communicator::new(stream, self.coordinator_address.clone(), peer_type);
+                self.coordinator_address
+                    .do_send(RegisterConnectionManager {
+                        remote_addr,
+                        coordinator_addr: peer_listen_addr,
+                        communicator,
+                    });
+            }
+            PeerType::ClientType | PeerType::RestaurantType | PeerType::DeliveryType => {
+                println!("Conexión de Usuario desde {:?}", remote_addr);
+                println!("Dirección de escucha del peer: {:?}", peer_listen_addr);
+                let communicator =
+                    Communicator::new(stream, self.coordinator_address.clone(), peer_type);
+                self.coordinator_address.do_send(RegisterConnection {
+                    send_client_addr:  remote_addr,
+                    recive_client_addr: peer_listen_addr,
+                    communicator,
+                });
+            }
+            _ => {
+                println!("Conexión de tipo desconocido desde {:?}", remote_addr);
+            }
+        }
     }
 }

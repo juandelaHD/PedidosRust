@@ -1,6 +1,5 @@
 use actix::prelude::*;
 use common::constants::{BASE_PORT, NUM_COORDINATORS, SERVER_IP_ADDRESS, SUCCESS_PROBABILITY};
-use common::messages::shared_messages::StartRunning;
 use common::utils::get_rand_f32_tuple;
 use std::env;
 use std::net::SocketAddr;
@@ -39,9 +38,7 @@ async fn main() -> std::io::Result<()> {
 
     let restaurant = Restaurant::new(servers.clone(), id, position, SUCCESS_PROBABILITY).await;
 
-    let addr = restaurant.start();
-
-    addr.do_send(StartRunning);
+    restaurant.start();
 
     tokio::select! {
         _ = ctrl_c() => {

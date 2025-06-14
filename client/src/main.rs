@@ -1,7 +1,6 @@
 use actix::Actor;
 use client::client_actors::client::Client;
 use common::constants::{BASE_PORT, NUM_COORDINATORS, SERVER_IP_ADDRESS};
-use common::messages::shared_messages::StartRunning;
 use common::utils::get_rand_f32_tuple;
 use std::env;
 use std::io::{self};
@@ -28,12 +27,8 @@ async fn main() -> io::Result<()> {
 
     let position = get_rand_f32_tuple();
 
-    println!("Creando client con ID: {}, posición: {:?}", id, position);
-
     let client = Client::new(servers.clone(), id, position).await;
-    let addr = client.start();
-
-    addr.do_send(StartRunning);
+    client.start();
 
     tokio::select! {
         _ = ctrl_c() => {

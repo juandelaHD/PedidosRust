@@ -4,13 +4,17 @@ use actix::prelude::*;
 use common::bimap::BiMap;
 use common::logger::Logger;
 use common::messages::coordinator_messages::*;
-use common::messages::shared_messages::LeaderIs;
-use common::messages::shared_messages::NetworkMessage;
-use common::messages::shared_messages::WhoIsLeader;
+use common::messages::shared_messages::*;
 use common::network::communicator::Communicator;
 use common::types::restaurant_info;
 use std::sync::Arc;
 use std::{collections::HashMap, net::SocketAddr};
+use common::network::connections::{connect_to_all};
+use crate::server_actors::coordinator_manager;
+use std::hash::Hash;
+use tokio::net::TcpStream;
+use common::network::peer_types::PeerType;
+use crate::messages::internal_messages::*;
 
 #[derive(Debug)]
 pub struct Coordinator {
@@ -25,10 +29,11 @@ pub struct Coordinator {
     //   pub active_orders: HashSet<u64>, // TODO: Ver si se puede sacar
     /// Comunicador con el PaymentGateway
     // pub payment_communicator: Communicator,
-    /// Diccionario de conexiones activas con clientes, restaurantes y deliverys.
+    /// Mapa de comunicadores de clientes conectados.
     pub communicators: HashMap<SocketAddr, Communicator<Coordinator>>,
     /// Diccionario de direcciones de usuarios con sus correspondientes IDs.
-    pub user_addresses: BiMap<SocketAddr, String>,
+    ///  Este mapa se usa para identificar a los usuarios conectados: 8087 -> 123456 # ORIGEN -> NUMERO DE SOCKET
+    pub user_addresses: HashMap<SocketAddr, SocketAddr>,
     /// Canal de envío hacia el actor `Storage`.
     // pub storage: Addr<Storage>,
     /// Canal de envío hacia el actor `Reaper`.
@@ -39,38 +44,91 @@ pub struct Coordinator {
     // pub nearby_restaurant_service: Addr<NearbyRestaurantService>,
     // Servicio de deliverys cercanos.
     // pub nearby_delivery_service: Addr<NearbyDeliveryService>,
-    pub logger: Arc<Logger>,
-    pub coordinator_manager: Addr<CoordinatorManager>,
+    pub logger: Logger,
+    pub coordinator_manager: Option<Addr<CoordinatorManager>>,
+    pub pending_streams: HashMap<SocketAddr, TcpStream>,
 }
 
 impl Actor for Coordinator {
     type Context = Context<Self>;
+
+    fn started(&mut self, ctx: &mut Self::Context) {
+        let coordinator_manager = CoordinatorManager::new(
+            self.my_addr,
+            self.ring_nodes.clone(),
+            ctx.address(),
+        );
+        self.coordinator_manager = Some(coordinator_manager.start());
+        self.logger.info("Coordinator started.");
+
+        for (addr, stream) in self.pending_streams.drain() {
+            let communicator = Communicator::new(stream, ctx.address(), PeerType::CoordinatorType);
+            // le paso los coordinadores que hay al CoordinatorManager
+            if let Some(coordinator_manager) = &self.coordinator_manager {
+                coordinator_manager.do_send(RegisterConnectionManager {
+                    remote_addr: addr,
+                    coordinator_addr: addr,
+                    communicator: communicator,
+                });
+            } else {
+                self.logger
+                    .info("CoordinatorManager not initialized yet, cannot register connection.");
+            }
+        }
+
+        self.logger.info("Communicators initialized.");
+
+        // Enviar un startRunning al CoordinatorManager
+        if let Some(coordinator_manager) = &self.coordinator_manager {
+            coordinator_manager.do_send(StartRunning);
+        } else {
+            self.logger
+                .info("CoordinatorManager not initialized yet, cannot start running.");
+        }
+    }
 }
 
 impl Coordinator {
-    pub fn new(
+    pub async fn new(
         srv_addr: SocketAddr,
         ring_nodes: Vec<SocketAddr>,
-        logger: Arc<Logger>,
-    ) -> Addr<Self> {
-        Coordinator::create(move |ctx| {
-            let coordinator_manager = CoordinatorManager::new(
-                srv_addr,
-                ring_nodes.clone(),
-                ctx.address(),
-                logger.clone(),
-            );
+    ) -> Self {
+        // Inicializar el coordinador con la dirección del servidor y los nodos del anillo
+        // y un logger compartido.
+        let pending_streams: HashMap<SocketAddr, TcpStream> =
+            connect_to_all(ring_nodes.clone(), PeerType::CoordinatorType, Some(srv_addr)).await;
 
-            Coordinator {
-                my_addr: srv_addr,
-                ring_nodes,
-                current_coordinator: None,
-                communicators: HashMap::new(),
-                user_addresses: BiMap::new(),
-                logger: logger.clone(),
-                coordinator_manager,
-            }
-        })
+        if pending_streams.is_empty() {
+            println!("No connections established.");
+        }
+
+        Self {
+            ring_nodes,
+            my_addr: srv_addr,
+            current_coordinator: None,
+            user_addresses: HashMap::new(),
+            logger: Logger::new("COORDINATOR"),
+            coordinator_manager: None,
+            communicators: HashMap::new(),
+            pending_streams,
+        }
+    }
+
+    
+}
+
+impl Handler<RegisterConnectionManager> for Coordinator {
+    type Result = ();
+
+    fn handle(&mut self, msg: RegisterConnectionManager, _ctx: &mut Context<Self>) {
+        // si recibi un nuevo coordinador se lo pasamos al CoordinatorManager
+        if let Some(coordinator_manager) = &self.coordinator_manager {
+            coordinator_manager.do_send(msg);
+        } else {
+            self.logger
+                .info("CoordinatorManager not initialized yet, cannot register connection.");
+        }
+        // Aquí podrías enviar un mensaje de bienvenida o iniciar alguna lógica adicional
     }
 }
 
@@ -78,52 +136,101 @@ impl Handler<RegisterConnection> for Coordinator {
     type Result = ();
     fn handle(&mut self, msg: RegisterConnection, _ctx: &mut Self::Context) -> Self::Result {
         // Registrar la conexión del cliente
-        self.communicators.insert(msg.client_addr, msg.communicator);
+        self.communicators.insert(msg.send_client_addr, msg.communicator);
 
         // TODO: El valor debe ser el ID del cliente (el nombre)
         self.user_addresses
-            .insert(msg.client_addr, msg.client_addr.to_string());
+            .insert(msg.recive_client_addr, msg.send_client_addr);
         self.logger
-            .info(format!("Registered connection from {} ", msg.client_addr));
+            .info(format!("Registered connection from {} ", msg.recive_client_addr));
         // Aquí podrías enviar un mensaje de bienvenida o iniciar alguna lógica adicional
     }
 }
-
 impl Handler<WhoIsLeader> for Coordinator {
     type Result = ();
 
     fn handle(&mut self, msg: WhoIsLeader, _ctx: &mut Self::Context) -> Self::Result {
-        let user_id = msg.user_id;
-        if Some(&msg.origin_addr) == self.user_addresses.get_by_value(&user_id) {
-            self.logger
-                .info(format!("User {} is already registered", user_id));
-        } else {
-            self.user_addresses.insert(msg.origin_addr, user_id);
-            self.logger
-                .info(format!("Registered with address {}", msg.origin_addr));
-        }
-
         // Enviar un mensaje al líder actual o iniciar una elección de líder
-        if let Some(addr) = self.current_coordinator {
-            if let Some(sender) = &self.communicators[&msg.origin_addr].sender {
-                sender.do_send(NetworkMessage::LeaderIs(LeaderIs { coord_addr: (addr) }));
+        self.logger
+            .info(format!("Received WhoIsLeader from {}", msg.origin_addr));
+        self.logger.info(format!(
+            "Current coordinator: {:?}",
+            self.current_coordinator
+        ));
+        if let Some(current_leader) = self.current_coordinator {
+            // 1. Buscar la dirección efímera del usuario
+            if let Some(client_stream_addr) = self.user_addresses.get(&msg.origin_addr) {
+                // 2. Buscar el communicator correspondiente
+                if let Some(comm) = self.communicators.get(client_stream_addr) {
+                    if let Some(sender) = &comm.sender {
+                        sender.do_send(NetworkMessage::LeaderIs(LeaderIs {
+                            coord_addr: current_leader,
+                        }));
+                    } else {
+                        self.logger.info(format!(
+                            "No sender found for user stream addr {}",
+                            client_stream_addr
+                        ));
+                    }
+                } else {
+                    self.logger.info(format!(
+                        "No communicator found for user stream addr {}",
+                        client_stream_addr
+                    ));
+                }
             } else {
-                self.logger
-                    .info(format!("No sender found for {}", msg.origin_addr));
+                self.logger.info(format!(
+                    "No user address found for {}",
+                    msg.origin_addr
+                ));
             }
         } else {
-            // TODO: check start election if addr is NONE
             self.logger
                 .info("No current coordinator available. Check Server Election implementation.");
-            // TODO: delete this when election is ready
-            if let Some(sender) = &self.communicators[&msg.origin_addr].sender {
-                sender.do_send(NetworkMessage::LeaderIs(LeaderIs {
-                    coord_addr: (self.my_addr),
-                }));
-            } else {
-                self.logger
-                    .info(format!("No sender found for {}", msg.origin_addr));
+            // Fallback: responder con mi dirección si no hay líder
+            if let Some(client_stream_addr) = self.user_addresses.get(&msg.origin_addr) {
+                if let Some(comm) = self.communicators.get(client_stream_addr) {
+                    if let Some(sender) = &comm.sender {
+                        sender.do_send(NetworkMessage::LeaderIs(LeaderIs {
+                            coord_addr: self.my_addr,
+                        }));
+                    }
+                }
             }
+        }
+        // Si no hay líder actual, se podría iniciar una elección de líder aquí
+        // o simplemente responder con la propia dirección del coordinador.
+        self.logger.info(format!(
+            "Responding WhoIsLeader to {} with current coordinator: {:?}",
+            msg.origin_addr, self.current_coordinator
+        ));
+    }
+}
+
+impl Handler<LeaderIs> for Coordinator {
+    type Result = ();
+
+    fn handle(&mut self, msg: LeaderIs, _ctx: &mut Self::Context) -> Self::Result {
+        // Actualizar el coordinador actual
+        self.current_coordinator = Some(msg.coord_addr);
+        self.logger.info(format!(
+            "Updated current coordinator to: {}",
+            msg.coord_addr
+        ));
+    }
+}
+
+impl Handler<RetryLater> for Coordinator {
+    type Result = ();
+
+    fn handle(&mut self, msg: RetryLater, _ctx: &mut Self::Context) -> Self::Result {
+        if let Some(sender) = &self.communicators[&msg.origin_addr].sender {
+            sender.do_send(NetworkMessage::RetryLater(RetryLater {
+                origin_addr: self.my_addr,
+            }));
+        } else {
+            self.logger
+                .info(format!("No sender found for {}", msg.origin_addr));
         }
     }
 }
@@ -134,18 +241,46 @@ impl Handler<NetworkMessage> for Coordinator {
         match msg {
             // All Users messages
             NetworkMessage::WhoIsLeader(msg_data) => {
-                self.logger.info("Received WhoIsLeader message");
-                ctx.address().do_send(msg_data);
+                if self.current_coordinator.is_none() {
+                    ctx.address().do_send(RetryLater {
+                        origin_addr: msg_data.origin_addr,
+                    });
+                }
+                // Si el origen es un servidor conocido, se lo paso al CoordinatorManager
+                if self.ring_nodes.contains(&msg_data.origin_addr) {
+                    if let Some(coordinator_manager) = &self.coordinator_manager {
+                        coordinator_manager.do_send(msg_data);
+                    } else {
+                        self.logger.info("CoordinatorManager not initialized yet.");
+                    }
+                } else {
+                    // Si no es un servidor, podés manejarlo como usuario
+                    self.logger.info(format!(
+                        "WhoIsLeader recibido de un user: {}",
+                        msg_data.origin_addr
+                    ));
+                    // Aquí podrías responder directamente o ignorar
+                    ctx.address().do_send(msg_data)
+                }
             }
-            NetworkMessage::LeaderIs(_msg_data) => {
-                self.logger.info("Received LeaderIs message with addr:");
+            NetworkMessage::LeaderIs(msg_data) => {
+                self.logger.info("Received LeaderIs message");
+                // Informar al CoordinatorManager sobre el nuevo líder
+                if let Some(coordinator_manager) = &self.coordinator_manager {
+                    coordinator_manager.do_send(msg_data);
+                } else {
+                    self.logger.info("CoordinatorManager not initialized yet.");
+                }
             }
             NetworkMessage::RegisterUser(msg_data) => {
                 self.logger
                     .info("Received RegisterUser message, not implemented yet");
-                // TODO: Implement user registration logic
+                // TODO: Implement user registration logic and store user info
+                let client_to_send = self
+                    .user_addresses
+                    .get(&msg_data.origin_addr)
+                    .cloned();
                 let client_id = msg_data.user_id.clone();
-                let client_to_send = self.user_addresses.get_by_value(&client_id).cloned();
                 if let Some(client_addr) = client_to_send {
                     if let Some(sender) = &self.communicators[&client_addr].sender {
                         sender.do_send(NetworkMessage::NoRecoveredInfo);
@@ -174,9 +309,10 @@ impl Handler<NetworkMessage> for Coordinator {
                 self.logger
                     .info("Received OrderFinalized message, not implemented yet");
             }
-            NetworkMessage::RequestNearbyRestaurants(msg_data) => {
+            NetworkMessage::RequestNearbyRestaurants(_msg_data) => {
                 self.logger
                     .info("Received RequestNearbyRestaurants message");
+                /*
                 let restaurant_info_dummy = restaurant_info::RestaurantInfo {
                     id: "dummy_restaurant".to_string(),
                     position: (2.0, 0.0),
@@ -185,7 +321,7 @@ impl Handler<NetworkMessage> for Coordinator {
                     restaurants: vec![restaurant_info_dummy],
                 };
                 let client_id = msg_data.client.client_id;
-                let client_to_send = self.user_addresses.get_by_value(&client_id).cloned();
+                let client_to_send = self.user_addresses.get(&client_id).cloned();
                 if let Some(client_addr) = client_to_send {
                     if let Some(sender) = &self.communicators[&client_addr].sender {
                         sender.do_send(NetworkMessage::NearbyRestaurants(restaurants_dummy));
@@ -199,6 +335,7 @@ impl Handler<NetworkMessage> for Coordinator {
                         client_id
                     ));
                 }
+                 */
             }
             NetworkMessage::RequestThisOrder(_msg_data) => {
                 self.logger.info("Received RequestThisOrder message");

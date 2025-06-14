@@ -2,12 +2,13 @@ use actix::prelude::*;
 use common::logger::Logger;
 use common::messages::shared_messages::*;
 use common::network::communicator::Communicator;
-use common::network::connections::{connect, connect_to_all};
+use common::network::connections::{try_to_connect, connect_some};
 use common::network::peer_types::PeerType;
 use common::types::dtos::UserDTO;
-use std::collections::HashMap;
+use actix::fut::wrap_future;
 use std::net::SocketAddr;
 use tokio::net::TcpStream;
+
 // use crate::kitchen::Kitchen;
 
 pub struct Restaurant {
@@ -22,119 +23,96 @@ pub struct Restaurant {
     /// Canal de envío hacia la cocina.
     //pub kitchen_sender: Addr<Kitchen>,
     /// Comunicador asociado al Server.
-    pub actual_communicator_addr: Option<SocketAddr>,
-    pub communicators: Option<HashMap<SocketAddr, Communicator<Restaurant>>>,
-    pub pending_streams: HashMap<SocketAddr, TcpStream>, // Guarda el stream hasta que arranque
-    pub my_socket_addr: SocketAddr,
+    // pub actual_communicator_addr: Option<SocketAddr>,
+    pub communicator: Option<Communicator<Restaurant>>,
+    pub pending_stream: Option<TcpStream>, // Guarda el stream hasta que arranque
     pub logger: Logger,
 }
 
 impl Restaurant {
     pub async fn new(
         servers: Vec<SocketAddr>,
-        id: String,
+        restaurant_id: String,
         restaurant_position: (f32, f32),
         probability: f32,
     ) -> Self {
-        let pending_streams: HashMap<SocketAddr, TcpStream> = connect_to_all(servers.clone()).await;
+        let logger = Logger::new(format!("Restaurant {}", &restaurant_id));
+        
+        logger.info(format!("Starting restaurant with ID: {}", restaurant_id));
+        // Intentamos conectarnos a los servidores
+        let pending_stream = connect_some(servers.clone(), PeerType::ClientType).await;
 
-        let logger = Logger::new(format!("Restaurant {}", &id));
-
-        if pending_streams.is_empty() {
-            panic!("Unable to connect to any server.");
+        if pending_stream.is_none() {
+            panic!("Failed to connect to any server. Try again later.");
         }
-
-        // Tomamos la primera conexión como referencia para my_socket_addr
-        let my_socket_addr = pending_streams
-            .values()
-            .next()
-            .expect("No stream available")
-            .local_addr()
-            .expect("Failed to get local socket addr");
 
         Self {
             servers,
-            restaurant_id: id,
+            restaurant_id,
             restaurant_position,
             probability, // Puedes ajustar la probabilidad según tus necesidades
-            actual_communicator_addr: None, // Podés usarlo para el líder actual
-            communicators: Some(HashMap::new()), // Inicializamos el hashmap vacío para los communicators
-            pending_streams: pending_streams,
-            my_socket_addr,
+            communicator: None,
+            pending_stream,
             logger,
         }
     }
 
+
     pub fn send_network_message(&self, message: NetworkMessage) {
-        if let (Some(communicators_map), Some(addr)) =
-            (&self.communicators, self.actual_communicator_addr)
-        {
-            if let Some(communicator) = communicators_map.get(&addr) {
-                if let Some(sender) = &communicator.sender {
-                    sender.do_send(message);
-                } else {
-                    self.logger.error("Sender not initialized in communicator");
-                }
+        if let Some(communicator)  = &self.communicator {
+            if let Some(sender) = &communicator.sender {
+                sender.do_send(message);
             } else {
-                self.logger
-                    .error(&format!("Communicator not found for addr {}", addr));
+                self.logger.error("Sender not initialized in communicator");
             }
         } else {
             self.logger
-                .error("Communicators map or actual_communicator_addr not initialized");
+                .error(&format!("Communicator not found!",));
         }
-    }
-}
+    } 
 
-impl Actor for Restaurant {
-    type Context = Context<Self>;
-
-    fn started(&mut self, ctx: &mut Self::Context) {
-        let mut communicators_map = HashMap::new();
-
-        for (addr, stream) in self.pending_streams.drain() {
-            let communicator = Communicator::new(stream, ctx.address(), PeerType::RestaurantType);
-            communicators_map.insert(addr, communicator);
-            self.actual_communicator_addr = Some(addr);
-            self.logger
-                .info(format!("Communicator started for {}", addr));
-        }
-        self.communicators = Some(communicators_map);
-    }
-}
-
-impl Handler<StartRunning> for Restaurant {
-    type Result = ();
-
-    fn handle(&mut self, _msg: StartRunning, _ctx: &mut Self::Context) {
-        self.logger.info("Starting restaurant...");
+    pub fn start_running(&self, _ctx: &mut Context<Self>) {
+        self.logger.info("Starting client...");
+        let actual_socket_addr = self
+            .communicator
+            .as_ref()
+            .map(|c| c.local_address)
+            .expect("Socket address not initialized");
         self.send_network_message(NetworkMessage::WhoIsLeader(WhoIsLeader {
-            origin_addr: self.my_socket_addr,
+            origin_addr: actual_socket_addr,
             user_id: self.restaurant_id.clone(),
         }));
     }
 }
 
-impl Handler<NewLeaderConnection> for Restaurant {
+
+
+impl Actor for Restaurant {
+    type Context = Context<Self>;
+
+    fn started(&mut self, ctx: &mut Self::Context) {
+        let communicator = Communicator::new( 
+            self.pending_stream.take().expect("Pending stream should be set"),
+            ctx.address(),
+            PeerType::ClientType,
+        );
+        self.communicator = Some(communicator);
+
+        self.start_running(ctx);
+    }
+}
+
+pub struct UpdateCommunicator(pub Communicator<Restaurant>);
+
+impl Message for UpdateCommunicator {
+    type Result = ();
+}
+
+impl Handler<UpdateCommunicator> for Restaurant {
     type Result = ();
 
-    fn handle(&mut self, msg: NewLeaderConnection, ctx: &mut Self::Context) -> Self::Result {
-        self.logger
-            .info(format!("Creating new Communicator for leader {}", msg.addr));
-
-        let communicator = Communicator::new(msg.stream, ctx.address(), PeerType::RestaurantType);
-
-        if let Some(communicators_map) = &mut self.communicators {
-            communicators_map.insert(msg.addr, communicator);
-            self.actual_communicator_addr = Some(msg.addr);
-            self.logger.info(format!(
-                "New leader Communicator established at {}",
-                msg.addr
-            ));
-        } else {
-            self.logger
-                .error("Communicators map not initialized when creating new leader Communicator");
-        }
+    fn handle(&mut self, msg: UpdateCommunicator, _ctx: &mut Self::Context) -> Self::Result {
+        self.communicator = Some(msg.0);
     }
 }
 
@@ -143,60 +121,50 @@ impl Handler<LeaderIs> for Restaurant {
 
     fn handle(&mut self, msg: LeaderIs, ctx: &mut Self::Context) -> Self::Result {
         let leader_addr = msg.coord_addr;
+        let self_addr = ctx.address();
+        let logger = self.logger.clone();
+        let communicator_opt = self.communicator.as_ref().map(|c| c.peer_address);
 
-        self.logger.info(format!(
-            "Received LeaderIs message with addr: {}",
-            leader_addr
-        ));
-
-        // Verificar si ya tenemos un Communicator para el nuevo líder
-        if let Some(communicators_map) = &mut self.communicators {
-            if communicators_map.contains_key(&leader_addr) {
-                // Ya tenemos conexión con el líder, actualizar
-                self.actual_communicator_addr = Some(leader_addr);
-                self.logger.info(format!(
-                    "Updated actual_communicator_addr to {}",
+        // Si ya estamos conectados al líder, no hacemos nada
+        if Some(leader_addr) == communicator_opt {
+            self.logger.info(format!(
+                "Already connected to the leader at address: {}",
+                leader_addr
+            ));
+            return;
+        }
+        // Si no estamos conectados al líder, intentamos conectarnos
+        ctx.spawn(wrap_future(async move {            
+            if let Some(new_stream) = try_to_connect(leader_addr).await {
+                let new_communicator = Communicator::new(
+                    new_stream,
+                    self_addr.clone(),
+                    PeerType::ClientType,
+                );
+                self_addr.do_send(UpdateCommunicator(new_communicator));
+                logger.info(format!(
+                    "Communicator updated with new peer address: {}",
                     leader_addr
                 ));
             } else {
-                // No existe aún, tenemos que crearla (async dentro de sync handler usando spawn)
-                let restaurant_addr = ctx.address();
-                let logger_clone = self.logger.clone();
-
-                actix::spawn(async move {
-                    logger_clone.info(format!("Connecting to new leader at {}", leader_addr));
-                    if let Some(stream) = connect(leader_addr).await {
-                        logger_clone.info(format!(
-                            "Successfully connected to leader at {}",
-                            leader_addr
-                        ));
-
-                        restaurant_addr.do_send(NewLeaderConnection {
-                            addr: leader_addr,
-                            stream,
-                        });
-                    } else {
-                        logger_clone.error(format!(
-                            "Failed to connect to new leader at {}",
-                            leader_addr
-                        ));
-                    }
-                });
+                logger.error(format!(
+                    "Failed to connect to the new leader at {}",
+                    leader_addr
+                ));
             }
-            println!("Sending msg RegisterUser with ID: {}", self.restaurant_id);
-            self.send_network_message(NetworkMessage::RegisterUser(RegisterUser {
-                origin_addr: self.my_socket_addr,
-                user_id: self.restaurant_id.clone(),
-            }));
-            self.logger.info(format!(
-                "Sending msg register user with ID: {}",
-                self.restaurant_id
-            ));
-        } else {
-            self.logger.error("Communicators map not initialized");
-        }
+        }));
+        let actual_socket_addr = self
+            .communicator
+            .as_ref()
+            .map(|c| c.local_address)
+            .expect("Socket address not set");
+        self.send_network_message(NetworkMessage::WhoIsLeader(WhoIsLeader {
+            origin_addr: actual_socket_addr,
+            user_id: self.restaurant_id.clone(),
+        }));
     }
 }
+
 
 impl Handler<NetworkMessage> for Restaurant {
     type Result = ();
@@ -276,3 +244,4 @@ impl Handler<NetworkMessage> for Restaurant {
         }
     }
 }
+

@@ -1,6 +1,8 @@
 //use crate::Chef;
 use actix::Message;
+use crate::server_acceptor::acceptor::Acceptor;
 //use common::types::order::OrderDTO;
+use crate::server_actors::coordinator_manager::CoordinatorManager;
 use crate::server_actors::server_actor::Coordinator;
 use common::network::communicator::Communicator;
 use common::types::delivery_status::DeliveryStatus;
@@ -13,6 +15,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
+use actix::Addr;
 
 /////////////////////////////////////////////////////////////////////
 // Mensajes del Aceptador al Coordinator
@@ -20,9 +23,28 @@ use std::sync::Arc;
 #[derive(Message, Debug)]
 #[rtype(result = "()")]
 pub struct RegisterConnection {
-    pub client_addr: SocketAddr,
+    pub send_client_addr: SocketAddr,
+    pub recive_client_addr: SocketAddr,
     pub communicator: Communicator<Coordinator>,
 }
+
+#[derive(Message)]
+#[rtype(result = "()")]
+pub struct SetCoordinatorManager {
+    pub addr: Addr<CoordinatorManager>,
+}
+
+/////////////////////////////////////////////////////////////////////
+// Mensajes del Aceptador al Coordinator Manager
+/////////////////////////////////////////////////////////////////////
+#[derive(Message, Debug)]
+#[rtype(result = "()")]
+pub struct RegisterConnectionManager {
+    pub remote_addr: SocketAddr,
+    pub coordinator_addr: SocketAddr,
+    pub communicator: Communicator<Coordinator>,
+}
+
 
 /////////////////////////////////////////////////////////////////////
 // Mensajes del storage

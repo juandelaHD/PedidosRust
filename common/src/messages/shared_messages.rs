@@ -11,8 +11,9 @@ use crate::messages::coordinatormanager_messages::*;
 use crate::messages::delivery_messages::*;
 use crate::messages::payment_messages::*;
 use crate::messages::restaurant_messages::*;
+use crate::network::communicator::Communicator;
 
-#[derive(Serialize, Deserialize, Debug, Message)]
+#[derive(Serialize, Deserialize, Debug, Message, Clone)]
 #[serde(tag = "type")]
 #[rtype(result = "()")]
 pub enum NetworkMessage {
@@ -57,16 +58,18 @@ pub enum NetworkMessage {
     RequestAllStorage(RequestAllStorage),
     RecoverStorageOperations(RecoverStorageOperations),
     LeaderElection(LeaderElection),
+
+    RetryLater(RetryLater),
 }
 
-#[derive(Serialize, Deserialize, Debug, Message)]
+#[derive(Serialize, Deserialize, Debug, Message, Clone)]
 #[rtype(result = "()")]
 pub struct WhoIsLeader {
     pub origin_addr: SocketAddr,
     pub user_id: String,
 }
 
-#[derive(Serialize, Deserialize, Debug, Message)]
+#[derive(Serialize, Deserialize, Debug, Message, Clone)]
 #[rtype(result = "()")]
 pub struct LeaderIs {
     pub coord_addr: SocketAddr,
@@ -84,7 +87,7 @@ pub struct NewLeaderConnection {
     pub stream: TcpStream,
 }
 
-#[derive(Serialize, Deserialize, Debug, Message)]
+#[derive(Serialize, Deserialize, Debug, Message, Clone)]
 #[rtype(result = "()")]
 pub struct RegisterUser {
     pub origin_addr: SocketAddr,
@@ -95,4 +98,10 @@ pub struct RegisterUser {
 #[rtype(result = "()")]
 pub struct RecoverProcedure {
     pub user_info: UserDTO,
+}
+
+#[derive(Serialize, Deserialize, Debug, Message, Clone)]
+#[rtype(result = "()")]
+pub struct RetryLater {
+    pub origin_addr: SocketAddr,
 }
