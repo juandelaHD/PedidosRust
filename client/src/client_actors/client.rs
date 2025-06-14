@@ -54,7 +54,7 @@ impl Client {
             client_order: None, // Inicializamos el pedido como None
             ui_handler: None, // Inicializamos el canal de envío hacia UIHandler como None
             communicator: None,
-            pending_stream: None, // Guarda el stream hasta que arranque
+            pending_stream, // Guarda el stream hasta que arranque
             logger,
         }
     }

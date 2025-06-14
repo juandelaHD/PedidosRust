@@ -7,11 +7,9 @@ use std::sync::Arc;
 use tokio::io::AsyncReadExt;
 use tokio::net::TcpListener;
 use tokio::net::TcpStream;
-
 use crate::messages::internal_messages::{RegisterConnection, RegisterConnectionManager};
-use crate::server_actors::coordinator_manager::CoordinatorManager;
 use crate::server_actors::server_actor::Coordinator;
-use tokio::io::{AsyncBufReadExt, BufReader, ReadHalf};
+use tokio::io::AsyncBufReadExt;
 
 pub struct Acceptor {
     addr: SocketAddr,
@@ -67,12 +65,9 @@ impl Actor for Acceptor {
                                                 0
                                             });
 
-                                            let peer_listen_addr: Option<SocketAddr> = serde_json::from_str(addr_line.trim()).unwrap_or(None);
-                                            let peer_listen_addr = peer_listen_addr.unwrap_or(remote_addr);
                                             acceptor_addr.do_send(HandleConnection {
                                                 stream,
                                                 remote_addr,
-                                                peer_listen_addr,
                                                 peer_type,
                                             });
                                             } else {
@@ -111,7 +106,6 @@ impl Actor for Acceptor {
 struct HandleConnection {
     stream: TcpStream,
     remote_addr: SocketAddr,        // puerto efímero
-    peer_listen_addr: SocketAddr,   // puerto de escucha real del peer
     peer_type: PeerType,
 }
 
@@ -122,7 +116,6 @@ impl Handler<HandleConnection> for Acceptor {
         let HandleConnection {
             stream,
             remote_addr,
-            peer_listen_addr,
             peer_type,
         } = msg;
 
@@ -133,18 +126,16 @@ impl Handler<HandleConnection> for Acceptor {
                 self.coordinator_address
                     .do_send(RegisterConnectionManager {
                         remote_addr,
-                        coordinator_addr: peer_listen_addr,
+                        coordinator_addr: self.addr,
                         communicator,
                     });
             }
             PeerType::ClientType | PeerType::RestaurantType | PeerType::DeliveryType => {
                 println!("Conexión de Usuario desde {:?}", remote_addr);
-                println!("Dirección de escucha del peer: {:?}", peer_listen_addr);
                 let communicator =
                     Communicator::new(stream, self.coordinator_address.clone(), peer_type);
                 self.coordinator_address.do_send(RegisterConnection {
-                    send_client_addr:  remote_addr,
-                    recive_client_addr: peer_listen_addr,
+                    client_addr:  remote_addr,
                     communicator,
                 });
             }

@@ -173,6 +173,7 @@ impl CoordinatorManager {
                 self.broadcast_network_message(
                     NetworkMessage::WhoIsLeader(WhoIsLeader {
                         origin_addr: self.my_socket_addr,
+                        user_id: "SERVER".to_string(),
                     }),
                 );
             }

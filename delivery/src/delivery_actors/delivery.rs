@@ -60,7 +60,7 @@ impl Delivery {
             probability,
             current_order: None,
             communicator: None,
-            pending_stream, // Guarda el stream hasta que arranque
+            pending_stream,
             logger,
         }
     }

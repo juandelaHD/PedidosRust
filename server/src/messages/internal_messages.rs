@@ -23,8 +23,7 @@ use actix::Addr;
 #[derive(Message, Debug)]
 #[rtype(result = "()")]
 pub struct RegisterConnection {
-    pub send_client_addr: SocketAddr,
-    pub recive_client_addr: SocketAddr,
+    pub client_addr: SocketAddr,
     pub communicator: Communicator<Coordinator>,
 }
 
@@ -229,17 +228,6 @@ pub struct CheckReapUser {
 // Mensajes de servicios internos
 /////////////////////////////////////////////////////////////////////
 
-#[derive(Message, Debug, Clone, Serialize, Deserialize)]
-#[rtype(result = "()")]
-pub struct RequestNearbyRestaurants {
-    pub client_dto: ClientDTO,
-}
-
-#[derive(Message, Debug, Clone, Serialize, Deserialize)]
-#[rtype(result = "()")]
-pub struct NearbyRestaurants {
-    pub nearby_restaurants: Vec<RestaurantDTO>,
-}
 
 /////////////////////////////////////////////////////////////////////
 // Men
