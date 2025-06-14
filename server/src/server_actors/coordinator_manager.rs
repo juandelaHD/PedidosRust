@@ -1,6 +1,7 @@
 use crate::messages::internal_messages::RegisterConnectionManager;
-use crate::server_actors::server_actor::Coordinator;
+use crate::server_actors::coordinator::Coordinator;
 use actix::prelude::*;
+use common::bimap::BiMap;
 use common::logger::Logger;
 use common::messages::coordinatormanager_messages::{LeaderElection};
 use common::messages::shared_messages::NetworkMessage;
@@ -16,6 +17,8 @@ use std::{
 
 #[derive(Debug)]
 pub struct CoordinatorManager {
+    /// ID del CoordinatorManager.
+    pub id: String,
     /// Direcciones de todos los nodos en el anillo.
     /// Lista ordenada de nodos actuales en el anillo.
     pub ring_nodes: Vec<SocketAddr>,
@@ -24,6 +27,7 @@ pub struct CoordinatorManager {
     /// Timestamps de los últimos heartbeats recibidos por nodo.
     pub heartbeat_timestamps: HashMap<SocketAddr, Instant>,
     pub coord_communicators: HashMap<SocketAddr, Communicator<Coordinator>>,
+    pub coord_addresses: BiMap<SocketAddr, String>, // Mapa bidireccional de direcciones de coordinadores y sus IDs
     /// Dirección de este servidor.
     pub my_socket_addr: SocketAddr,
     /// Logger.
@@ -38,16 +42,19 @@ impl Actor for CoordinatorManager {
 
 impl CoordinatorManager {
     pub fn new(
+        id: String,
         my_coordinator_addr: SocketAddr,
         ring_nodes: Vec<SocketAddr>,
         coordinator_addr: Addr<Coordinator>,
     ) -> Self {
         Self {
+            id,
             my_socket_addr: my_coordinator_addr,
             ring_nodes,
             coordinator_actual: None,
             heartbeat_timestamps: HashMap::new(),
             coord_communicators: HashMap::new(),
+            coord_addresses: BiMap::new(),
             logger: Logger::new("COORDINATOR_MANAGER"),
             coordinator_addr,
         }
@@ -165,20 +172,32 @@ impl CoordinatorManager {
         }
     }
 
+    fn broadcast_who_is_leader(&self) {
+        for addr in self.coord_communicators.keys() {
+            let communictor = self.coord_communicators.get(addr);
+            if let Some(communicator) = communictor {
+                let local_addr = communicator.local_address;
+                let message = NetworkMessage::WhoIsLeader(WhoIsLeader {
+                    origin_addr: local_addr,
+                    user_id: self.id.clone(),
+                });
+                if *addr != self.my_socket_addr {
+                    self.send_network_message(*addr, message.clone());
+                }
+                self.logger.info(format!(
+                    "Broadcasting WhoIsLeader to {}",
+                    addr
+                ));
+            } else {
+                self.logger.warn(format!("No communicator found for {}", addr));
+            }            
+        }
+    }
+
     /// Preguntar a todos los nodos conocidos si hay un líder ya elegido
     fn ask_for_leader(&self, ctx: &mut Context<Self>) {
-        for node in &self.ring_nodes {
-            if *node != self.my_socket_addr {
-
-                self.broadcast_network_message(
-                    NetworkMessage::WhoIsLeader(WhoIsLeader {
-                        origin_addr: self.my_socket_addr,
-                        user_id: "SERVER".to_string(),
-                    }),
-                );
-            }
-        }
-
+        self.broadcast_who_is_leader();
+       
         // Esperamos X segundos para ver si alguien responde
         ctx.run_later(Duration::from_secs(1), |actor: &mut Self, _ctx| {
             if actor.coordinator_actual.is_none() {
@@ -199,24 +218,32 @@ impl CoordinatorManager {
 
     fn handle_who_is_leader(&mut self, msg: WhoIsLeader, _ctx: &mut Context<Self>) {
         self.logger.info(format!(
-            "Received WhoIsLeader from {}, coordinator is: {:?}",
-            msg.origin_addr, self.coordinator_actual
+            "Received WhoIsLeader from {} with ID={}, coordinator is: {:?}",
+            msg.origin_addr, msg.user_id, self.coordinator_actual
         ));
+        // Insertar la dirección del socket en el mapa de direcciones de coordinadores
+        self.coord_addresses.insert(msg.origin_addr, msg.user_id.clone());
 
         if let Some(leader) = self.coordinator_actual {
             let response = NetworkMessage::LeaderIs(LeaderIs {
                 coord_addr: leader,
             });
-
-            if let Some(communicator) =  self.coord_communicators.get(&msg.origin_addr) {
-                if let Some(sender) = &communicator.sender {
-                    sender.do_send(response);
-                    self.logger.info(format!("Sent LeaderIs to {}", msg.origin_addr));
+            if let Some(registered_remote_addr) = self.coord_addresses.get_by_value(&msg.user_id) {
+                if let Some(communicator) =  self.coord_communicators.get(registered_remote_addr) {
+                    if let Some(sender) = &communicator.sender {
+                        sender.do_send(response);
+                        self.logger.info(format!("Sent LeaderIs to {}", msg.origin_addr));
+                    } else {
+                        self.logger.warn("Sender not initialized");
+                    }
                 } else {
-                    self.logger.warn("Sender not initialized");
+                    self.logger.warn(format!("No communicator to {}", msg.origin_addr));
                 }
             } else {
-                self.logger.warn(format!("No communicator to {}", msg.origin_addr));
+                self.logger.warn(format!(
+                    "No origin address found for {}",
+                    msg.origin_addr
+                ));
             }
         } else {
             self.logger.info("No coordinator known yet to respond");
@@ -308,15 +335,7 @@ impl Handler<RegisterConnectionManager> for CoordinatorManager {
 
     fn handle(&mut self, msg: RegisterConnectionManager, _ctx: &mut Context<Self>) {
         // Registrar la conexión del CoordinatorManager
-        self.coord_communicators.insert(msg.coordinator_addr, msg.communicator);
-
-        // Otras inicializaciones...
-        self.logger.info(format!(
-            "Registered CoordinatorManager for {} with remote_addr: {:?}",
-            msg.coordinator_addr,
-            msg.remote_addr
-        ));
-        // Aquí podrías enviar un mensaje de bienvenida o iniciar alguna lógica adicional
+        self.coord_communicators.insert(msg.remote_addr, msg.communicator);
     }
 }
 

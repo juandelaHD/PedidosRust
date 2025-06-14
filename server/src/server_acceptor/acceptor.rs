@@ -8,7 +8,7 @@ use tokio::io::AsyncReadExt;
 use tokio::net::TcpListener;
 use tokio::net::TcpStream;
 use crate::messages::internal_messages::{RegisterConnection, RegisterConnectionManager};
-use crate::server_actors::server_actor::Coordinator;
+use crate::server_actors::coordinator::Coordinator;
 use tokio::io::AsyncBufReadExt;
 
 pub struct Acceptor {
@@ -105,7 +105,7 @@ impl Actor for Acceptor {
 #[rtype(result = "()")]
 struct HandleConnection {
     stream: TcpStream,
-    remote_addr: SocketAddr,        // puerto efímero
+    remote_addr: SocketAddr,
     peer_type: PeerType,
 }
 
@@ -121,12 +121,12 @@ impl Handler<HandleConnection> for Acceptor {
 
         match peer_type {
             PeerType::CoordinatorType => {
+                println!("Conexión de Coordinador desde {:?}", remote_addr);
                 let communicator =
                     Communicator::new(stream, self.coordinator_address.clone(), peer_type);
                 self.coordinator_address
                     .do_send(RegisterConnectionManager {
-                        remote_addr,
-                        coordinator_addr: self.addr,
+                        remote_addr, 
                         communicator,
                     });
             }

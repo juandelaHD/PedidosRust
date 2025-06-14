@@ -3,7 +3,7 @@ use actix::Message;
 use crate::server_acceptor::acceptor::Acceptor;
 //use common::types::order::OrderDTO;
 use crate::server_actors::coordinator_manager::CoordinatorManager;
-use crate::server_actors::server_actor::Coordinator;
+use crate::server_actors::coordinator::Coordinator;
 use common::network::communicator::Communicator;
 use common::types::delivery_status::DeliveryStatus;
 use common::types::dtos::ClientDTO;
@@ -40,7 +40,6 @@ pub struct SetCoordinatorManager {
 #[rtype(result = "()")]
 pub struct RegisterConnectionManager {
     pub remote_addr: SocketAddr,
-    pub coordinator_addr: SocketAddr,
     pub communicator: Communicator<Coordinator>,
 }
 

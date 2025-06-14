@@ -2,6 +2,7 @@ use crate::messages::internal_messages::RegisterConnection;
 use crate::server_actors::coordinator_manager::CoordinatorManager;
 use actix::prelude::*;
 use common::bimap::BiMap;
+use common::constants::BASE_PORT;
 use common::logger::Logger;
 use common::messages::coordinator_messages::*;
 use common::messages::shared_messages::*;
@@ -15,9 +16,9 @@ use crate::messages::internal_messages::*;
 
 #[derive(Debug)]
 pub struct Coordinator {
+    pub id: String,
     /// Direcciones de todos los nodos en el anillo.
     pub ring_nodes: Vec<SocketAddr>,
-
     /// Dirección de este coordinator.
     pub my_addr: SocketAddr,
     /// Coordinador actual.
@@ -26,12 +27,10 @@ pub struct Coordinator {
     //   pub active_orders: HashSet<u64>, // TODO: Ver si se puede sacar
     /// Comunicador con el PaymentGateway
     // pub payment_communicator: Communicator,
+    /// Diccionario de direcciones de usuarios con sus correspondientes IDs.
+    pub user_addresses: BiMap<SocketAddr, String>, // ID -> REMOTA
     /// Mapa de comunicadores de clientes conectados.
-    pub communicators: HashMap<SocketAddr, Communicator<Coordinator>>,
-    /// Diccionario de direcciones de usuarios con sus correspondientes IDs.
-    ///  Este mapa se usa para identificar a los usuarios conectados: 8087 -> 123456 # ORIGEN -> NUMERO DE SOCKET
-    /// Diccionario de direcciones de usuarios con sus correspondientes IDs.
-    pub user_addresses: BiMap<SocketAddr, String>,
+    pub communicators: HashMap<SocketAddr, Communicator<Coordinator>>, // REMOTA -> Comunicador
     /// Canal de envío hacia el actor `Storage`.
     // pub storage: Addr<Storage>,
     /// Canal de envío hacia el actor `Reaper`.
@@ -47,11 +46,42 @@ pub struct Coordinator {
     pub pending_streams: HashMap<SocketAddr, TcpStream>,
 }
 
+impl Coordinator {
+    pub async fn new(
+        srv_addr: SocketAddr,
+        ring_nodes: Vec<SocketAddr>,
+    ) -> Self {
+        // Inicializar el coordinador con la dirección del servidor y los nodos del anillo
+        // y un logger compartido.
+        let pending_streams: HashMap<SocketAddr, TcpStream> =
+            connect_to_all(ring_nodes.clone(), PeerType::CoordinatorType).await;
+
+        if pending_streams.is_empty() {
+            println!("No connections established.");
+        }
+
+        Self {
+            id: format!("server_{}", srv_addr.port() - BASE_PORT),
+            ring_nodes,
+            my_addr: srv_addr,
+            current_coordinator: None,
+            user_addresses: BiMap::new(),
+            logger: Logger::new("COORDINATOR"),
+            coordinator_manager: None,
+            communicators: HashMap::new(),
+            pending_streams,
+        }
+    }
+
+    
+}
+
 impl Actor for Coordinator {
     type Context = Context<Self>;
 
     fn started(&mut self, ctx: &mut Self::Context) {
         let coordinator_manager = CoordinatorManager::new(
+            self.id.clone(),
             self.my_addr,
             self.ring_nodes.clone(),
             ctx.address(),
@@ -65,7 +95,6 @@ impl Actor for Coordinator {
             if let Some(coordinator_manager) = &self.coordinator_manager {
                 coordinator_manager.do_send(RegisterConnectionManager {
                     remote_addr: addr,
-                    coordinator_addr: addr,
                     communicator: communicator,
                 });
             } else {
@@ -86,34 +115,6 @@ impl Actor for Coordinator {
     }
 }
 
-impl Coordinator {
-    pub async fn new(
-        srv_addr: SocketAddr,
-        ring_nodes: Vec<SocketAddr>,
-    ) -> Self {
-        // Inicializar el coordinador con la dirección del servidor y los nodos del anillo
-        // y un logger compartido.
-        let pending_streams: HashMap<SocketAddr, TcpStream> =
-            connect_to_all(ring_nodes.clone(), PeerType::CoordinatorType).await;
-
-        if pending_streams.is_empty() {
-            println!("No connections established.");
-        }
-
-        Self {
-            ring_nodes,
-            my_addr: srv_addr,
-            current_coordinator: None,
-            user_addresses: BiMap::new(),
-            logger: Logger::new("COORDINATOR"),
-            coordinator_manager: None,
-            communicators: HashMap::new(),
-            pending_streams,
-        }
-    }
-
-    
-}
 
 impl Handler<RegisterConnectionManager> for Coordinator {
     type Result = ();
@@ -155,21 +156,22 @@ impl Handler<WhoIsLeader> for Coordinator {
             self.current_coordinator
         ));
         let user_address = msg.origin_addr;
-        let user_id = msg.user_id;
 
         // Si el origen está en user_addresses, actualizar el ID del usuario
-        if let Some(user_id) = self.user_addresses.get_by_key(&user_address) {
+        if let Some(_user_id) = self.user_addresses.get_by_key(&user_address) {
+            self.user_addresses.insert(user_address,  msg.user_id.clone());
             self.logger.info(format!(
                 "User ID for {} is {}",
-                user_address, user_id
+                user_address, msg.user_id.clone()
             ));
+
         } else {
             self.logger.info(format!(
                 "No user ID found for {}. Adding as UNKNOWN_USER.",
                 user_address
             ));
             // Si no está, lo actualizamos o lo agregamos
-            self.user_addresses.insert(user_address, user_id);
+            self.user_addresses.insert(user_address, msg.user_id.clone());
         }
 
         //  Si hay un coordinador actual, se lo notificamos al cliente
@@ -236,8 +238,8 @@ impl Handler<NetworkMessage> for Coordinator {
                         origin_addr: msg_data.origin_addr,
                     });
                 }
-                // Si el origen es un servidor conocido, se lo paso al CoordinatorManager
-                if self.ring_nodes.contains(&msg_data.origin_addr) {
+                // Si el origen es un servidor conocido (8080, 8081, 8082, 8083), se lo paso al CoordinatorManager
+                if msg_data.user_id.starts_with("server_") {
                     if let Some(coordinator_manager) = &self.coordinator_manager {
                         coordinator_manager.do_send(msg_data);
                     } else {

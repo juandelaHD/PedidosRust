@@ -2,7 +2,7 @@ use actix::prelude::*;
 use common::constants::SERVER_IP_ADDRESS;
 use common::constants::{BASE_PORT, NUM_COORDINATORS};
 use server::server_acceptor::acceptor::Acceptor;
-use server::server_actors::server_actor::Coordinator;
+use server::server_actors::coordinator::Coordinator;
 use std::env;
 use std::net::SocketAddr;
 use tokio::signal::ctrl_c;
@@ -24,8 +24,8 @@ async fn main() {
     let ip = SERVER_IP_ADDRESS.parse().unwrap();
     let ring_nodes = (0..NUM_COORDINATORS)
         .map(|i| SocketAddr::new(ip, BASE_PORT + i as u16))
-        .collect::<Vec<_>>();
-
+        .filter(|addr| *addr != my_addr)
+        .collect::<Vec<SocketAddr>>();
     // Iniciar el Coordinator
     let coordinator = Coordinator::new(my_addr, ring_nodes.clone()).await;
     let coordinator_addr = coordinator.start();
