@@ -1,22 +1,22 @@
 //use crate::Chef;
-use actix::Message;
 use crate::server_acceptor::acceptor::Acceptor;
+use actix::Message;
 //use common::types::order::OrderDTO;
-use crate::server_actors::coordinator_manager::CoordinatorManager;
 use crate::server_actors::coordinator::Coordinator;
+use crate::server_actors::coordinator_manager::CoordinatorManager;
+use actix::Addr;
 use common::network::communicator::Communicator;
 use common::types::delivery_status::DeliveryStatus;
 use common::types::dtos::ClientDTO;
 use common::types::dtos::DeliveryDTO;
 use common::types::dtos::OrderDTO;
 use common::types::dtos::RestaurantDTO;
-use common::types::restaurant_info::RestaurantInfo;
 use common::types::order_status::OrderStatus;
+use common::types::restaurant_info::RestaurantInfo;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use actix::Addr;
 
 /////////////////////////////////////////////////////////////////////
 // Mensajes del Aceptador al Coordinator
@@ -44,7 +44,6 @@ pub struct RegisterConnectionManager {
     pub communicator: Communicator<Coordinator>,
 }
 
-
 /////////////////////////////////////////////////////////////////////
 // Mensajes del storage
 /////////////////////////////////////////////////////////////////////
@@ -66,8 +65,6 @@ pub struct SetStorageUpdatesLog {
 #[serde(tag = "type")]
 #[rtype(result = "()")]
 pub enum StorageLogMessage {
-
-
     AddClient(AddClient),
     AddRestaurant(AddRestaurant),
     AddDelivery(AddDelivery),
@@ -78,7 +75,6 @@ pub enum StorageLogMessage {
     SetDeliveryPosition(SetDeliveryPosition),
     SetCurrentClientToDelivery(SetCurrentClientToDelivery),
     SetDeliveryStatus(SetDeliveryStatus),
-
 
     /// mensajes con order service
     AddOrder(AddOrder),
@@ -92,7 +88,6 @@ pub enum StorageLogMessage {
     SetOrderStatus(SetOrderStatus),
     // SetOrderToClient(SetOrderToClient),
 }
-
 
 #[derive(Message, Debug, Clone, Serialize, Deserialize)]
 #[rtype(result = "()")]
@@ -185,7 +180,6 @@ pub struct GetRestaurants;
 #[rtype(result = "Vec<RestaurantInfo>")]
 pub struct GetAllRestaurantsInfo;
 
-
 #[derive(Message, Debug, Clone, Serialize, Deserialize)]
 #[rtype(result = "()")]
 pub struct SetDeliveryPosition {
@@ -236,7 +230,6 @@ pub struct SetOrderStatus {
     pub order_status: OrderStatus,
 }
 
-
 /////////////////////////////////////////////////////////////////////
 // Mensajes del Reaper
 /////////////////////////////////////////////////////////////////////
@@ -251,6 +244,16 @@ pub struct StartReapProcess {
 #[rtype(result = "()")]
 pub struct CheckReapUser {
     pub user_id: String,
+}
+
+/////////////////////////////////////////////////////////////////////
+// Mensajes del Order Service
+/////////////////////////////////////////////////////////////////////
+
+#[derive(Message, Debug, Clone)]
+#[rtype(result = "()")]
+pub struct SetCoordinatorAddr {
+    pub coordinator_addr: Addr<Coordinator>,
 }
 
 /////////////////////////////////////////////////////////////////////
@@ -273,8 +276,6 @@ pub struct CheckReapUser {
 /////////////////////////////////////////////////////////////////////
 // Mensajes de servicios internos
 /////////////////////////////////////////////////////////////////////
-
-
 
 /////////////////////////////////////////////////////////////////////
 // Men

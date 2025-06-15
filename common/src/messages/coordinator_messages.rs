@@ -13,6 +13,7 @@ pub struct NearbyRestaurants {
 #[derive(Message, Debug, Clone, Serialize, Deserialize)]
 #[rtype(result = "()")]
 pub struct NotifyOrderUpdated {
+    pub peer_id: String,
     pub order: OrderDTO,
 }
 

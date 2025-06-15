@@ -1,17 +1,20 @@
 use crate::messages::internal_messages::{
     AddAuthorizedOrderToRestaurant, AddOrder, AddPendingOrderToRestaurant,
     RemoveAuthorizedOrderToRestaurant, RemoveOrder, RemovePendingOrderToRestaurant,
-    SetCurrentOrderToDelivery, SetDeliveryToOrder, SetOrderStatus,
+    SetCoordinatorAddr, SetCurrentOrderToDelivery, SetDeliveryToOrder, SetOrderStatus,
 };
 use crate::server_actors::coordinator::Coordinator;
 use crate::server_actors::storage::Storage;
 use actix::prelude::*;
 use common::logger::Logger;
+use common::messages::{NotifyOrderUpdated, RequestAuthorization};
+use common::network::connections::connect_some;
+use common::types::dtos::OrderDTO;
 use common::{
     constants::{PAYMENT_GATEWAY_PORT, SERVER_IP_ADDRESS},
     messages::{AuthorizationResult, NetworkMessage, NewOrder},
     network::{communicator::Communicator, connections::try_to_connect, peer_types::PeerType},
-    types::order_status::OrderStatus, 
+    types::order_status::OrderStatus,
 };
 use std::{collections::HashMap, net::SocketAddr};
 use tokio::net::TcpStream;
@@ -25,7 +28,7 @@ pub struct OrderService {
     pub clients_orders: HashMap<String, Vec<u64>>,
     pub restaurants_orders: HashMap<String, Vec<u64>>,
     pub pending_orders: Vec<u64>,
-    pub coordinator_address: Addr<Coordinator>,
+    pub coordinator_address: Option<Addr<Coordinator>>,
     pub storage_address: Addr<Storage>,
     pub logger: Logger,
     pub payment_gateway_address: Option<Communicator<OrderService>>,
@@ -33,7 +36,7 @@ pub struct OrderService {
 }
 
 impl OrderService {
-    pub async fn new(coordinator_address: Addr<Coordinator>, storage_address: Addr<Storage>) -> Self {
+    pub async fn new(storage_address: Addr<Storage>) -> Self {
         let logger = Logger::new("OrderService");
         logger.info("Initializing OrderService");
 
@@ -41,19 +44,49 @@ impl OrderService {
             .parse::<SocketAddr>()
             .expect("Failed to parse server address");
 
-        let pending_stream = try_to_connect(payment_gateway_address).await;
-        
+        let pending_stream =
+            connect_some(vec![payment_gateway_address], PeerType::CoordinatorType).await;
+
         Self {
             orders: HashMap::new(),
             clients_orders: HashMap::new(),
             restaurants_orders: HashMap::new(),
             pending_orders: Vec::new(),
-            coordinator_address,
+            coordinator_address: None,
             storage_address,
             logger,
             payment_gateway_address: None,
             pending_stream,
         }
+    }
+
+    fn handle_unauthorized_order(&mut self, order: &OrderDTO, coordinator: Addr<Coordinator>) {
+        self.logger.warn(format!(
+            "Order {} unauthorized, notifying Coordinator",
+            order.order_id
+        ));
+        coordinator.do_send(NotifyOrderUpdated {
+            peer_id: order.client_id.clone(),
+            order: order.clone(),
+        });
+    }
+
+    fn handle_authorized_order(&mut self, order: &OrderDTO, coordinator: Addr<Coordinator>) {
+        self.logger.info(format!(
+            "Order {} authorized, notifying Coordinator",
+            order.order_id
+        ));
+        self.storage_address.do_send(AddOrder {
+            order: order.clone(),
+        });
+        coordinator.do_send(NotifyOrderUpdated {
+            peer_id: order.restaurant_id.clone(),
+            order: order.clone(),
+        });
+        coordinator.do_send(NotifyOrderUpdated {
+            peer_id: order.client_id.clone(),
+            order: order.clone(),
+        });
     }
 }
 
@@ -68,9 +101,34 @@ impl Actor for OrderService {
             let communicator = Communicator::new(stream, ctx.address(), PeerType::CoordinatorType);
             self.payment_gateway_address = Some(communicator);
             self.logger.info("Connected to PaymentGateway successfully");
+
+            // TODO: Sacar esto, es para una prueba nomás
+            ctx.address().do_send(NewOrder {
+                order: OrderDTO {
+                    order_id: std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap()
+                        .as_secs(),
+                    client_id: "pepe".to_string(),
+                    restaurant_id: "test_restaurant".to_string(),
+                    dish_name: "test_dish".to_string(),
+                    status: OrderStatus::Requested,
+                    delivery_id: None,
+                    time_stamp: std::time::SystemTime::now(),
+                    client_position: (1.0, 2.0),
+                },
+            });
         } else {
             self.logger.error("Failed to connect to PaymentGateway");
         }
+    }
+}
+
+impl Handler<SetCoordinatorAddr> for OrderService {
+    type Result = ();
+
+    fn handle(&mut self, msg: SetCoordinatorAddr, _ctx: &mut Self::Context) -> Self::Result {
+        self.coordinator_address = Some(msg.coordinator_addr);
     }
 }
 
@@ -79,9 +137,23 @@ impl Handler<NewOrder> for OrderService {
     type Result = ();
 
     fn handle(&mut self, msg: NewOrder, _ctx: &mut Self::Context) -> Self::Result {
-
         // Notifica al PaymentGateway para que procese el pago
-        
+        if let Some(communicator) = self.payment_gateway_address.as_ref() {
+            if let Some(sender) = communicator.sender.as_ref() {
+                let socket_addr = communicator.local_address;
+                let auth_message = NetworkMessage::RequestAuthorization(RequestAuthorization {
+                    origin_address: socket_addr,
+                    order: msg.order,
+                });
+                sender.do_send(auth_message);
+            } else {
+                self.logger
+                    .error("PaymentGateway Communicator sender not initialized");
+            }
+        } else {
+            self.logger
+                .error("PaymentGateway Communicator not initialized");
+        }
     }
 }
 
@@ -89,25 +161,35 @@ impl Handler<AuthorizationResult> for OrderService {
     type Result = ();
 
     fn handle(&mut self, msg: AuthorizationResult, _ctx: &mut Self::Context) -> Self::Result {
-
-        // Si la autorización fue exitosa, se agrega la orden al storage
-
-            // Guardar la orden en la storage
-            // Notificar al Coordinator para que informe al Cliente y al Restaurante
-
-        // Si no,   
-            // Notificar al Coordinator para que informe al Cliente
+        let order = msg.result;
+        if let Some(coordinator) = &self.coordinator_address {
+            match order.status {
+                OrderStatus::Authorized => {
+                    self.handle_authorized_order(&order, coordinator.clone());
+                }
+                OrderStatus::Unauthorized => {
+                    self.handle_unauthorized_order(&order, coordinator.clone());
+                }
+                _ => {
+                    self.logger.error(format!(
+                        "Unexpected order status {:?} for order {}",
+                        order.status, order.order_id
+                    ));
+                }
+            }
+        } else {
+            self.logger.error("Coordinator address not set");
         }
     }
-
+}
 
 impl Handler<NetworkMessage> for OrderService {
     type Result = ();
 
-    fn handle(&mut self, msg: NetworkMessage, _ctx: &mut Self::Context) -> Self::Result {
+    fn handle(&mut self, msg: NetworkMessage, ctx: &mut Self::Context) -> Self::Result {
         match msg {
             NetworkMessage::AuthorizationResult(result) => {
-                // Handle AuthorizationResult
+                ctx.address().do_send(result);
             }
             _ => {
                 self.logger.error(format!(
@@ -247,6 +329,5 @@ impl Handler<SetDeliveryToOrder> for OrderService {
         });
 
         // 2. Notificar al Coordinator para que avise al Cliente
-
     }
 }

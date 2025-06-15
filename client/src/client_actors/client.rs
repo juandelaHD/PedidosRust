@@ -1,21 +1,22 @@
 use crate::client_actors::ui_handler::UIHandler;
 use crate::messages::internal_messages::*;
+use actix::fut::wrap_future;
 use actix::prelude::*;
 use common::logger::Logger;
 use common::messages::NearbyRestaurants;
+use common::messages::NewOrder;
 use common::messages::client_messages::*;
 use common::messages::shared_messages::*;
 use common::network::communicator::Communicator;
-use common::network::connections::{try_to_connect, connect_some};
+use common::network::connections::{connect_some, try_to_connect};
 use common::network::peer_types::PeerType;
 use common::types::dtos::ClientDTO;
 use common::types::dtos::OrderDTO;
+use common::types::dtos::UserDTO;
 use common::types::order_status::OrderStatus;
 use rand::Rng;
 use std::net::SocketAddr;
 use tokio::net::TcpStream;
-use actix::fut::wrap_future;
-use common::types::dtos::UserDTO;
 
 pub struct Client {
     /// Vector de direcciones de servidores
@@ -37,7 +38,11 @@ pub struct Client {
 }
 
 impl Client {
-    pub async fn new(servers: Vec<SocketAddr>, client_id: String, client_position: (f32, f32)) -> Self {
+    pub async fn new(
+        servers: Vec<SocketAddr>,
+        client_id: String,
+        client_position: (f32, f32),
+    ) -> Self {
         let logger = Logger::new(format!("Client {}", &client_id));
         logger.info(format!("Starting client with ID: {}", client_id));
         // Intentamos conectarnos a los servidores
@@ -52,7 +57,7 @@ impl Client {
             client_id,
             client_position,
             client_order: None, // Inicializamos el pedido como None
-            ui_handler: None, // Inicializamos el canal de envío hacia UIHandler como None
+            ui_handler: None,   // Inicializamos el canal de envío hacia UIHandler como None
             communicator: None,
             pending_stream, // Guarda el stream hasta que arranque
             logger,
@@ -60,17 +65,16 @@ impl Client {
     }
 
     pub fn send_network_message(&self, message: NetworkMessage) {
-        if let Some(communicator)  = &self.communicator {
+        if let Some(communicator) = &self.communicator {
             if let Some(sender) = &communicator.sender {
                 sender.do_send(message);
             } else {
                 self.logger.error("Sender not initialized in communicator");
             }
         } else {
-            self.logger
-                .error(&format!("Communicator not found!",));
+            self.logger.error(&format!("Communicator not found!",));
         }
-    } 
+    }
 
     pub fn start_running(&self, _ctx: &mut Context<Self>) {
         self.logger.info("Starting client...");
@@ -90,8 +94,10 @@ impl Actor for Client {
     type Context = Context<Self>;
 
     fn started(&mut self, ctx: &mut Self::Context) {
-        let communicator = Communicator::new( 
-            self.pending_stream.take().expect("Pending stream should be set"),
+        let communicator = Communicator::new(
+            self.pending_stream
+                .take()
+                .expect("Pending stream should be set"),
             ctx.address(),
             PeerType::ClientType,
         );
@@ -103,7 +109,6 @@ impl Actor for Client {
         self.start_running(ctx);
     }
 }
-
 
 pub struct UpdateCommunicator(pub Communicator<Client>);
 
@@ -137,13 +142,10 @@ impl Handler<LeaderIs> for Client {
             return;
         }
         // Si no estamos conectados al líder, intentamos conectarnos
-        ctx.spawn(wrap_future(async move {            
+        ctx.spawn(wrap_future(async move {
             if let Some(new_stream) = try_to_connect(leader_addr).await {
-                let new_communicator = Communicator::new(
-                    new_stream,
-                    self_addr.clone(),
-                    PeerType::ClientType,
-                );
+                let new_communicator =
+                    Communicator::new(new_stream, self_addr.clone(), PeerType::ClientType);
                 self_addr.do_send(UpdateCommunicator(new_communicator));
                 logger.info(format!(
                     "Communicator updated with new peer address: {}",
@@ -233,7 +235,6 @@ impl Handler<RecoverProcedure> for Client {
         }
     }
 }
-
 
 impl Handler<SendThisOrder> for Client {
     type Result = ();

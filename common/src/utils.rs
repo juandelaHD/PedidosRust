@@ -16,6 +16,9 @@ pub fn random_bool_by_probability() -> bool {
 
 pub fn random_bool_by_given_probability(probability: f32) -> bool {
     let rand_value: f32 = random();
+    println!("Random bool with probability: {}", probability);
+    println!("Result is: {}", rand_value < probability);
+
     rand_value < probability
 }
 

@@ -1,18 +1,23 @@
 use crate::messages::internal_messages::RegisterConnection;
+use crate::messages::internal_messages::*;
 use crate::server_actors::coordinator_manager::CoordinatorManager;
+use crate::server_actors::services::orders_services::OrderService;
+use crate::server_actors::storage;
+use crate::server_actors::storage::Storage;
 use actix::prelude::*;
 use common::bimap::BiMap;
 use common::constants::BASE_PORT;
 use common::logger::Logger;
+use common::messages::UpdateOrderStatus;
 use common::messages::coordinator_messages::*;
 use common::messages::shared_messages::*;
 use common::network::communicator::Communicator;
+use common::network::connections::connect_to_all;
+use common::network::peer_types::PeerType;
+use common::types::order_status::OrderStatus;
 use common::types::restaurant_info;
 use std::{collections::HashMap, net::SocketAddr};
-use common::network::connections::{connect_to_all};
 use tokio::net::TcpStream;
-use common::network::peer_types::PeerType;
-use crate::messages::internal_messages::*;
 // use services::NearbyDeliveryService;
 
 #[derive(Debug)]
@@ -45,13 +50,12 @@ pub struct Coordinator {
     pub logger: Logger,
     pub coordinator_manager: Option<Addr<CoordinatorManager>>,
     pub pending_streams: HashMap<SocketAddr, TcpStream>,
+    pub storage: Addr<Storage>,
+    pub order_service: Addr<OrderService>,
 }
 
 impl Coordinator {
-    pub async fn new(
-        srv_addr: SocketAddr,
-        ring_nodes: Vec<SocketAddr>,
-    ) -> Self {
+    pub async fn new(srv_addr: SocketAddr, ring_nodes: Vec<SocketAddr>) -> Self {
         // Inicializar el coordinador con la dirección del servidor y los nodos del anillo
         // y un logger compartido.
         let pending_streams: HashMap<SocketAddr, TcpStream> =
@@ -60,6 +64,7 @@ impl Coordinator {
         if pending_streams.is_empty() {
             println!("No connections established.");
         }
+        let storage = Storage::new().start();
 
         Self {
             id: format!("server_{}", srv_addr.port() - BASE_PORT),
@@ -71,10 +76,10 @@ impl Coordinator {
             coordinator_manager: None,
             communicators: HashMap::new(),
             pending_streams,
+            order_service: OrderService::new(storage.clone()).await.start(),
+            storage,
         }
     }
-
-    
 }
 
 impl Actor for Coordinator {
@@ -96,7 +101,7 @@ impl Actor for Coordinator {
             if let Some(coordinator_manager) = &self.coordinator_manager {
                 coordinator_manager.do_send(RegisterConnectionManager {
                     remote_addr: addr,
-                    communicator: communicator,
+                    communicator,
                 });
             } else {
                 self.logger
@@ -113,9 +118,12 @@ impl Actor for Coordinator {
             self.logger
                 .info("CoordinatorManager not initialized yet, cannot start running.");
         }
+
+        self.order_service.do_send(SetCoordinatorAddr {
+            coordinator_addr: ctx.address(),
+        });
     }
 }
-
 
 impl Handler<RegisterConnectionManager> for Coordinator {
     type Result = ();
@@ -140,7 +148,7 @@ impl Handler<RegisterConnection> for Coordinator {
 
         // TODO: El valor debe ser el ID del cliente (el nombre)
         self.user_addresses
-            .insert(msg.client_addr,  "UNKNOWN_USER".to_string());
+            .insert(msg.client_addr, "UNKNOWN_USER".to_string());
         self.logger
             .info(format!("Registered connection from {} ", msg.client_addr));
     }
@@ -162,10 +170,8 @@ impl Handler<NearbyRestaurants> for Coordinator {
                     .info(format!("No sender found for {}", client_addr));
             }
         } else {
-            self.logger.info(format!(
-                "Client address not found for ID: {}",
-                client_id
-            ));
+            self.logger
+                .info(format!("Client address not found for ID: {}", client_id));
         }
     }
 }
@@ -186,10 +192,29 @@ impl Handler<NearbyDeliveries> for Coordinator {
                     .info(format!("No sender found for {}", client_addr));
             }
         } else {
-            self.logger.info(format!(
-                "Client address not found for ID: {}",
-                client_id
-            ));
+            self.logger
+                .info(format!("Client address not found for ID: {}", client_id));
+        }
+    }
+}
+
+impl Handler<NotifyOrderUpdated> for Coordinator {
+    type Result = ();
+
+    fn handle(&mut self, msg: NotifyOrderUpdated, _ctx: &mut Self::Context) -> Self::Result {
+        let peer_id = msg.peer_id;
+        let peer_addr = self.user_addresses.get_by_value(&peer_id).cloned();
+        if let Some(addr) = peer_addr {
+            if let Some(sender) = &self.communicators[&addr].sender {
+                sender.do_send(NetworkMessage::UpdateOrderStatus(UpdateOrderStatus {
+                    order: msg.order,
+                }));
+            } else {
+                self.logger.info(format!("No sender found for {}", addr));
+            }
+        } else {
+            self.logger
+                .info(format!("Peer address not found for ID: {}", peer_id));
         }
     }
 }
@@ -197,7 +222,6 @@ impl Handler<NearbyDeliveries> for Coordinator {
 impl Handler<WhoIsLeader> for Coordinator {
     type Result = ();
     fn handle(&mut self, msg: WhoIsLeader, _ctx: &mut Self::Context) -> Self::Result {
-
         self.logger
             .info(format!("Received WhoIsLeader from {}", msg.origin_addr));
         self.logger.info(format!(
@@ -208,19 +232,21 @@ impl Handler<WhoIsLeader> for Coordinator {
 
         // Si el origen está en user_addresses, actualizar el ID del usuario
         if let Some(_user_id) = self.user_addresses.get_by_key(&user_address) {
-            self.user_addresses.insert(user_address,  msg.user_id.clone());
+            self.user_addresses
+                .insert(user_address, msg.user_id.clone());
             self.logger.info(format!(
                 "User ID for {} is {}",
-                user_address, msg.user_id.clone()
+                user_address,
+                msg.user_id.clone()
             ));
-
         } else {
             self.logger.info(format!(
                 "No user ID found for {}. Adding as UNKNOWN_USER.",
                 user_address
             ));
             // Si no está, lo actualizamos o lo agregamos
-            self.user_addresses.insert(user_address, msg.user_id.clone());
+            self.user_addresses
+                .insert(user_address, msg.user_id.clone());
         }
 
         //  Si hay un coordinador actual, se lo notificamos al cliente
@@ -314,8 +340,9 @@ impl Handler<NetworkMessage> for Coordinator {
                 }
             }
             NetworkMessage::RegisterUser(msg_data) => {
-                self.logger
-                    .info("Received RegisterUser message, not implemented yet, sending dummy response");
+                self.logger.info(
+                    "Received RegisterUser message, not implemented yet, sending dummy response",
+                );
                 // TODO: Implement user registration logic to return user info
                 let client_id = msg_data.user_id.clone();
                 let client_to_send = self.user_addresses.get_by_value(&client_id).cloned();
@@ -328,8 +355,10 @@ impl Handler<NetworkMessage> for Coordinator {
                         ));
                         sender.do_send(NetworkMessage::NoRecoveredInfo);
                     } else {
-                        self.logger
-                            .info(format!("No sender found for {} to send information", client_addr));
+                        self.logger.info(format!(
+                            "No sender found for {} to send information",
+                            client_addr
+                        ));
                     }
                 } else {
                     self.logger.info(format!(
@@ -355,8 +384,7 @@ impl Handler<NetworkMessage> for Coordinator {
             NetworkMessage::RequestNearbyRestaurants(msg_data) => {
                 self.logger
                     .warn("Received RequestNearbyRestaurants message,  not implemented yet");
-                // 
-
+                //
             }
 
             NetworkMessage::RequestThisOrder(_msg_data) => {
@@ -399,7 +427,6 @@ impl Handler<NetworkMessage> for Coordinator {
                 self.logger
                     .info("Received DeliverThisOrder message, not implemented yet");
             }
-            
 
             // CoordinatorManager messages
             NetworkMessage::RequestNewStorageUpdates(_msg_data) => {
