@@ -53,7 +53,7 @@ impl Handler<RequestNearbyRestaurants> for NearbyRestaurantsService {
         let coordinator_addr = self.coordinator_addr.clone();
         let logger = self.logger.clone();
         let client = msg.client.clone();
-        let location = msg.client.client_position.clone();
+        let location = msg.client.client_position;
         let get_nearby_restaurants = NearbyRestaurantsService::get_nearby_restaurants;
 
         storage_addr

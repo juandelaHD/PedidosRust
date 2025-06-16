@@ -13,7 +13,7 @@ use common::types::dtos::OrderDTO;
 use common::{
     constants::{PAYMENT_GATEWAY_PORT, SERVER_IP_ADDRESS},
     messages::{AuthorizationResult, NetworkMessage, NewOrder},
-    network::{communicator::Communicator, connections::try_to_connect, peer_types::PeerType},
+    network::{communicator::Communicator, peer_types::PeerType},
     types::order_status::OrderStatus,
 };
 use std::{collections::HashMap, net::SocketAddr};
@@ -101,23 +101,6 @@ impl Actor for OrderService {
             let communicator = Communicator::new(stream, ctx.address(), PeerType::CoordinatorType);
             self.payment_gateway_address = Some(communicator);
             self.logger.info("Connected to PaymentGateway successfully");
-
-            // TODO: Sacar esto, es para una prueba nomás
-            ctx.address().do_send(NewOrder {
-                order: OrderDTO {
-                    order_id: std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap()
-                        .as_secs(),
-                    client_id: "pepe".to_string(),
-                    restaurant_id: "test_restaurant".to_string(),
-                    dish_name: "test_dish".to_string(),
-                    status: OrderStatus::Requested,
-                    delivery_id: None,
-                    time_stamp: std::time::SystemTime::now(),
-                    client_position: (1.0, 2.0),
-                },
-            });
         } else {
             self.logger.error("Failed to connect to PaymentGateway");
         }

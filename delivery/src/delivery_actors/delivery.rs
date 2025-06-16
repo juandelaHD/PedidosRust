@@ -1,11 +1,11 @@
+use actix::fut::wrap_future;
 use actix::prelude::*;
 use common::constants::BASE_DELAY_MILLIS;
 use common::logger::Logger;
 use common::messages::delivery_messages::{AcceptOrder, IAmAvailable, OrderDelivered};
-use common::messages::restaurant_messages::DeliverThisOrder;
-use common::messages::{DeliveryNoNeeded, NewOfferToDeliver, shared_messages::*};
+use common::messages::{shared_messages::*, DeliverThisOrder, DeliveryNoNeeded, NewOfferToDeliver};
 use common::network::communicator::Communicator;
-use common::network::connections::{try_to_connect, connect_some};
+use common::network::connections::{connect_some, try_to_connect};
 use common::network::peer_types::PeerType;
 use common::types::delivery_status::DeliveryStatus;
 use common::types::dtos::{DeliveryDTO, OrderDTO, UserDTO};
@@ -14,8 +14,6 @@ use std::net::SocketAddr;
 use std::time::Duration;
 use tokio::net::TcpStream;
 use tokio::time::sleep;
-use actix::fut::wrap_future;
-
 
 pub struct Delivery {
     /// Vector de direcciones de servidores
@@ -32,7 +30,7 @@ pub struct Delivery {
     pub current_order: Option<OrderDTO>,
     /// Comunicador asociado al Server.
     pub communicator: Option<Communicator<Delivery>>,
-    pub pending_stream:  Option<TcpStream>, // Guarda los streams hasta que arranque
+    pub pending_stream: Option<TcpStream>, // Guarda los streams hasta que arranque
     pub logger: Logger,
 }
 
@@ -56,7 +54,7 @@ impl Delivery {
             servers,
             delivery_id,
             position,
-            status: DeliveryStatus::Initial, // Inicializamos el estado como Disponible
+            status: DeliveryStatus::Available,
             probability,
             current_order: None,
             communicator: None,
@@ -66,7 +64,7 @@ impl Delivery {
     }
 
     pub fn send_network_message(&self, message: NetworkMessage) {
-        if let Some(communicator)  = &self.communicator {
+        if let Some(communicator) = &self.communicator {
             if let Some(sender) = &communicator.sender {
                 sender.do_send(message);
             } else {
@@ -74,9 +72,9 @@ impl Delivery {
             }
         } else {
             self.logger
-                .error(&format!("Communicator not found!",));
+                .error("Communicator not initialized, cannot send network message");
         }
-    } 
+    }
 
     pub fn start_running(&self, _ctx: &mut Context<Self>) {
         self.logger.info("Starting delivery...");
@@ -96,8 +94,10 @@ impl Actor for Delivery {
     type Context = Context<Self>;
 
     fn started(&mut self, ctx: &mut Self::Context) {
-        let communicator = Communicator::new( 
-            self.pending_stream.take().expect("Pending stream should be set"),
+        let communicator = Communicator::new(
+            self.pending_stream
+                .take()
+                .expect("Pending stream should be set"),
             ctx.address(),
             PeerType::DeliveryType,
         );
@@ -105,7 +105,6 @@ impl Actor for Delivery {
         self.start_running(ctx);
     }
 }
-
 
 pub struct UpdateCommunicator(pub Communicator<Delivery>);
 
@@ -118,7 +117,29 @@ impl Handler<UpdateCommunicator> for Delivery {
 
     fn handle(&mut self, msg: UpdateCommunicator, _ctx: &mut Self::Context) -> Self::Result {
         self.communicator = Some(msg.0);
-        
+    }
+}
+
+pub struct SendRegistration();
+
+impl Message for SendRegistration {
+    type Result = ();
+}
+
+impl Handler<SendRegistration> for Delivery {
+    type Result = ();
+
+    fn handle(&mut self, _msg: SendRegistration, _ctx: &mut Self::Context) -> Self::Result {
+        let local_address = self
+            .communicator
+            .as_ref()
+            .map(|c| c.local_address)
+            .expect("Socket address not set");
+        self.send_network_message(NetworkMessage::RegisterUser(RegisterUser {
+            origin_addr: local_address,
+            user_id: self.delivery_id.clone(),
+            position: self.position.clone(),
+        }));
     }
 }
 
@@ -131,22 +152,30 @@ impl Handler<LeaderIs> for Delivery {
         let logger = self.logger.clone();
         let communicator_opt = self.communicator.as_ref().map(|c| c.peer_address);
 
-        // Si ya estamos conectados al líder, no hacemos nada
+        // Si ya estamos conectados al líder, enviamos que nos registre
         if Some(leader_addr) == communicator_opt {
             self.logger.info(format!(
                 "Already connected to the leader at address: {}",
                 leader_addr
             ));
+            let local_address = self
+                .communicator
+                .as_ref()
+                .map(|c| c.local_address)
+                .expect("Socket address not set");
+            self.send_network_message(NetworkMessage::RegisterUser(RegisterUser {
+                origin_addr: local_address,
+                user_id: self.delivery_id.clone(),
+                position: self.position,
+            }));
             return;
         }
         // Si no estamos conectados al líder, intentamos conectarnos
-        ctx.spawn(wrap_future(async move {            
+        // Clone the necessary fields to move into the async block
+        ctx.spawn(wrap_future(async move {
             if let Some(new_stream) = try_to_connect(leader_addr).await {
-                let new_communicator = Communicator::new(
-                    new_stream,
-                    self_addr.clone(),
-                    PeerType::DeliveryType,
-                );
+                let new_communicator =
+                    Communicator::new(new_stream, self_addr.clone(), PeerType::DeliveryType);
                 self_addr.do_send(UpdateCommunicator(new_communicator));
                 logger.info(format!(
                     "Communicator updated with new peer address: {}",
@@ -201,39 +230,7 @@ impl Handler<RecoverProcedure> for Delivery {
             self.current_order.as_ref().map(|o| o.order_id),
         ));
 
-        self.logger.warn("Handling RecoverProcedure not fully implemented, please implement the necessary logic based on the delivery state.");
         match self.status {
-            DeliveryStatus::Initial => {
-                self.logger
-                    .info("Delivery is in Initial state, sending StartRunning");
-                self.start_running(ctx);
-            }
-            DeliveryStatus::Reconnecting => {
-                self.logger
-                    .info("Delivery is in Reconnecting state, sending WhoIsLeader");
-                let actual_socket_addr = self
-                    .communicator
-                    .as_ref()
-                    .map(|c| c.local_address)
-                    .expect("Socket address not set");
-                self.send_network_message(NetworkMessage::WhoIsLeader(WhoIsLeader {
-                    origin_addr: actual_socket_addr,
-                    user_id: self.delivery_id.clone(),
-                }));
-            }
-            /*
-            DeliveryStatus::Recovering => {
-                self.logger.info("Delivery is in Recovering state, sending RecoverProcedure");
-                ctx.address().do_send(RecoverProcedure { delivery_info: delivery_dto.clone() });
-            }
-            */
-            DeliveryStatus::Available => {
-                self.logger
-                    .info("Delivery is Available, sending IAmAvailable");
-                self.send_network_message(NetworkMessage::IAmAvailable(IAmAvailable {
-                    delivery_info: delivery_dto.clone(),
-                }));
-            }
             DeliveryStatus::WaitingConfirmation => {
                 if let Some(order) = &self.current_order {
                     self.logger.info(format!(
@@ -282,10 +279,9 @@ impl Handler<RecoverProcedure> for Delivery {
             }
             _ => {
                 self.logger
-                    .error(format!("Unknown DeliveryStatus: {:?}", self.status));
+                    .info("Delivery is available or in another state, no action needed.");
             }
         }
-        self.logger.info("RecoverProcedure handling completed.");
     }
 }
 
@@ -407,7 +403,7 @@ impl Handler<OrderDelivered> for Delivery {
                 let my_delivery_info = DeliveryDTO {
                     delivery_id: self.delivery_id.clone(),
                     delivery_position: self.position,
-                    status: self.status.clone(),
+                    status: self.status,
                     current_order: None, // No current order after delivery
                     current_client_id: None,
                     time_stamp: std::time::SystemTime::now(),
@@ -460,7 +456,12 @@ impl Handler<NetworkMessage> for Delivery {
                     }
                 },
             },
-            // TODO: Handle NoRecoveredInfo if needed
+
+            NetworkMessage::NoRecoveredInfo => {
+                self.logger
+                    .warn("No recovered info available, proceeding with normal operation.");
+            }
+
             NetworkMessage::NewOfferToDeliver(msg_data) => {
                 self.logger.info(format!(
                     "Received NewOfferToDeliver for order ID: {}",
@@ -493,8 +494,7 @@ impl Handler<NetworkMessage> for Delivery {
     }
 }
 
-
-/* 
+/*
 // ------- TESTING ------- //
 struct GetStatus;
 impl Message for GetStatus {
@@ -534,7 +534,7 @@ mod tests {
     }
 
     fn dummy_delivery(status: DeliveryStatus, current_order: Option<OrderDTO>) -> Delivery {
-        
+
     }
 
     #[actix_rt::test]

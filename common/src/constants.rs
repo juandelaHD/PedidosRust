@@ -13,3 +13,4 @@ pub const PAYMENT_GATEWAY_PORT: u16 = BASE_PORT + NUM_COORDINATORS + 1;
 pub const PAYMENT_SUCCESS_PROBABILITY: f32 = 0.6;
 pub const INTERVALO_HEARTBEAT: Duration = Duration::from_secs(2);
 pub const TIMEOUT_HEARTBEAT: Duration = Duration::from_secs(3);
+pub const NUMBER_OF_CHEFS: usize = 4;

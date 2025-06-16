@@ -19,3 +19,9 @@ pub struct AcceptOrder {
 pub struct OrderDelivered {
     pub order: OrderDTO,
 }
+
+#[derive(Message, Debug, Clone, Serialize, Deserialize)]
+#[rtype(result = "()")]
+pub struct DeliverThisOrder {
+    pub order: OrderDTO,
+}

@@ -4,7 +4,6 @@ use actix::fut::wrap_future;
 use actix::prelude::*;
 use common::logger::Logger;
 use common::messages::NearbyRestaurants;
-use common::messages::NewOrder;
 use common::messages::client_messages::*;
 use common::messages::shared_messages::*;
 use common::network::communicator::Communicator;
@@ -77,7 +76,6 @@ impl Client {
     }
 
     pub fn start_running(&self, _ctx: &mut Context<Self>) {
-        self.logger.info("Starting client...");
         let actual_socket_addr = self
             .communicator
             .as_ref()
@@ -139,6 +137,16 @@ impl Handler<LeaderIs> for Client {
                 "Already connected to the leader at address: {}",
                 leader_addr
             ));
+            let local_address = self
+                .communicator
+                .as_ref()
+                .map(|c| c.local_address)
+                .expect("Socket address not set");
+            self.send_network_message(NetworkMessage::RegisterUser(RegisterUser {
+                origin_addr: local_address,
+                user_id: self.client_id.clone(),
+                position: self.client_position,
+            }));
             return;
         }
         // Si no estamos conectados al líder, intentamos conectarnos
@@ -170,7 +178,6 @@ impl Handler<LeaderIs> for Client {
     }
 }
 
-// RecoverProcedure
 impl Handler<RecoverProcedure> for Client {
     type Result = ();
 
@@ -179,7 +186,7 @@ impl Handler<RecoverProcedure> for Client {
             UserDTO::Client(client_dto) => {
                 if client_dto.client_id == self.client_id {
                     self.logger.info(format!(
-                        "Recovering info for Client ID={}, updating local state...",
+                        "Recovering info for Client ID={} ...",
                         client_dto.client_id
                     ));
                     self.client_position = client_dto.client_position;
@@ -188,7 +195,7 @@ impl Handler<RecoverProcedure> for Client {
                     // Si tengo una orden activa, chequeo su estado
                     if let Some(client_dto) = &self.client_order {
                         self.logger.info(format!(
-                            "Client ID={} tiene una orden activa con estado: {}",
+                            "Client ID={} has an active order with status: {}",
                             client_dto.client_id, client_dto.status
                         ));
 
@@ -197,14 +204,17 @@ impl Handler<RecoverProcedure> for Client {
                             OrderStatus::Cancelled => {
                                 panic!("{}", client_dto.status)
                             }
+                            OrderStatus::Delivered => {
+                                panic!("Order delivered: {}", client_dto.dish_name);
+                            }
                             _ => {
-                                self.logger.info(format!("Estado: {}", client_dto.status));
+                                self.logger.info(format!("State: {}", client_dto.status));
                             }
                         }
                     } else {
                         // Si no tengo una orden activa, informo y solicito restaurantes cercanos
                         self.logger.info(format!(
-                            "Client ID={} no tiene orden activa.",
+                            "Client ID={} has no active order, requesting nearby restaurants.",
                             self.client_id
                         ));
                         let new_client_dto = ClientDTO {
@@ -304,23 +314,19 @@ impl Handler<NetworkMessage> for Client {
             NetworkMessage::RecoveredInfo(user_dto) => match user_dto {
                 UserDTO::Client(client_dto) => {
                     if client_dto.client_id == self.client_id {
-                        self.logger.info(format!(
-                            "Recovered info for Client ID={}, updating local state...",
-                            client_dto.client_id
-                        ));
                         ctx.address().do_send(RecoverProcedure {
                             user_info: UserDTO::Client(client_dto.clone()),
                         });
                     } else {
                         self.logger.warn(format!(
-                            "Received recovered info for a different delivery ({}), ignoring",
+                            "Received recovered info for a different client ({}), ignoring",
                             client_dto.client_id
                         ));
                     }
                 }
                 other => {
                     self.logger.warn(format!(
-                        "Received recovered info of type {:?}, but I'm Delivery. Ignoring.",
+                        "Received recovered info of type {:?}, but I'm Client. Ignoring.",
                         other
                     ));
                 }

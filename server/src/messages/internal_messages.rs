@@ -39,7 +39,7 @@ pub struct SetCoordinatorManager {
 /////////////////////////////////////////////////////////////////////
 #[derive(Message, Debug)]
 #[rtype(result = "()")]
-pub struct RegisterConnectionManager {
+pub struct RegisterConnectionWithCoordinator {
     pub remote_addr: SocketAddr,
     pub communicator: Communicator<Coordinator>,
 }
@@ -59,7 +59,6 @@ pub struct ApplyStorageUpdates {
 pub struct SetStorageUpdatesLog {
     pub updates_log: HashMap<u64, StorageLogMessage>,
 }
-// TODO: Definir un enum StorageMessages para usar en ApplyStorageUpdates y SetStorageUpdatesLog
 
 #[derive(Serialize, Deserialize, Debug, Message, Clone)]
 #[serde(tag = "type")]
@@ -111,6 +110,30 @@ pub struct AddDelivery {
 #[rtype(result = "()")]
 pub struct AddOrder {
     pub order: OrderDTO,
+}
+
+#[derive(Message, Debug, Clone, Serialize, Deserialize)]
+#[rtype(result = "Option<ClientDTO>")]
+pub struct GetClient {
+    pub restaurant_id: String,
+}
+
+#[derive(Message, Debug, Clone, Serialize, Deserialize)]
+#[rtype(result = "Option<RestaurantDTO>")]
+pub struct GetRestaurant {
+    pub restaurant_id: String,
+}
+
+#[derive(Message, Debug, Clone, Serialize, Deserialize)]
+#[rtype(result = "Option<DeliveryDTO>")]
+pub struct GetDelivery {
+    pub delivery_id: String,
+}
+
+#[derive(Message, Debug, Clone, Serialize, Deserialize)]
+#[rtype(result = "Option<OrderDTO>")]
+pub struct GetOrder {
+    pub order_id: u64,
 }
 
 #[derive(Message, Debug, Clone, Serialize, Deserialize)]

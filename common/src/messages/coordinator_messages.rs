@@ -27,6 +27,7 @@ pub struct NewOrder {
 #[rtype(result = "()")]
 pub struct DeliveryAvailable {
     pub order: OrderDTO,
+    pub delivery_info: DeliveryDTO,
 }
 
 #[derive(Message, Debug, Clone, Serialize, Deserialize)]

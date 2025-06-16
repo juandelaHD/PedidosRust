@@ -15,8 +15,12 @@ use common::messages::shared_messages::*;
 use common::network::communicator::Communicator;
 use common::network::connections::connect_to_all;
 use common::network::peer_types::PeerType;
-use common::types::order_status::OrderStatus;
-use common::types::restaurant_info;
+use common::types::delivery_status::DeliveryStatus;
+use common::types::dtos::ClientDTO;
+use common::types::dtos::DeliveryDTO;
+use common::types::dtos::RestaurantDTO;
+use common::types::dtos::UserDTO;
+use std::collections::HashSet;
 use std::{collections::HashMap, net::SocketAddr};
 use tokio::net::TcpStream;
 // use services::NearbyDeliveryService;
@@ -81,6 +85,23 @@ impl Coordinator {
             storage,
         }
     }
+
+    pub fn send_network_message(&self, user_id: String, message: NetworkMessage) {
+        if let Some(user_id) = self.user_addresses.get_by_value(&user_id).cloned() {
+            if let Some(communicator) = self.communicators.get(&user_id) {
+                if let Some(sender) = &communicator.sender {
+                    sender.do_send(message);
+                } else {
+                    self.logger.info(format!("No sender found for {}", user_id));
+                }
+            } else {
+                self.logger
+                    .info(format!("Communicator not found for {}", user_id));
+            }
+        } else {
+            self.logger.info(format!("User ID {} not found", user_id));
+        }
+    }
 }
 
 impl Actor for Coordinator {
@@ -100,7 +121,7 @@ impl Actor for Coordinator {
             let communicator = Communicator::new(stream, ctx.address(), PeerType::CoordinatorType);
             // le paso los coordinadores que hay al CoordinatorManager
             if let Some(coordinator_manager) = &self.coordinator_manager {
-                coordinator_manager.do_send(RegisterConnectionManager {
+                coordinator_manager.do_send(RegisterConnectionWithCoordinator {
                     remote_addr: addr,
                     communicator,
                 });
@@ -126,10 +147,10 @@ impl Actor for Coordinator {
     }
 }
 
-impl Handler<RegisterConnectionManager> for Coordinator {
+impl Handler<RegisterConnectionWithCoordinator> for Coordinator {
     type Result = ();
 
-    fn handle(&mut self, msg: RegisterConnectionManager, _ctx: &mut Context<Self>) {
+    fn handle(&mut self, msg: RegisterConnectionWithCoordinator, _ctx: &mut Context<Self>) {
         // si recibi un nuevo coordinador se lo pasamos al CoordinatorManager
         if let Some(coordinator_manager) = &self.coordinator_manager {
             coordinator_manager.do_send(msg);
@@ -341,32 +362,197 @@ impl Handler<NetworkMessage> for Coordinator {
                 }
             }
             NetworkMessage::RegisterUser(msg_data) => {
-                self.logger.info(
-                    "Received RegisterUser message, not implemented yet, sending dummy response",
-                );
-                // TODO: Implement user registration logic to return user info
-                let client_id = msg_data.user_id.clone();
-                let client_to_send = self.user_addresses.get_by_value(&client_id).cloned();
-                if let Some(client_addr) = client_to_send {
-                    if let Some(sender) = &self.communicators[&client_addr].sender {
-                        // TODO: Intentar recuperar información del usuario desde storage
-                        self.logger.warn(format!(
-                            "Sending NoRecoveredInfo to {} for client ID {}, due to no storage implementation",
-                            client_addr, client_id
-                        ));
-                        sender.do_send(NetworkMessage::NoRecoveredInfo);
-                    } else {
-                        self.logger.info(format!(
-                            "No sender found for {} to send information",
-                            client_addr
-                        ));
+                let user_id = msg_data.user_id.clone();
+                if let Some(communicator) = self.communicators.get(&msg_data.origin_addr) {
+                    match communicator.peer_type {
+                        PeerType::ClientType => {
+                            let storage = self.storage.clone();
+                            let client_id_clone = user_id.clone();
+                            let logger = self.logger.clone();
+                            ctx.spawn(
+                                async move {
+                                    match storage
+                                        .send(GetClient {
+                                            restaurant_id: client_id_clone.clone(),
+                                        })
+                                        .await
+                                    {
+                                        Ok(user_dto_opt) => {
+                                            if let Some(client_dto) = user_dto_opt {
+                                                NetworkMessage::RecoveredInfo(UserDTO::Client(
+                                                    client_dto,
+                                                ))
+                                            } else {
+                                                storage.do_send(AddClient {
+                                                    client: ClientDTO {
+                                                        client_position: msg_data.position,
+                                                        client_id: client_id_clone.clone(),
+                                                        client_order: None,
+                                                        time_stamp: std::time::SystemTime::now(),
+                                                    },
+                                                });
+                                                NetworkMessage::NoRecoveredInfo
+                                            }
+                                        }
+                                        Err(e) => {
+                                            logger.error(format!(
+                                                "Error retrieving client info: {}",
+                                                e
+                                            ));
+                                            storage.do_send(AddClient {
+                                                client: ClientDTO {
+                                                    client_position: msg_data.position,
+                                                    client_id: client_id_clone.clone(),
+                                                    client_order: None,
+                                                    time_stamp: std::time::SystemTime::now(),
+                                                },
+                                            });
+                                            NetworkMessage::NoRecoveredInfo
+                                        }
+                                    }
+                                }
+                                .into_actor(self)
+                                .map(
+                                    move |network_message, actor, _ctx| {
+                                        actor
+                                            .send_network_message(user_id.clone(), network_message);
+                                    },
+                                ),
+                            );
+                        }
+                        PeerType::RestaurantType => {
+                            let storage = self.storage.clone();
+                            let restaurant_id_clone = user_id.clone();
+                            let logger = self.logger.clone();
+                            ctx.spawn(
+                                async move {
+                                    match storage
+                                        .send(GetRestaurant {
+                                            restaurant_id: restaurant_id_clone.clone(),
+                                        })
+                                        .await
+                                    {
+                                        Ok(user_dto_opt) => {
+                                            if let Some(restaurant_dto) = user_dto_opt {
+                                                NetworkMessage::RecoveredInfo(UserDTO::Restaurant(
+                                                    restaurant_dto,
+                                                ))
+                                            } else {
+                                                storage.do_send(AddRestaurant {
+                                                    restaurant: RestaurantDTO {
+                                                        restaurant_position: msg_data.position,
+                                                        restaurant_id: restaurant_id_clone.clone(),
+                                                        authorized_orders: HashSet::new(),
+                                                        pending_orders: HashSet::new(),
+                                                        time_stamp: std::time::SystemTime::now(),
+                                                    },
+                                                });
+                                                NetworkMessage::NoRecoveredInfo
+                                            }
+                                        }
+                                        Err(e) => {
+                                            logger.error(format!(
+                                                "Error retrieving restaurant info: {}",
+                                                e
+                                            ));
+                                            storage.do_send(AddRestaurant {
+                                                restaurant: RestaurantDTO {
+                                                    restaurant_position: msg_data.position,
+                                                    restaurant_id: restaurant_id_clone.clone(),
+                                                    authorized_orders: HashSet::new(),
+                                                    pending_orders: HashSet::new(),
+                                                    time_stamp: std::time::SystemTime::now(),
+                                                },
+                                            });
+                                            NetworkMessage::NoRecoveredInfo
+                                        }
+                                    }
+                                }
+                                .into_actor(self)
+                                .map(
+                                    move |network_message, actor, _ctx| {
+                                        actor
+                                            .send_network_message(user_id.clone(), network_message);
+                                    },
+                                ),
+                            );
+                        }
+                        PeerType::DeliveryType => {
+                            let storage = self.storage.clone();
+                            let delivery_id_clone = user_id.clone();
+                            let logger = self.logger.clone();
+                            ctx.spawn(
+                                async move {
+                                    match storage
+                                        .send(GetDelivery {
+                                            delivery_id: delivery_id_clone.clone(),
+                                        })
+                                        .await
+                                    {
+                                        Ok(user_dto_opt) => {
+                                            if let Some(delivery_dto) = user_dto_opt {
+                                                NetworkMessage::RecoveredInfo(UserDTO::Delivery(
+                                                    delivery_dto,
+                                                ))
+                                            } else {
+                                                storage.do_send(AddDelivery {
+                                                    delivery: DeliveryDTO {
+                                                        delivery_position: msg_data.position,
+                                                        delivery_id: delivery_id_clone.clone(),
+                                                        current_client_id: None,
+                                                        current_order: None,
+                                                        status: DeliveryStatus::Available,
+                                                        time_stamp: std::time::SystemTime::now(),
+                                                    },
+                                                });
+                                                NetworkMessage::NoRecoveredInfo
+                                            }
+                                        }
+                                        Err(e) => {
+                                            logger.error(format!(
+                                                "Error retrieving delivery info: {}",
+                                                e
+                                            ));
+                                            storage.do_send(AddDelivery {
+                                                delivery: DeliveryDTO {
+                                                    delivery_position: msg_data.position,
+                                                    delivery_id: delivery_id_clone.clone(),
+                                                    current_client_id: None,
+                                                    current_order: None,
+                                                    status: DeliveryStatus::Available,
+                                                    time_stamp: std::time::SystemTime::now(),
+                                                },
+                                            });
+
+                                            NetworkMessage::NoRecoveredInfo
+                                        }
+                                    }
+                                }
+                                .into_actor(self)
+                                .map(
+                                    move |network_message, actor, _ctx| {
+                                        actor
+                                            .send_network_message(user_id.clone(), network_message);
+                                    },
+                                ),
+                            );
+                        }
+                        _ => {
+                            self.logger.info(format!(
+                                "Received RegisterUser from non-client type: {:?}",
+                                communicator.peer_type
+                            ));
+                        }
                     }
                 } else {
                     self.logger.info(format!(
-                        "Client ID {} not found in user_addresses",
-                        client_id
+                        "Communicator not found for {}",
+                        msg_data.origin_addr
                     ));
                 }
+
+                // TODO: Intentar recuperar información del usuario desde storage
+                // self.send_network_message(client_id, NetworkMessage::NoRecoveredInfo);
             }
 
             // Client messages
@@ -382,10 +568,10 @@ impl Handler<NetworkMessage> for Coordinator {
                 self.logger
                     .info("Received OrderFinalized message, not implemented yet");
             }
-            NetworkMessage::RequestNearbyRestaurants(msg_data) => {
+            NetworkMessage::RequestNearbyRestaurants(_msg_data) => {
                 self.logger
-                    .warn("Received RequestNearbyRestaurants message,  not implemented yet");
-                //
+                    .warn("Received RequestNearbyRestaurants message, not implemented yet");
+                // self.nearby_restaurant_service.do_send(msg_data)
             }
 
             NetworkMessage::RequestThisOrder(_msg_data) => {
@@ -414,10 +600,6 @@ impl Handler<NetworkMessage> for Coordinator {
             NetworkMessage::CancelOrder(_msg_data) => {
                 self.logger
                     .info("Received CancelOrder message, not implemented yet");
-            }
-            NetworkMessage::OrderIsPreparing(_msg_data) => {
-                self.logger
-                    .info("Received OrderIsPreparing message, not implemented yet");
             }
             NetworkMessage::RequestNearbyDelivery(_msg_data) => {
                 self.logger
