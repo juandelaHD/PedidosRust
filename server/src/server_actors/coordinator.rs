@@ -245,6 +245,8 @@ impl Handler<NotifyOrderUpdated> for Coordinator {
     type Result = ();
 
     fn handle(&mut self, msg: NotifyOrderUpdated, _ctx: &mut Self::Context) -> Self::Result {
+        
+    
         let peer_id = msg.peer_id.clone();
         self.send_network_message(peer_id, NetworkMessage::NotifyOrderUpdated(msg));
     }
@@ -684,7 +686,7 @@ impl Handler<NetworkMessage> for Coordinator {
                 if let Some(service) = &self.nearby_delivery_service {
                     service.do_send(msg_data);
                 } else {
-                    self.logger.info("NearbyDeliveryService not initialized yet.");
+                    self.logger.warn("NearbyDeliveryService not initialized yet.");
                 }
             }
             NetworkMessage::DeliverThisOrder(_msg_data) => {
@@ -717,8 +719,6 @@ impl Handler<NetworkMessage> for Coordinator {
                     .info("Received RecoverStorageOperations message");
             }
             NetworkMessage::LeaderElection(_msg) => {
-
-
                 self.logger.info(format!(
                     "Received LeaderElection message from {} with candidates {:?}",
                     _msg.initiator, _msg.candidates
@@ -728,8 +728,6 @@ impl Handler<NetworkMessage> for Coordinator {
                 } else {
                     self.logger.info("CoordinatorManager not initialized yet.");
                 }
-
-
             }
 
             NetworkMessage::Ping(msg_data) => {

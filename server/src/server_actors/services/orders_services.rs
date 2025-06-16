@@ -281,17 +281,6 @@ impl Handler<UpdateOrderStatus> for OrderService {
                 ));
             }
         }
-        
-
-        // Notificar al Coordinator para que informe a los actores externos
-        if let Some(coordinator) = &self.coordinator_address {
-            coordinator.do_send(NotifyOrderUpdated {
-                peer_id: msg.order.client_id.clone(),
-                order: msg.order.clone(),
-            });
-        } else {
-            self.logger.error("Coordinator address not set");
-        }
     }
 }
 
@@ -374,8 +363,6 @@ impl Handler<AddAuthorizedOrderToRestaurant> for OrderService {
         ));
         self.send_to_storage(msg);
     }
-
-    // Notificar al Coordinator para que informe al Restaurante
 }
 
 impl Handler<AddPendingOrderToRestaurant> for OrderService {

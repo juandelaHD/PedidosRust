@@ -1,13 +1,13 @@
-use actix::prelude::*;
-use common::logger::Logger;
-use common::types::dtos::DeliveryDTO;
-use common::messages::coordinator_messages::{NearbyDeliveries};
-use common::messages::restaurant_messages::{RequestNearbyDelivery};
-use common::utils::calculate_distance;
-use common::constants::NEARBY_RADIUS;
 use crate::messages::internal_messages::GetDeliveries;
 use crate::server_actors::coordinator::Coordinator;
 use crate::server_actors::storage::Storage;
+use actix::prelude::*;
+use common::constants::NEARBY_RADIUS;
+use common::logger::Logger;
+use common::messages::coordinator_messages::NearbyDeliveries;
+use common::messages::restaurant_messages::RequestNearbyDelivery;
+use common::types::dtos::DeliveryDTO;
+use common::utils::calculate_distance;
 
 pub struct NearbyDeliveryService {
     pub coordinator_address: Addr<Coordinator>,
@@ -16,15 +16,20 @@ pub struct NearbyDeliveryService {
 }
 
 impl NearbyDeliveryService {
-    pub fn new( storage_address: Addr<Storage>, coordinator_address: Addr<Coordinator>,) -> Self {
-        let logger = Logger::new("NearbyDeliveryService");        NearbyDeliveryService {
+    pub fn new(storage_address: Addr<Storage>, coordinator_address: Addr<Coordinator>) -> Self {
+        let logger = Logger::new("NearbyDeliveryService");
+        NearbyDeliveryService {
             coordinator_address,
             storage_address,
             logger,
         }
     }
 
-    fn get_nearby_deliveries(&self, available_deliveries: Vec<DeliveryDTO>, restaurant_pos: (f32, f32)) -> Vec<DeliveryDTO> {
+    fn get_nearby_deliveries(
+        &self,
+        available_deliveries: Vec<DeliveryDTO>,
+        restaurant_pos: (f32, f32),
+    ) -> Vec<DeliveryDTO> {
         available_deliveries
             .into_iter()
             .filter(|delivery| {
@@ -49,23 +54,48 @@ impl Handler<RequestNearbyDelivery> for NearbyDeliveryService {
 
         let restaurant = msg.restaurant_info.position;
         let order = msg.order;
-
+        self.logger.info(format!(
+            "Requesting nearby deliveries for order: {:?} at restaurant position: {:?}",
+            order, restaurant
+        ));
         self.storage_address
             .send(GetDeliveries)
             .into_actor(self)
             .map(move |res, act, _ctx| match res {
                 Ok(deliveries) => {
-                    let nearby: Vec<DeliveryDTO> =
-                        get_nearby_deliveries(act, deliveries, restaurant);
-
-                    coordinator_addr.do_send(NearbyDeliveries {
-                        order,                        
-                        deliveries: nearby,
-                    });
+                    if deliveries.is_empty() {
+                        logger.warn("Retrived  no deliveries from storage.");
+                        // TODO: Check if this is a valid case or if we should handle it differently
+                    } else {
+                        logger.info(format!(
+                            "Retrieved {} deliveries from storage.",
+                            deliveries.len()
+                        ));
+                        let nearby: Vec<DeliveryDTO> =
+                            get_nearby_deliveries(act, deliveries.clone(), restaurant);
+                        if nearby.is_empty() {
+                            logger.warn("No nearby deliveries found for the order. Sending all deliveries.");
+                            coordinator_addr.do_send(NearbyDeliveries {
+                                order,
+                                deliveries: deliveries.clone(),
+                            });
+                        } else {
+                            logger.info(format!(
+                                "Found {} nearby deliveries for order: {:?}",
+                                nearby.len(),
+                                order
+                            ));
+                            coordinator_addr.do_send(NearbyDeliveries {
+                            order,
+                            deliveries: nearby,
+                            });
+                        }
+                        
+                    }
                 }
                 Err(_) => {
                     logger.error("Error retrieving deliveries from storage.");
-                    coordinator_addr.do_send(NearbyDeliveries{
+                    coordinator_addr.do_send(NearbyDeliveries {
                         order,
                         deliveries: Vec::new(),
                     });

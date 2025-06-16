@@ -3,9 +3,10 @@ use actix::fut::wrap_future;
 use actix::prelude::*;
 use common::logger::Logger;
 use common::messages::{
-    DeliveryAccepted, LeaderIs, NetworkMessage, NewLeaderConnection, NewOrder, RecoverProcedure, RegisterUser, RequestNearbyDelivery, UpdateOrderStatus, WhoIsLeader
+    DeliveryAccepted, LeaderIs, NetworkMessage, NewLeaderConnection, NewOrder, RecoverProcedure,
+    RegisterUser, RequestNearbyDelivery, UpdateOrderStatus, WhoIsLeader,
 };
-use common::network::communicator::{Communicator};
+use common::network::communicator::Communicator;
 use common::network::connections::{connect_some, try_to_connect};
 use common::network::peer_types::PeerType;
 use common::types::dtos::{OrderDTO, UserDTO};
@@ -16,7 +17,7 @@ use std::collections::HashSet;
 use std::net::SocketAddr;
 use tokio::net::TcpStream;
 
-use crate::restaurant_actors::delivery_assigner::{DeliveryAssigner};
+use crate::restaurant_actors::delivery_assigner::DeliveryAssigner;
 use crate::restaurant_actors::kitchen::Kitchen;
 
 pub struct Restaurant {
@@ -95,12 +96,12 @@ impl Actor for Restaurant {
             Some(DeliveryAssigner::new(self.info.clone(), ctx.address()).start());
 
         self.kitchen_address = Some(
-                Kitchen::new(
-                    ctx.address(),
-                    self.delivery_assigner_address.clone().unwrap(),
-                )
-                .start(),
-            );
+            Kitchen::new(
+                ctx.address(),
+                self.delivery_assigner_address.clone().unwrap(),
+            )
+            .start(),
+        );
         self.start_running(ctx);
     }
 }
@@ -232,11 +233,10 @@ impl Handler<UpdateCommunicator> for Restaurant {
     }
 }
 
-
 impl Handler<NewOrder> for Restaurant {
     type Result = ();
 
-    fn handle(&mut self, msg: NewOrder, _ctx: &mut Self::Context) -> Self::Result {
+    fn handle(&mut self, msg: NewOrder, ctx: &mut Self::Context) -> Self::Result {
         self.logger
             .info(format!("Received NewOrder message: {:?}", msg));
         // Aquí podrías implementar la lógica para manejar un nuevo pedido
@@ -288,11 +288,9 @@ impl Handler<NewOrder> for Restaurant {
                     new_order.status = OrderStatus::Cancelled;
                     // Aquí podrías enviar un mensaje de rechazo al coordinador o al cliente
                 }
-                self.send_network_message(NetworkMessage::UpdateOrderStatus(
-                        UpdateOrderStatus {
-                            order: new_order.clone(),
-                        },
-                    ));
+                ctx.address().do_send(UpdateOrderStatus {
+                    order: new_order.clone(),
+                });
             }
             _ => {
                 self.logger.warn(format!(
@@ -303,7 +301,6 @@ impl Handler<NewOrder> for Restaurant {
         }
     }
 }
-
 
 impl Handler<UpdateOrderStatus> for Restaurant {
     type Result = ();
@@ -317,6 +314,10 @@ impl Handler<RequestNearbyDelivery> for Restaurant {
     type Result = ();
 
     fn handle(&mut self, msg: RequestNearbyDelivery, _ctx: &mut Self::Context) -> Self::Result {
+        self.logger.info(format!(
+            "Requesting nearby delivery for order ID: {}",
+            msg.order.order_id
+        ));
         self.send_network_message(NetworkMessage::RequestNearbyDelivery(msg));
     }
 }
@@ -374,9 +375,7 @@ impl Handler<NetworkMessage> for Restaurant {
                     .info("No recovered info received, waiting for new orders.");
             }
             // Restaurant messages
-            NetworkMessage::NewOrder(msg_data) => {
-                ctx.address().do_send(msg_data)
-            }
+            NetworkMessage::NewOrder(msg_data) => ctx.address().do_send(msg_data),
             NetworkMessage::UpdateOrderStatus(_msg_data) => {
                 self.logger
                     .info("Received UpdateOrderStatus message, not implemented yet");

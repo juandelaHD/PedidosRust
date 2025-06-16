@@ -2,15 +2,18 @@ use crate::messages::shared_messages::NetworkMessage;
 use actix::prelude::*;
 use tokio::io::{AsyncWriteExt, BufWriter, WriteHalf};
 use tokio::net::TcpStream;
+use std::collections::VecDeque;
 
 pub struct TCPSender {
     pub writer: Option<BufWriter<WriteHalf<TcpStream>>>,
+    pub queue: VecDeque<NetworkMessage>,
 }
 
 impl TCPSender {
     pub fn new(write_half: WriteHalf<TcpStream>) -> Self {
         Self {
             writer: Some(BufWriter::new(write_half)),
+            queue: VecDeque::new(),
         }
     }
 }
@@ -19,42 +22,48 @@ impl Actor for TCPSender {
     type Context = Context<Self>;
 }
 
+struct ProcessQueue;
+
+impl Message for ProcessQueue {
+    type Result = ();
+}
+
 impl Handler<NetworkMessage> for TCPSender {
+    type Result = ();
+
+    fn handle(&mut self, msg: NetworkMessage, ctx: &mut Self::Context) {
+        self.queue.push_back(msg);
+        if self.queue.len() == 1 {
+            ctx.notify(ProcessQueue);
+        }
+    }
+}
+
+impl Handler<ProcessQueue> for TCPSender {
     type Result = ResponseActFuture<Self, ()>;
 
-    fn handle(&mut self, msg: NetworkMessage, _ctx: &mut Self::Context) -> Self::Result {
-        // Serializar el mensaje usando serde_json
-        let serialized = match serde_json::to_string(&msg) {
-            Ok(s) => s,
-            Err(e) => {
-                eprintln!("Error serializando NetworkMessage: {:?}", e);
-                return Box::pin(async {}.into_actor(self));
-            }
-        };
-        let to_send = format!("{}\n", serialized);
-
-        if let Some(mut writer) = self.writer.take() {
+    fn handle(&mut self, _msg: ProcessQueue, _ctx: &mut Self::Context) -> Self::Result {
+        if let (Some(mut writer), Some(msg)) = (self.writer.take(), self.queue.front().cloned()) {
             let fut = async move {
+                let serialized = match serde_json::to_string(&msg) {
+                    Ok(s) => s,
+                    Err(e) => panic!("Error serializing message: {:?}", e),
+                };
+                let to_send = format!("{}\n", serialized);
                 if let Err(e) = writer.write_all(to_send.as_bytes()).await {
-                    if e.kind() == std::io::ErrorKind::BrokenPipe {
-                        // Pipe roto: limpiar writer
-                        return None;
-                    } else {
-                        panic!("Error inesperado al enviar datos: {:?}", e);
-                    }
+                    panic!("Error writing to socket: {:?}", e);
                 }
-                // Importante hacer flush para asegurar que se envíen los datos
                 if let Err(e) = writer.flush().await {
-                    if e.kind() == std::io::ErrorKind::BrokenPipe {
-                        return None;
-                    } else {
-                        panic!("Error inesperado al hacer flush: {:?}", e);
-                    }
+                    panic!("Error flushing socket: {:?}", e);
                 }
-                Some(writer)
+                writer
             };
-            Box::pin(fut.into_actor(self).map(|ret_writer, act, _ctx| {
-                act.writer = ret_writer;
+            Box::pin(fut.into_actor(self).map(|writer, act, ctx| {
+                act.writer = Some(writer);
+                act.queue.pop_front();
+                if !act.queue.is_empty() {
+                    ctx.notify(ProcessQueue);
+                }
             }))
         } else {
             Box::pin(async {}.into_actor(self))

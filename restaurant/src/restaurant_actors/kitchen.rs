@@ -90,9 +90,6 @@ impl Handler<IAmAvailable> for Kitchen {
 
     fn handle(&mut self, msg: IAmAvailable, ctx: &mut Self::Context) -> Self::Result {
         self.chefs_available.push_back(msg.chef_addr);
-        self.my_restaurant.do_send(UpdateOrderStatus {
-            order: msg.order,
-        });
         self.assign_orders_to_chefs(ctx);
     }
 }

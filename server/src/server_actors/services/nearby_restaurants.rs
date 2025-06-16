@@ -61,13 +61,36 @@ impl Handler<RequestNearbyRestaurants> for NearbyRestaurantsService {
             .into_actor(self)
             .map(move |res, act, _ctx| match res {
                 Ok(restaurants) => {
-                    let nearby: Vec<RestaurantInfo> =
-                        get_nearby_restaurants(act, restaurants, location);
+                    if restaurants.is_empty() {
+                        logger.warn("Retrieved no restaurants from storage.");
+                        // TODO: Handle empty restaurant list appropriately
+                    } else {
+                        logger.info(format!(
+                            "Retrieved {} restaurants from storage.",
+                            restaurants.len()
+                        ));
+                        let nearby: Vec<RestaurantInfo> =
+                            get_nearby_restaurants(act, restaurants.clone(), location);
 
-                    coordinator_addr.do_send(NearbyRestaurants {
-                        client,
-                        restaurants: nearby,
-                    });
+                        if nearby.is_empty() {
+                            logger.warn("No nearby restaurants found.");
+                            coordinator_addr.do_send(NearbyRestaurants {
+                                client,
+                                restaurants: restaurants.clone(),
+                            });
+                        } else {
+                            logger.info(format!(
+                                "Found {} nearby restaurants for client at position: {:?}",
+                                nearby.len(),
+                                location
+                            ));
+                            coordinator_addr.do_send(NearbyRestaurants {
+                                client,
+                                restaurants: nearby,
+                            });
+                            
+                        }
+                    }
                 }
                 Err(_) => {
                     logger.error("Error retrieving restaurants from storage.");
