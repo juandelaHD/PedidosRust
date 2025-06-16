@@ -57,6 +57,8 @@ pub enum NetworkMessage {
     RequestAllStorage(RequestAllStorage),
     RecoverStorageOperations(RecoverStorageOperations),
     LeaderElection(LeaderElection),
+    Ping(Ping),
+    Pong(Pong),
 
     RetryLater(RetryLater),
 }
@@ -104,3 +106,4 @@ pub struct RecoverProcedure {
 pub struct RetryLater {
     pub origin_addr: SocketAddr,
 }
+

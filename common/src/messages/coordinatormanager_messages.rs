@@ -33,8 +33,34 @@ pub struct SetStorageUpdatesLog {
     pub current_msg_log: HashMap<u64, String>,
 }
 
+
+
+
+/////////////////////////////////////////////////////////////////////
+// Mensajes del Coordinator Manager
+/////////////////////////////////////////////////////////////////////
+
+#[derive(Serialize, Deserialize, Debug, Message, Clone)]
+#[rtype(result = "()")]
+pub struct Ping {
+    pub from: SocketAddr,
+}
+
+#[derive(Serialize, Deserialize, Debug, Message, Clone)]
+#[rtype(result = "()")]
+pub struct Pong {
+    pub from: SocketAddr,
+}
+
 #[derive(Serialize, Deserialize, Debug, Message, Clone)]
 #[rtype(result = "()")]
 pub struct LeaderElection {
+    pub initiator: SocketAddr,
     pub candidates: Vec<SocketAddr>,
 }
+
+
+#[derive(Message)]
+#[rtype(result = "()")]
+pub struct CheckPongTimeout;
+
