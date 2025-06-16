@@ -36,6 +36,7 @@ pub enum NetworkMessage {
     AuthorizationResult(AuthorizationResult),
 
     // Restaurant messages
+    NewOrder(NewOrder),
     UpdateOrderStatus(UpdateOrderStatus),
     CancelOrder(CancelOrder),
     OrderIsPreparing(OrderIsPreparing),
@@ -46,7 +47,6 @@ pub enum NetworkMessage {
     // Coordinator messages
     NearbyRestaurants(NearbyRestaurants),
     NotifyOrderUpdated(NotifyOrderUpdated),
-    NewOrder(NewOrder),
     DeliveryAvailable(DeliveryAvailable),
     NewOfferToDeliver(NewOfferToDeliver),
     DeliveryNoNeeded(DeliveryNoNeeded),

@@ -24,5 +24,11 @@ pub struct SendThisOrder {
 #[derive(Message, Debug, Clone, Serialize, Deserialize)]
 #[rtype(result = "()")]
 pub struct IAmAvailable {
-    pub order: Chef,
+    pub chef_addr: Addr<Chef>,
+}
+
+#[derive(Message, Debug, Clone, Serialize, Deserialize)]
+#[rtype(result = "()")]
+pub struct ShareCommunicator {
+    pub communicator: Arc<Communicator<Restaurant>>,
 }
