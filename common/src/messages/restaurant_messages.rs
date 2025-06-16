@@ -1,4 +1,4 @@
-use crate::types::{dtos::OrderDTO, restaurant_info::RestaurantInfo};
+use crate::types::{dtos::{DeliveryDTO, OrderDTO}, restaurant_info::RestaurantInfo};
 use actix::Message;
 use serde::{Deserialize, Serialize};
 
@@ -16,12 +16,6 @@ pub struct CancelOrder {
 
 #[derive(Message, Debug, Clone, Serialize, Deserialize)]
 #[rtype(result = "()")]
-pub struct OrderIsPreparing {
-    pub order: OrderDTO,
-}
-
-#[derive(Message, Debug, Clone, Serialize, Deserialize)]
-#[rtype(result = "()")]
 pub struct RequestNearbyDelivery {
     pub order: OrderDTO,
     pub restaurant_info: RestaurantInfo,
@@ -29,6 +23,7 @@ pub struct RequestNearbyDelivery {
 
 #[derive(Message, Debug, Clone, Serialize, Deserialize)]
 #[rtype(result = "()")]
-pub struct DeliverThisOrder {
+pub struct DeliveryAccepted {
     pub order: OrderDTO,
+    pub delivery: DeliveryDTO,
 }

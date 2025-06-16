@@ -1,17 +1,12 @@
 use std::{
     collections::{HashMap, VecDeque},
-    sync::Arc,
 };
-
 use crate::{
-    messages::restaurant_messages::SendThisOrder, restaurant_actors::restaurant::Restaurant,
+    internal_messages::messages::SendThisOrder, restaurant_actors::restaurant::{Restaurant},
 };
-use actix::{Actor, Handler};
+use actix::{Actor, Handler, Addr};
 use common::{
-    logger::Logger,
-    messages::{NetworkMessage, RequestDelivery},
-    network::communicator::Communicator,
-    types::{dtos::OrderDTO, restaurant_info::RestaurantInfo},
+    logger::Logger, messages::{DeliveryAccepted, DeliveryAvailable, RequestNearbyDelivery, UpdateOrderStatus}, types::{dtos::OrderDTO, order_status::OrderStatus, restaurant_info::RestaurantInfo}
 };
 
 pub struct DeliveryAssigner {
@@ -22,21 +17,22 @@ pub struct DeliveryAssigner {
     /// Diccionario de ordenes enviadas y su delivery asignado.
     pub orders_delivery: HashMap<u64, String>,
     /// Comunicador asociado al `Server`.
-    pub communicator: Arc<Communicator<Restaurant>>,
-    pub logger: Arc<Logger>,
+    pub my_restaurant: Addr<Restaurant>,
+    pub logger: Logger,
 }
 
 impl DeliveryAssigner {
     pub fn new(
         restaurant_info: RestaurantInfo,
-        logger: Arc<Logger>,
-        communicator: Arc<Communicator<Restaurant>>,
+        restaurant_addr: Addr<Restaurant>,
     ) -> Self {
+        let logger = Logger::new("DeliveryAssigner");
+
         DeliveryAssigner {
             restaurant_info,
             ready_orders: VecDeque::new(),
             orders_delivery: HashMap::new(),
-            communicator,
+            my_restaurant: restaurant_addr,
             logger,
         }
     }
@@ -58,25 +54,42 @@ impl Handler<SendThisOrder> for DeliveryAssigner {
             "DeliveryAssigner received order for delivery: {:?}",
             msg.order
         ));
+        let mut order = msg.order.clone();
+        order.status = OrderStatus::ReadyForDelivery;
         // Add the order to the ready orders queue
-        self.ready_orders.push_back(msg.order.clone());
-        // Here you could also implement logic to assign a delivery person
-        // For example, you might want to check if a delivery person is available
-        if let Some(sender) = self.communicator.sender.as_ref() {
-            // Notify the communicator about the order ready for delivery
-            sender.do_send(NetworkMessage::RequestDelivery(RequestDelivery {
-                order: msg.order.clone(),
-                restaurant_info: self.restaurant_info.clone(),
-            }));
+        self.ready_orders.push_back(order.clone());
+        // Update the order status in the restaurant
+        self.my_restaurant.do_send(UpdateOrderStatus {
+            order,
+        });
+        // Notify the server to find nearby deliveries
+        self.my_restaurant.do_send(RequestNearbyDelivery {
+            order: msg.order.clone(),
+            restaurant_info: self.restaurant_info.clone(),
+        });
+    }
+}
+
+impl Handler<DeliveryAvailable> for DeliveryAssigner {
+    type Result = ();
+
+    fn handle(&mut self, msg: DeliveryAvailable, _ctx: &mut Self::Context) -> Self::Result {
+        self.logger.info(format!(
+            "Delivery person available: {}",
+            msg.delivery_info.delivery_id
+        ));
+
+        // Check if there are ready orders to assign
+        if let Some(order) = self.ready_orders.pop_front() {
+            // Assign the order to the delivery person
+            self.orders_delivery.insert(order.order_id, msg.delivery_info.delivery_id.clone());
+            // Notify the restaurant about the assigned order
+            self.my_restaurant.do_send(DeliveryAccepted {
+                order,
+                delivery: msg.delivery_info.clone(),
+            });
         } else {
-            self.logger.error(
-                "Communicator sender is None. Cannot notify order ready for delivery.".to_string(),
-            );
+            self.logger.info("No ready orders to assign.");
         }
-        // Store the order in the orders_delivery map with a dummy delivery person name
-        self.orders_delivery.insert(
-            msg.order.order_id,
-            "DeliveryPerson1".to_string(), // This should be replaced with actual delivery person logic
-        );
     }
 }

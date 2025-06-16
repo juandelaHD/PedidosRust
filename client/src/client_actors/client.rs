@@ -4,7 +4,6 @@ use actix::fut::wrap_future;
 use actix::prelude::*;
 use common::logger::Logger;
 use common::messages::NearbyRestaurants;
-use common::messages::NewOrder;
 use common::messages::client_messages::*;
 use common::messages::shared_messages::*;
 use common::network::communicator::Communicator;
@@ -77,7 +76,6 @@ impl Client {
     }
 
     pub fn start_running(&self, _ctx: &mut Context<Self>) {
-        self.logger.info("Starting client...");
         let actual_socket_addr = self
             .communicator
             .as_ref()
@@ -180,7 +178,6 @@ impl Handler<LeaderIs> for Client {
     }
 }
 
-// RecoverProcedure
 impl Handler<RecoverProcedure> for Client {
     type Result = ();
 

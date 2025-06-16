@@ -1,7 +1,7 @@
-use std::{sync::Arc, time::Duration};
+use std::{time::Duration};
 
 use crate::{
-    messages::restaurant_messages::{AssignToChef, IAmAvailable, SendThisOrder},
+    internal_messages::messages::{AssignToChef, IAmAvailable, SendThisOrder},
     restaurant_actors::{delivery_assigner::DeliveryAssigner, kitchen::Kitchen},
 };
 use actix::{Actor, Addr, AsyncContext, Handler};
@@ -14,34 +14,26 @@ pub struct Chef {
     pub time_to_cook: Duration,
     /// Pedido que está preparando.
     pub order: Option<OrderDTO>,
-    /// Canal de envío hacia el actor `Kitchen`.
-    pub kitchen_sender: Option<Addr<Kitchen>>,
     /// Canal de envío hacia el actor `DeliveryAssigner`.
-    pub delivery_assigner: Option<Addr<DeliveryAssigner>>,
-    pub logger: Arc<Logger>,
-    pub communicator: Arc<common::network::communicator::Communicator<Restaurant>>,
+    pub delivery_assigner_address: Addr<DeliveryAssigner>,
+    pub kitchen_address: Addr<Kitchen>,
+    pub logger: Logger,
 }
 
 impl Chef {
     pub fn new(
-        logger: Arc<Logger>,
-        communicator: Arc<common::network::communicator::Communicator<Restaurant>>,
+        delivery_assigner_address: Addr<DeliveryAssigner>,
+        kitchen_address: Addr<Kitchen>,
+
     ) -> Self {
+        let logger = Logger::new("Chef");
         Chef {
+            delivery_assigner_address,
+            kitchen_address,
             time_to_cook: Duration::from_secs(DEFAULT_TIME_TO_COOK),
             order: None,
-            kitchen_sender: None,
-            delivery_assigner: None,
-            logger,
-            communicator,
+            logger
         }
-    }
-
-    pub fn set_kitchen_sender(&mut self, kitchen_addr: Addr<Kitchen>) {
-        self.kitchen_sender = Some(kitchen_addr);
-    }
-    pub fn set_delivery_assigner(&mut self, delivery_assigner: Addr<DeliveryAssigner>) {
-        self.delivery_assigner = Some(delivery_assigner);
     }
 }
 
@@ -56,23 +48,23 @@ impl Handler<AssignToChef> for Chef {
         self.logger
             .info(format!("Chef received order: {:?}", msg.order));
         self.order = Some(msg.order.clone());
-        let delivery_assigner = self.delivery_assigner.clone();
+        let delivery_assigner = self.delivery_assigner_address.clone();
         let logger = self.logger.clone();
-        let kitchen_sender = self.kitchen_sender.clone();
+        let kitchen_sender = self.kitchen_address.clone();
         ctx.run_later(self.time_to_cook, move |act, ctx| {
-            if let Some(order) = act.order.take() {
-                if let Some(delivery_assigner) = &delivery_assigner {
-                    delivery_assigner.do_send(SendThisOrder { order });
-                }
-                logger.info(format!("Chef finished cooking order: {:?}", order));
-            } else {
-                logger.info(format!("Chef had no order to cook."));
-            }
-            if let Some(kitchen_sender) = &kitchen_sender {
-                kitchen_sender.do_send(IAmAvailable {
-                    chef_addr: ctx.address(),
+            if let Some(order) = &act.order {
+                // Notify the delivery assigner that the order is ready
+                delivery_assigner.do_send(SendThisOrder {
+                    order: order.clone(),
                 });
+                logger.info(format!("Order {:?} is ready for delivery.", order.order_id));
+            } else {
+                logger.error("No order assigned to chef when time elapsed.".to_string());
             }
+            kitchen_sender.do_send(IAmAvailable { 
+                chef_addr: ctx.address().clone(),
+                order: act.order.clone().unwrap(),
+            });
         });
     }
 }

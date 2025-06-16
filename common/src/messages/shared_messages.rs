@@ -30,6 +30,7 @@ pub enum NetworkMessage {
     IAmAvailable(IAmAvailable),
     AcceptOrder(AcceptOrder),
     OrderDelivered(OrderDelivered),
+    DeliverThisOrder(DeliverThisOrder),
 
     // Payment messages
     RequestAuthorization(RequestAuthorization),
@@ -39,9 +40,8 @@ pub enum NetworkMessage {
     NewOrder(NewOrder),
     UpdateOrderStatus(UpdateOrderStatus),
     CancelOrder(CancelOrder),
-    OrderIsPreparing(OrderIsPreparing),
     RequestNearbyDelivery(RequestNearbyDelivery),
-    DeliverThisOrder(DeliverThisOrder),
+    DeliveryAccepted(DeliveryAccepted),
     NearbyDeliveries(NearbyDeliveries),
 
     // Coordinator messages

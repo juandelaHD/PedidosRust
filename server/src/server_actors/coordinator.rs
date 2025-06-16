@@ -19,8 +19,6 @@ use common::types::dtos::ClientDTO;
 use common::types::dtos::DeliveryDTO;
 use common::types::dtos::RestaurantDTO;
 use common::types::dtos::UserDTO;
-use common::types::order_status::OrderStatus;
-use common::types::restaurant_info;
 use std::collections::HashSet;
 use std::{collections::HashMap, net::SocketAddr};
 use tokio::net::TcpStream;
@@ -601,10 +599,6 @@ impl Handler<NetworkMessage> for Coordinator {
             NetworkMessage::CancelOrder(_msg_data) => {
                 self.logger
                     .info("Received CancelOrder message, not implemented yet");
-            }
-            NetworkMessage::OrderIsPreparing(_msg_data) => {
-                self.logger
-                    .info("Received OrderIsPreparing message, not implemented yet");
             }
             NetworkMessage::RequestNearbyDelivery(_msg_data) => {
                 self.logger
