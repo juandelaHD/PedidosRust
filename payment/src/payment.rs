@@ -1,5 +1,6 @@
 use actix::prelude::*;
 use common::messages::AuthorizationResult;
+use common::messages::PaymentCompleted;
 use common::types::order_status::OrderStatus;
 
 use crate::payment_acceptor::RegisterConnection;
@@ -82,6 +83,36 @@ impl Handler<NetworkMessage> for PaymentGateway {
                         result: new_order_dto.clone(),
                     }),
                 );
+            }
+            NetworkMessage::BillPayment(msg) => {
+                let order_id = msg.order.order_id;
+                
+                // Simulate payment logic
+                self.logger.info(format!("💸 Payment successful for order {}", order_id));
+                // Update the order status to completed
+                // extraccion de authorized_orders
+                if self.authorized_orders.contains(&order_id) {
+                    self.logger.info(format!(
+                        "Order {} is authorized, proceeding with payment.",
+                        order_id
+                    ));
+                } else {
+                    self.logger.warn(format!(
+                        "Order {} is not authorized, cannot proceed with payment.",
+                        order_id
+                    ));
+                    return;
+                }
+                if let Some(communicator) = self.communicators.get(&msg.origin_address) {
+                    if let Some(sender) = &communicator.sender {
+                        sender.do_send(NetworkMessage::PaymentCompleted(PaymentCompleted {
+                            order: msg.order.clone(),
+                        }));
+                    } else {
+                        self.logger.error("Sender not initialized in communicator");
+                    }
+                }
+                
             }
             _ => {
                 // Handle other message types as needed

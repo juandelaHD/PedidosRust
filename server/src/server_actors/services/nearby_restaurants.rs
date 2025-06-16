@@ -70,7 +70,7 @@ impl Handler<RequestNearbyRestaurants> for NearbyRestaurantsService {
                     });
                 }
                 Err(_) => {
-                    logger.error("Error al obtener restaurantes del storage.");
+                    logger.error("Error retrieving restaurants from storage.");
                     coordinator_addr.do_send(NearbyRestaurants {
                         client,
                         restaurants: Vec::new(),

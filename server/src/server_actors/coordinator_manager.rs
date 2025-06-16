@@ -115,12 +115,6 @@ impl CoordinatorManager {
 
                     act.send_network_message(leader, NetworkMessage::Ping(Ping {from: local_addr,}));
 
-
-
-
-
-
-
                     act.pong_pending = true;
 
                     // Timeout para esperar el Pong
@@ -135,8 +129,6 @@ impl CoordinatorManager {
             }
         });
     }
-
-
 
 
 

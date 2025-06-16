@@ -1,12 +1,16 @@
 use crate::messages::internal_messages::RegisterConnection;
 use crate::messages::internal_messages::*;
 use crate::server_actors::coordinator_manager::CoordinatorManager;
+use crate::server_actors::services::nearby_delivery::NearbyDeliveryService;
+use crate::server_actors::services::nearby_restaurants::NearbyRestaurantsService;
 use crate::server_actors::services::orders_services::OrderService;
 use crate::server_actors::storage::Storage;
 use actix::prelude::*;
 use common::bimap::BiMap;
 use common::constants::BASE_PORT;
 use common::logger::Logger;
+use common::messages::DeliveryExpectedTime;
+use common::messages::OrderFinalized;
 use common::messages::UpdateOrderStatus;
 use common::messages::coordinator_messages::*;
 use common::messages::shared_messages::*;
@@ -16,12 +20,12 @@ use common::network::peer_types::PeerType;
 use common::types::delivery_status::DeliveryStatus;
 use common::types::dtos::ClientDTO;
 use common::types::dtos::DeliveryDTO;
+use common::types::dtos::OrderDTO;
 use common::types::dtos::RestaurantDTO;
 use common::types::dtos::UserDTO;
 use std::collections::HashSet;
 use std::{collections::HashMap, net::SocketAddr};
 use tokio::net::TcpStream;
-// use services::NearbyDeliveryService;
 
 #[derive(Debug)]
 pub struct Coordinator {
@@ -41,20 +45,18 @@ pub struct Coordinator {
     /// Mapa de comunicadores de clientes conectados.
     pub communicators: HashMap<SocketAddr, Communicator<Coordinator>>, // REMOTA -> Comunicador
     /// Canal de envío hacia el actor `Storage`.
-    // pub storage: Addr<Storage>,
+    pub storage: Option<Addr<Storage>>,
     /// Canal de envío hacia el actor `Reaper`.
     // pub reaper: Addr<Reaper>,
     /// Servicio de órdenes.
-    // pub order_service: Addr<OrderService>,
+    pub order_service: Option<Addr<OrderService>>,
     /// Servicio de restaurantes cercanos.
-    // pub nearby_restaurant_service: Addr<NearbyRestaurantService>,
+    pub nearby_restaurant_service: Option<Addr<NearbyRestaurantsService>>,
     // Servicio de deliverys cercanos.
-    // pub nearby_delivery_service: Addr<NearbyDeliveryService>,
+    pub nearby_delivery_service: Option<Addr<NearbyDeliveryService>>,
     pub logger: Logger,
     pub coordinator_manager: Option<Addr<CoordinatorManager>>,
     pub pending_streams: HashMap<SocketAddr, TcpStream>,
-    pub storage: Addr<Storage>,
-    pub order_service: Addr<OrderService>,
 }
 
 impl Coordinator {
@@ -67,8 +69,6 @@ impl Coordinator {
         if pending_streams.is_empty() {
             println!("No connections established.");
         }
-        let storage = Storage::new().start();
-
         Self {
             id: format!("server_{}", srv_addr.port() - BASE_PORT),
             ring_nodes,
@@ -79,14 +79,16 @@ impl Coordinator {
             coordinator_manager: None,
             communicators: HashMap::new(),
             pending_streams,
-            order_service: OrderService::new(storage.clone()).await.start(),
-            storage,
+            order_service: Some(OrderService::new().await.start()),
+            nearby_restaurant_service: None,
+            nearby_delivery_service: None,
+            storage: None
         }
     }
 
     pub fn send_network_message(&self, user_id: String, message: NetworkMessage) {
-        if let Some(user_id) = self.user_addresses.get_by_value(&user_id).cloned() {
-            if let Some(communicator) = self.communicators.get(&user_id) {
+        if let Some(user_addr) = self.user_addresses.get_by_value(&user_id).cloned() {
+            if let Some(communicator) = self.communicators.get(&user_addr) {
                 if let Some(sender) = &communicator.sender {
                     sender.do_send(message);
                 } else {
@@ -98,6 +100,27 @@ impl Coordinator {
             }
         } else {
             self.logger.info(format!("User ID {} not found", user_id));
+        }
+    }
+
+    pub fn broadcast_deliveries(&self, order: OrderDTO, deliveries: Vec<DeliveryDTO>) {
+        for delivery in deliveries {
+            if let Some(delivery_addr) = self.user_addresses.get_by_value(&delivery.delivery_id).cloned() {
+                if let Some(communicator) = self.communicators.get(&delivery_addr) {
+                    if let Some(sender) = &communicator.sender {
+                        sender.do_send(NetworkMessage::NewOfferToDeliver(NewOfferToDeliver { 
+                            order: order.clone()
+                        }));
+                    } else {
+                        self.logger.info(format!("No sender found for {}", delivery.delivery_id));
+                    }
+                } else {
+                    self.logger
+                        .info(format!("Communicator not found for {}",  delivery.delivery_id));
+                }
+            } else {
+                self.logger.info(format!("User ID {} not found",  delivery.delivery_id));
+            }
         }
     }
 }
@@ -139,9 +162,34 @@ impl Actor for Coordinator {
                 .info("CoordinatorManager not initialized yet, cannot start running.");
         }
 
-        self.order_service.do_send(SetCoordinatorAddr {
-            coordinator_addr: ctx.address(),
-        });
+        // Inicializar el servicio de almacenamiento
+        let storage = Storage::new(ctx.address());
+        let storage_address = storage.start();
+        self.storage = Some(storage_address.clone());
+
+        // Inicializar el servicio de restaurantes cercanos
+        let nearby_restaurant_service = NearbyRestaurantsService::new(
+                storage_address.clone(),
+                ctx.address(),
+        );
+        self.nearby_restaurant_service = Some(nearby_restaurant_service.start());
+        // Inicializar el servicio de delivery cercanos
+        let nearby_delivery_service = NearbyDeliveryService::new(
+            storage_address.clone(),
+                ctx.address(),
+        );
+        self.nearby_delivery_service = Some(nearby_delivery_service.start());
+
+        
+        if let Some(order_service) = &self.order_service {
+            order_service.do_send(SetActorsAddresses {
+                coordinator_addr: ctx.address(),
+                storage_addr: storage_address,
+            });
+        }
+
+        self.logger.info("Services initialized.");
+
     }
 }
 
@@ -180,19 +228,7 @@ impl Handler<NearbyRestaurants> for Coordinator {
     fn handle(&mut self, msg: NearbyRestaurants, _ctx: &mut Self::Context) -> Self::Result {
         // Buscar el comunicador del cliente
         let client_id = msg.client.client_id.clone();
-        let client_addr = self.user_addresses.get_by_value(&client_id).cloned();
-        if let Some(client_addr) = client_addr {
-            if let Some(sender) = &self.communicators[&client_addr].sender {
-                // Enviar la lista de restaurantes cercanos al cliente
-                sender.do_send(NetworkMessage::NearbyRestaurants(msg));
-            } else {
-                self.logger
-                    .info(format!("No sender found for {}", client_addr));
-            }
-        } else {
-            self.logger
-                .info(format!("Client address not found for ID: {}", client_id));
-        }
+        self.send_network_message(client_id, NetworkMessage::NearbyRestaurants(msg));
     }
 }
 
@@ -201,20 +237,7 @@ impl Handler<NearbyDeliveries> for Coordinator {
 
     fn handle(&mut self, msg: NearbyDeliveries, _ctx: &mut Self::Context) -> Self::Result {
         // Buscar el comunicador del cliente
-        let client_id = msg.order.client_id.clone();
-        let client_addr = self.user_addresses.get_by_value(&client_id).cloned();
-        if let Some(client_addr) = client_addr {
-            if let Some(sender) = &self.communicators[&client_addr].sender {
-                // Enviar la lista de entregas cercanas al cliente
-                sender.do_send(NetworkMessage::NearbyDeliveries(msg));
-            } else {
-                self.logger
-                    .info(format!("No sender found for {}", client_addr));
-            }
-        } else {
-            self.logger
-                .info(format!("Client address not found for ID: {}", client_id));
-        }
+        self.broadcast_deliveries(msg.order, msg.deliveries);
     }
 }
 
@@ -222,20 +245,8 @@ impl Handler<NotifyOrderUpdated> for Coordinator {
     type Result = ();
 
     fn handle(&mut self, msg: NotifyOrderUpdated, _ctx: &mut Self::Context) -> Self::Result {
-        let peer_id = msg.peer_id;
-        let peer_addr = self.user_addresses.get_by_value(&peer_id).cloned();
-        if let Some(addr) = peer_addr {
-            if let Some(sender) = &self.communicators[&addr].sender {
-                sender.do_send(NetworkMessage::UpdateOrderStatus(UpdateOrderStatus {
-                    order: msg.order,
-                }));
-            } else {
-                self.logger.info(format!("No sender found for {}", addr));
-            }
-        } else {
-            self.logger
-                .info(format!("Peer address not found for ID: {}", peer_id));
-        }
+        let peer_id = msg.peer_id.clone();
+        self.send_network_message(peer_id, NetworkMessage::NotifyOrderUpdated(msg));
     }
 }
 
@@ -322,6 +333,33 @@ impl Handler<RetryLater> for Coordinator {
     }
 }
 
+impl Handler<NewOrder> for Coordinator {
+    type Result = ();
+
+    fn handle(&mut self, msg: NewOrder, _ctx: &mut Self::Context) -> Self::Result {
+        self.logger.info(format!(
+            "Received new order: {:?} for restaurant: {}",
+            msg.order, msg.order.restaurant_id.clone()
+        ));
+        let restaurant_id = msg.order.restaurant_id.clone();
+        self.send_network_message(restaurant_id,  NetworkMessage::NewOrder(msg));
+    }
+}
+
+impl Handler<OrderFinalized> for Coordinator {
+    type Result = ();
+
+    fn handle(&mut self, msg: OrderFinalized, _ctx: &mut Self::Context) -> Self::Result {
+        self.logger.info(format!(
+            "Received order finalized: {:?} for restaurant: {}",
+            msg.order, msg.order.restaurant_id.clone()
+        ));
+        let restaurant_id = msg.order.restaurant_id.clone();
+        self.send_network_message(restaurant_id, NetworkMessage::OrderFinalized(msg));
+    }
+    
+}
+
 impl Handler<NetworkMessage> for Coordinator {
     type Result = ();
     fn handle(&mut self, msg: NetworkMessage, ctx: &mut Self::Context) -> Self::Result {
@@ -370,6 +408,8 @@ impl Handler<NetworkMessage> for Coordinator {
                             ctx.spawn(
                                 async move {
                                     match storage
+                                        .as_ref()
+                                        .unwrap()
                                         .send(GetClient {
                                             restaurant_id: client_id_clone.clone(),
                                         })
@@ -381,7 +421,7 @@ impl Handler<NetworkMessage> for Coordinator {
                                                     client_dto,
                                                 ))
                                             } else {
-                                                storage.do_send(AddClient {
+                                                storage.as_ref().unwrap().do_send(AddClient {
                                                     client: ClientDTO {
                                                         client_position: msg_data.position,
                                                         client_id: client_id_clone.clone(),
@@ -397,14 +437,14 @@ impl Handler<NetworkMessage> for Coordinator {
                                                 "Error retrieving client info: {}",
                                                 e
                                             ));
-                                            storage.do_send(AddClient {
-                                                client: ClientDTO {
-                                                    client_position: msg_data.position,
-                                                    client_id: client_id_clone.clone(),
-                                                    client_order: None,
-                                                    time_stamp: std::time::SystemTime::now(),
-                                                },
-                                            });
+                                            storage.as_ref().unwrap().do_send(AddClient {
+                                                    client: ClientDTO {
+                                                        client_position: msg_data.position,
+                                                        client_id: client_id_clone.clone(),
+                                                        client_order: None,
+                                                        time_stamp: std::time::SystemTime::now(),
+                                                    },
+                                                });
                                             NetworkMessage::NoRecoveredInfo
                                         }
                                     }
@@ -425,6 +465,8 @@ impl Handler<NetworkMessage> for Coordinator {
                             ctx.spawn(
                                 async move {
                                     match storage
+                                        .as_ref()
+                                        .unwrap()
                                         .send(GetRestaurant {
                                             restaurant_id: restaurant_id_clone.clone(),
                                         })
@@ -436,7 +478,7 @@ impl Handler<NetworkMessage> for Coordinator {
                                                     restaurant_dto,
                                                 ))
                                             } else {
-                                                storage.do_send(AddRestaurant {
+                                                storage.as_ref().unwrap().do_send(AddRestaurant {
                                                     restaurant: RestaurantDTO {
                                                         restaurant_position: msg_data.position,
                                                         restaurant_id: restaurant_id_clone.clone(),
@@ -453,7 +495,7 @@ impl Handler<NetworkMessage> for Coordinator {
                                                 "Error retrieving restaurant info: {}",
                                                 e
                                             ));
-                                            storage.do_send(AddRestaurant {
+                                            storage.as_ref().unwrap().do_send(AddRestaurant {
                                                 restaurant: RestaurantDTO {
                                                     restaurant_position: msg_data.position,
                                                     restaurant_id: restaurant_id_clone.clone(),
@@ -482,6 +524,8 @@ impl Handler<NetworkMessage> for Coordinator {
                             ctx.spawn(
                                 async move {
                                     match storage
+                                        .as_ref()
+                                        .unwrap()
                                         .send(GetDelivery {
                                             delivery_id: delivery_id_clone.clone(),
                                         })
@@ -493,7 +537,7 @@ impl Handler<NetworkMessage> for Coordinator {
                                                     delivery_dto,
                                                 ))
                                             } else {
-                                                storage.do_send(AddDelivery {
+                                                storage.as_ref().unwrap().do_send(AddDelivery {
                                                     delivery: DeliveryDTO {
                                                         delivery_position: msg_data.position,
                                                         delivery_id: delivery_id_clone.clone(),
@@ -511,16 +555,18 @@ impl Handler<NetworkMessage> for Coordinator {
                                                 "Error retrieving delivery info: {}",
                                                 e
                                             ));
-                                            storage.do_send(AddDelivery {
-                                                delivery: DeliveryDTO {
-                                                    delivery_position: msg_data.position,
-                                                    delivery_id: delivery_id_clone.clone(),
-                                                    current_client_id: None,
-                                                    current_order: None,
-                                                    status: DeliveryStatus::Available,
-                                                    time_stamp: std::time::SystemTime::now(),
-                                                },
-                                            });
+                                            if let Some(storage_addr) = storage.as_ref() {
+                                                storage_addr.do_send(AddDelivery {
+                                                    delivery: DeliveryDTO {
+                                                        delivery_position: msg_data.position,
+                                                        delivery_id: delivery_id_clone.clone(),
+                                                        current_client_id: None,
+                                                        current_order: None,
+                                                        status: DeliveryStatus::Available,
+                                                        time_stamp: std::time::SystemTime::now(),
+                                                    },
+                                                });
+                                            }
 
                                             NetworkMessage::NoRecoveredInfo
                                         }
@@ -554,6 +600,13 @@ impl Handler<NetworkMessage> for Coordinator {
             }
 
             // Client messages
+            NetworkMessage::RequestThisOrder(msg_data) => {
+                if let Some(order_service) = &self.order_service {
+                    order_service.do_send(msg_data);
+                } else {
+                    self.logger.info("OrderService not initialized yet.");
+                }
+            }
             NetworkMessage::AuthorizationResult(_msg_data) => {
                 self.logger
                     .info("Received AuthorizationResult message, not implemented yet");
@@ -566,14 +619,12 @@ impl Handler<NetworkMessage> for Coordinator {
                 self.logger
                     .info("Received OrderFinalized message, not implemented yet");
             }
-            NetworkMessage::RequestNearbyRestaurants(_msg_data) => {
-                self.logger
-                    .warn("Received RequestNearbyRestaurants message, not implemented yet");
-                // self.nearby_restaurant_service.do_send(msg_data)
-            }
-
-            NetworkMessage::RequestThisOrder(_msg_data) => {
-                self.logger.info("Received RequestThisOrder message");
+            NetworkMessage::RequestNearbyRestaurants(msg_data) => {
+                if let Some(service) = &self.nearby_restaurant_service {
+                    service.do_send(msg_data);
+                } else {
+                    self.logger.info("NearbyRestaurantsService not initialized yet.");
+                }
             }
 
             // Delivery messages
@@ -585,28 +636,63 @@ impl Handler<NetworkMessage> for Coordinator {
                 self.logger
                     .info("Received AcceptOrder message, not implemented yet");
             }
-            NetworkMessage::OrderDelivered(_msg_data) => {
-                self.logger
-                    .info("Received OrderDelivered message, not implemented yet");
+            NetworkMessage::OrderDelivered(msg_data) => {
+                if let Some(order_service) = &self.order_service {
+                    order_service.do_send(UpdateOrderStatus {
+                        order: msg_data.order.clone(),
+                    });
+                } else {
+                    self.logger.info("OrderService not initialized yet.");
+                }
+            }
+            NetworkMessage::IAmDelivering(msg_data) => {
+                if let Some(order_service) = &self.order_service {
+                    order_service.do_send(UpdateOrderStatus {
+                        order: msg_data.order.clone(),
+                    });
+                    self.send_network_message(
+                        msg_data.order.client_id.clone(),
+                        NetworkMessage::DeliveryExpectedTime(DeliveryExpectedTime {
+                            order: msg_data.order.clone(),
+                            expected_time: msg_data.expected_delivery_time,
+                        }),
+                    );
+                } else {
+                    self.logger.info("OrderService not initialized yet.");
+                }
             }
 
             // Restaurant messages
-            NetworkMessage::UpdateOrderStatus(_msg_data) => {
-                self.logger
-                    .info("Received UpdateOrderStatus message, not implemented yet");
+            NetworkMessage::UpdateOrderStatus(msg_data) => {
+                if let Some(order_service) = &self.order_service {
+                    order_service.do_send(msg_data);
+                } else {
+                    self.logger.info("OrderService not initialized yet.");
+                }
             }
             NetworkMessage::CancelOrder(_msg_data) => {
                 self.logger
                     .info("Received CancelOrder message, not implemented yet");
             }
-            NetworkMessage::RequestNearbyDelivery(_msg_data) => {
-                self.logger
-                    .info("Received RequestNearbyDelivery message, not implemented yet");
-                // self.nearby_delivery_service.do_serd(msg_data)
+            NetworkMessage::RequestNearbyDelivery(msg_data) => {
+                if let Some(service) = &self.nearby_delivery_service {
+                    service.do_send(msg_data);
+                } else {
+                    self.logger.info("NearbyDeliveryService not initialized yet.");
+                }
             }
             NetworkMessage::DeliverThisOrder(_msg_data) => {
                 self.logger
                     .info("Received DeliverThisOrder message, not implemented yet");
+            }
+            NetworkMessage::DeliveryAccepted(msg_data) => {
+                self.logger
+                    .info("Received DeliveryAccepted message, not implemented yet");
+                if let Some(order_service) = &self.order_service {
+                    order_service.do_send(msg_data);
+                } else {
+                    self.logger.info("OrderService not initialized yet.");
+                }
             }
 
             // CoordinatorManager messages
@@ -625,7 +711,10 @@ impl Handler<NetworkMessage> for Coordinator {
                     .info("Received RecoverStorageOperations message");
             }
             NetworkMessage::LeaderElection(_msg) => {
-                self.logger.info(format!("Received LeaderElection message from {} with candidates {:?}", _msg.initiator, _msg.candidates));
+                self.logger.info(format!(
+                    "Received LeaderElection message from {} with candidates {:?}",
+                    _msg.initiator, _msg.candidates
+                ));
             }
 
             NetworkMessage::Ping(msg_data) => {
@@ -645,7 +734,7 @@ impl Handler<NetworkMessage> for Coordinator {
                     self.logger.info("CoordinatorManager not initialized yet.");
                 }
             }
-            
+
             _ => {
                 self.logger.info(format!(
                     "NetworkMessage descartado/no implementado: {:?}",

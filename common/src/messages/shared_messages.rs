@@ -25,16 +25,20 @@ pub enum NetworkMessage {
     RequestThisOrder(RequestThisOrder),
     RequestNearbyRestaurants(RequestNearbyRestaurants),
     OrderFinalized(OrderFinalized),
+    DeliveryExpectedTime(DeliveryExpectedTime),
 
     // Delivery messages
     IAmAvailable(IAmAvailable),
     AcceptOrder(AcceptOrder),
     OrderDelivered(OrderDelivered),
     DeliverThisOrder(DeliverThisOrder),
+    IAmDelivering(IAmDelivering),
 
     // Payment messages
     RequestAuthorization(RequestAuthorization),
     AuthorizationResult(AuthorizationResult),
+    PaymentCompleted(PaymentCompleted),
+    BillPayment(BillPayment),
 
     // Restaurant messages
     NewOrder(NewOrder),
@@ -107,4 +111,3 @@ pub struct RecoverProcedure {
 pub struct RetryLater {
     pub origin_addr: SocketAddr,
 }
-

@@ -3,7 +3,7 @@ use actix::prelude::*;
 use common::constants::BASE_DELAY_MILLIS;
 use common::logger::Logger;
 use common::messages::delivery_messages::{AcceptOrder, IAmAvailable, OrderDelivered};
-use common::messages::{shared_messages::*, DeliverThisOrder, DeliveryNoNeeded, NewOfferToDeliver};
+use common::messages::{shared_messages::*, DeliverThisOrder, DeliveryNoNeeded, IAmDelivering, NewOfferToDeliver};
 use common::network::communicator::Communicator;
 use common::network::connections::{connect_some, try_to_connect};
 use common::network::peer_types::PeerType;
@@ -361,10 +361,30 @@ impl Handler<DeliverThisOrder> for Delivery {
                     msg.order.order_id, msg.order.client_position
                 ));
                 self.status = DeliveryStatus::Delivering;
+                // Simular el tiempo de llegada al restaurante y al cliente
+                let distance_from_restaurant = calculate_distance(
+                    self.position,
+                    msg.restaurant_info.position
+                );
+                let distance_restaurant_from_client = calculate_distance(msg.restaurant_info.position, msg.order.client_position);
+                let total_distance = distance_from_restaurant + distance_restaurant_from_client;
 
-                // Simular el tiempo de entrega basado en la distancia
-                let distance = calculate_distance(self.position, msg.order.client_position);
-                let delay_ms = BASE_DELAY_MILLIS + (distance as u64 * 1000);
+                let delay_ms = BASE_DELAY_MILLIS + (total_distance as u64 * 1000);
+                let my_info = DeliveryDTO {
+                    delivery_id: self.delivery_id.clone(),
+                    delivery_position: self.position,
+                    status: self.status.clone(),
+                    current_order: Some(msg.order.clone()),
+                    current_client_id: Some(msg.order.client_id.clone()),
+                    time_stamp: std::time::SystemTime::now(),
+                };
+                self.send_network_message(NetworkMessage::IAmDelivering(IAmDelivering {
+                    delivery_info: my_info.clone(),
+                    expected_delivery_time: delay_ms,
+                    order: msg.order.clone(),
+                    
+                }));
+
                 self.position = msg.order.client_position;
                 let addr = ctx.address().clone();
                 let order = msg.order.clone();
@@ -463,10 +483,6 @@ impl Handler<NetworkMessage> for Delivery {
             }
 
             NetworkMessage::NewOfferToDeliver(msg_data) => {
-                self.logger.info(format!(
-                    "Received NewOfferToDeliver for order ID: {}",
-                    msg_data.order.order_id
-                ));
                 ctx.address().do_send(msg_data);
             }
             NetworkMessage::DeliveryNoNeeded(msg_data) => {

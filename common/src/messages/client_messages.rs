@@ -19,3 +19,10 @@ pub struct RequestNearbyRestaurants {
 pub struct OrderFinalized {
     pub order: OrderDTO,
 }
+
+#[derive(Message, Debug, Clone, Serialize, Deserialize)]
+#[rtype(result = "()")]
+pub struct DeliveryExpectedTime {
+    pub order: OrderDTO,
+    pub expected_time: u64, // in seconds
+}

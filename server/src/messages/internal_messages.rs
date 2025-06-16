@@ -1,7 +1,6 @@
 //use crate::Chef;
-use crate::server_acceptor::acceptor::Acceptor;
+use crate::server_actors::storage::Storage;
 use actix::Message;
-//use common::types::order::OrderDTO;
 use crate::server_actors::coordinator::Coordinator;
 use crate::server_actors::coordinator_manager::CoordinatorManager;
 use actix::Addr;
@@ -16,7 +15,6 @@ use common::types::restaurant_info::RestaurantInfo;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::net::SocketAddr;
-use std::sync::Arc;
 
 /////////////////////////////////////////////////////////////////////
 // Mensajes del Aceptador al Coordinator
@@ -157,7 +155,7 @@ pub struct RemoveDelivery {
 #[derive(Message, Debug, Clone, Serialize, Deserialize)]
 #[rtype(result = "()")]
 pub struct RemoveOrder {
-    pub order_id: u64,
+    pub order: OrderDTO,
 }
 
 // #[derive(Message, Debug, Clone, Serialize, Deserialize)]
@@ -171,28 +169,28 @@ pub struct RemoveOrder {
 #[rtype(result = "()")]
 pub struct AddAuthorizedOrderToRestaurant {
     pub restaurant_id: String,
-    pub order_id: u64,
+    pub order: OrderDTO,
 }
 
 #[derive(Message, Debug, Clone, Serialize, Deserialize)]
 #[rtype(result = "()")]
 pub struct AddPendingOrderToRestaurant {
     pub restaurant_id: String,
-    pub order_id: u64,
+    pub order: OrderDTO,
 }
 
 #[derive(Message, Debug, Clone, Serialize, Deserialize)]
 #[rtype(result = "()")]
 pub struct RemoveAuthorizedOrderToRestaurant {
     pub restaurant_id: String,
-    pub order_id: u64,
+    pub order: OrderDTO,
 }
 
 #[derive(Message, Debug, Clone, Serialize, Deserialize)]
 #[rtype(result = "()")]
 pub struct RemovePendingOrderToRestaurant {
     pub restaurant_id: String,
-    pub order_id: u64,
+    pub order: OrderDTO,
 }
 
 #[derive(Message, Debug, Clone, Serialize, Deserialize)]
@@ -221,7 +219,7 @@ pub struct SetCurrentClientToDelivery {
 #[rtype(result = "()")]
 pub struct SetCurrentOrderToDelivery {
     pub delivery_id: String,
-    pub order_id: u64,
+    pub order: OrderDTO,
 }
 
 #[derive(Message, Debug, Clone, Serialize, Deserialize)]
@@ -234,7 +232,7 @@ pub struct SetDeliveryStatus {
 #[derive(Message, Debug, Clone, Serialize, Deserialize)]
 #[rtype(result = "()")]
 pub struct SetDeliveryToOrder {
-    pub order_id: u64,
+    pub order: OrderDTO,
     pub delivery_id: String,
 }
 
@@ -249,7 +247,7 @@ pub struct GetAllAvailableDeliveries;
 #[derive(Message, Debug, Clone, Serialize, Deserialize)]
 #[rtype(result = "()")]
 pub struct SetOrderStatus {
-    pub order_id: u64,
+    pub order: OrderDTO,
     pub order_status: OrderStatus,
 }
 
@@ -275,8 +273,9 @@ pub struct CheckReapUser {
 
 #[derive(Message, Debug, Clone)]
 #[rtype(result = "()")]
-pub struct SetCoordinatorAddr {
+pub struct SetActorsAddresses {
     pub coordinator_addr: Addr<Coordinator>,
+    pub storage_addr: Addr<Storage>,
 }
 
 /////////////////////////////////////////////////////////////////////

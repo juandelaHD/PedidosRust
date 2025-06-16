@@ -6,6 +6,7 @@ use common::logger::Logger;
 use common::messages::NearbyRestaurants;
 use common::messages::client_messages::*;
 use common::messages::shared_messages::*;
+use common::messages::OrderDelivered;
 use common::network::communicator::Communicator;
 use common::network::connections::{connect_some, try_to_connect};
 use common::network::peer_types::PeerType;
@@ -360,12 +361,59 @@ impl Handler<NetworkMessage> for Client {
                 self.logger
                     .info("Received AuthorizationResult message, not implemented yet");
             }
-            /*
-            NetworkMessage::OrderFinalized(_msg_data) => {
-                self.logger
-                    .info("Received OrderFinalized message, not implemented yet");
+            NetworkMessage::NotifyOrderUpdated(msg_data) => {
+                self.logger.info(format!(
+                    "Your order is now: {:?}",
+                    msg_data.order.status.to_string().to_uppercase()
+                ));
+                self.client_order = Some(msg_data.order.clone());
             }
-            */
+            NetworkMessage::DeliveryExpectedTime(msg_data) => {
+                if msg_data.order.client_id == self.client_id {
+                    self.logger.info(format!(
+                        "Expected delivery time for my order: {} seconds",
+                        msg_data.expected_time
+                    ));
+
+                    // Se quede esperando el tiempo de entrega
+                    let delivery_time = msg_data.expected_time;
+                    ctx.run_later(
+                        std::time::Duration::from_secs(delivery_time),
+                        move |act, _ctx| {
+                            act.logger.info(format!(
+                                "Delivery expected time of {} seconds has elapsed.",
+                                delivery_time
+                            ));
+                            // Chequeamos si la orden que tengo tien el estado de delivered
+                            if let Some(order) = &act.client_order {
+                                if order.status == OrderStatus::Delivered {
+                                    act.logger.info(format!(
+                                        "Order {} has been delivered successfully.",
+                                        order.order_id
+                                    ));
+                                } else {
+                                    act.logger.warn(format!(
+                                        "Expected delivery time elapsed, sending order has been delivered",
+                                    ));
+                                    let mut order = order.clone();
+                                    order.status = OrderStatus::Delivered;
+                                    act.client_order = Some(order.clone());
+                                    act.send_network_message(NetworkMessage::OrderDelivered( OrderDelivered {
+                                        order: order.clone(),
+                                    }));
+                                }
+                            } else {
+                                act.logger.warn("No active order found for delivery check.");
+                            }
+                        },
+                    );
+                } else {
+                    self.logger.warn(format!(
+                        "Received delivery expected time for a different client ({}), ignoring",
+                        msg_data.order.client_id
+                    ));
+                }
+            }
             _ => {
                 self.logger.info(format!(
                     "NetworkMessage descartado/no implementado: {:?}",

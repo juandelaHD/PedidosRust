@@ -15,3 +15,17 @@ pub struct RequestAuthorization {
 pub struct AuthorizationResult {
     pub result: OrderDTO,
 }
+
+#[derive(Message, Debug, Clone, Serialize, Deserialize)]
+#[rtype(result = "()")]
+pub struct PaymentCompleted {
+    pub order: OrderDTO,
+}
+
+
+#[derive(Message, Debug, Clone, Serialize, Deserialize)]
+#[rtype(result = "()")]
+pub struct BillPayment {
+    pub origin_address: SocketAddr,
+    pub order: OrderDTO,
+}

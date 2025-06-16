@@ -16,7 +16,7 @@ pub struct NearbyDeliveryService {
 }
 
 impl NearbyDeliveryService {
-    pub fn new(coordinator_address: Addr<Coordinator>, storage_address: Addr<Storage>) -> Self {
+    pub fn new( storage_address: Addr<Storage>, coordinator_address: Addr<Coordinator>,) -> Self {
         let logger = Logger::new("NearbyDeliveryService");        NearbyDeliveryService {
             coordinator_address,
             storage_address,
@@ -64,7 +64,7 @@ impl Handler<RequestNearbyDelivery> for NearbyDeliveryService {
                     });
                 }
                 Err(_) => {
-                    logger.error("Error al obtener restaurantes del storage.");
+                    logger.error("Error retrieving deliveries from storage.");
                     coordinator_addr.do_send(NearbyDeliveries{
                         order,
                         deliveries: Vec::new(),

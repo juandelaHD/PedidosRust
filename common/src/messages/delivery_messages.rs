@@ -1,4 +1,4 @@
-use crate::types::dtos::{DeliveryDTO, OrderDTO};
+use crate::types::{dtos::{DeliveryDTO, OrderDTO}, restaurant_info::RestaurantInfo};
 use actix::Message;
 use serde::{Deserialize, Serialize};
 
@@ -23,5 +23,14 @@ pub struct OrderDelivered {
 #[derive(Message, Debug, Clone, Serialize, Deserialize)]
 #[rtype(result = "()")]
 pub struct DeliverThisOrder {
+    pub order: OrderDTO,
+    pub restaurant_info: RestaurantInfo
+}
+
+#[derive(Message, Debug, Clone, Serialize, Deserialize)]
+#[rtype(result = "()")]
+pub struct IAmDelivering {
+    pub  delivery_info: DeliveryDTO,
+    pub expected_delivery_time: u64,
     pub order: OrderDTO,
 }

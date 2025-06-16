@@ -3,7 +3,7 @@ use actix::fut::wrap_future;
 use actix::prelude::*;
 use common::logger::Logger;
 use common::messages::{
-    CancelOrder, DeliveryAccepted, LeaderIs, NetworkMessage, NewLeaderConnection, NewOrder, RecoverProcedure, RegisterUser, RequestNearbyDelivery, UpdateOrderStatus, WhoIsLeader
+    DeliveryAccepted, LeaderIs, NetworkMessage, NewLeaderConnection, NewOrder, RecoverProcedure, RegisterUser, RequestNearbyDelivery, UpdateOrderStatus, WhoIsLeader
 };
 use common::network::communicator::{Communicator};
 use common::network::connections::{connect_some, try_to_connect};
@@ -232,6 +232,79 @@ impl Handler<UpdateCommunicator> for Restaurant {
     }
 }
 
+
+impl Handler<NewOrder> for Restaurant {
+    type Result = ();
+
+    fn handle(&mut self, msg: NewOrder, _ctx: &mut Self::Context) -> Self::Result {
+        self.logger
+            .info(format!("Received NewOrder message: {:?}", msg));
+        // Aquí podrías implementar la lógica para manejar un nuevo pedido
+        // Por ejemplo, enviar un mensaje a la cocina o actualizar el estado del restaurante
+        let mut new_order: OrderDTO = msg.order;
+        match new_order.status {
+            OrderStatus::Pending => {
+                self.logger
+                    .info(format!("Order pending with ID: {}", new_order.order_id));
+                if let Some(kitchen_addr) = self.kitchen_address.clone() {
+                    self.logger
+                        .info(format!("Sending order {} to kitchen", new_order.order_id));
+                    // Enviamos el pedido a la cocina
+                    kitchen_addr.do_send(SendToKitchen {
+                        order: new_order.clone(),
+                    });
+                } else {
+                    self.logger
+                        .error("Kitchen sender is not set, cannot send order to kitchen");
+                }
+            }
+            OrderStatus::Authorized => {
+                self.logger
+                    .info(format!("Order authorized with ID: {}", new_order.order_id));
+                if random_bool_by_given_probability(self.probability) {
+                    // Simulamos que el restaurante acepta el pedido
+                    self.logger.info(format!(
+                        "Restaurant {} accepted order {}",
+                        self.info.id, new_order.order_id
+                    ));
+                    new_order.status = OrderStatus::Pending;
+                    if let Some(kitchen_addr) = self.kitchen_address.clone() {
+                        self.logger
+                            .info(format!("Sending order {} to kitchen", new_order.order_id));
+                        // Enviamos el pedido a la cocina
+                        kitchen_addr.do_send(SendToKitchen {
+                            order: new_order.clone(),
+                        });
+                    } else {
+                        self.logger
+                            .error("Kitchen sender is not set, cannot send order to kitchen");
+                    }
+                } else {
+                    // Simulamos que el restaurante rechaza el pedido
+                    self.logger.info(format!(
+                        "Restaurant {} rejected order {}",
+                        self.info.id, new_order.order_id
+                    ));
+                    new_order.status = OrderStatus::Cancelled;
+                    // Aquí podrías enviar un mensaje de rechazo al coordinador o al cliente
+                }
+                self.send_network_message(NetworkMessage::UpdateOrderStatus(
+                        UpdateOrderStatus {
+                            order: new_order.clone(),
+                        },
+                    ));
+            }
+            _ => {
+                self.logger.warn(format!(
+                    "Received NewOrder with non-pending nor authorized status: {:?}",
+                    new_order
+                ));
+            }
+        }
+    }
+}
+
+
 impl Handler<UpdateOrderStatus> for Restaurant {
     type Result = ();
 
@@ -300,106 +373,29 @@ impl Handler<NetworkMessage> for Restaurant {
                 self.logger
                     .info("No recovered info received, waiting for new orders.");
             }
-
             // Restaurant messages
-            NetworkMessage::NewOrder(_msg_data) => ctx.address().do_send(_msg_data),
-
+            NetworkMessage::NewOrder(msg_data) => {
+                ctx.address().do_send(msg_data)
+            }
             NetworkMessage::UpdateOrderStatus(_msg_data) => {
                 self.logger
                     .info("Received UpdateOrderStatus message, not implemented yet");
             }
-            NetworkMessage::CancelOrder(_msg_data) => {
-                self.logger
-                    .info("Received CancelOrder message, not implemented yet");
+            NetworkMessage::OrderFinalized(msg_data) => {
+                self.logger.info(format!(
+                    "Order finalized with ID: {}. Money transferred to restaurant.",
+                    msg_data.order.order_id
+                ));
             }
             NetworkMessage::DeliveryAvailable(_msg_data) => {
                 self.delivery_assigner_address
                     .as_ref()
                     .map(|addr| addr.do_send(_msg_data));
             }
-            NetworkMessage::DeliverThisOrder(_msg_data) => {
-                self.logger
-                    .info("Received DeliverThisOrder message, not implemented yet");
-            }
-
             _ => {
                 self.logger.info(format!(
                     "NetworkMessage descartado/no implementado: {:?}",
                     msg
-                ));
-            }
-        }
-    }
-}
-
-impl Handler<NewOrder> for Restaurant {
-    type Result = ();
-
-    fn handle(&mut self, msg: NewOrder, _ctx: &mut Self::Context) -> Self::Result {
-        self.logger
-            .info(format!("Received NewOrder message: {:?}", msg));
-        // Aquí podrías implementar la lógica para manejar un nuevo pedido
-        // Por ejemplo, enviar un mensaje a la cocina o actualizar el estado del restaurante
-        let mut new_order: OrderDTO = msg.order;
-        match new_order.status {
-            OrderStatus::Pending => {
-                self.logger
-                    .info(format!("Order pending with ID: {}", new_order.order_id));
-                if let Some(kitchen_addr) = self.kitchen_address.clone() {
-                    self.logger
-                        .info(format!("Sending order {} to kitchen", new_order.order_id));
-                    // Enviamos el pedido a la cocina
-                    kitchen_addr.do_send(SendToKitchen {
-                        order: new_order.clone(),
-                    });
-                } else {
-                    self.logger
-                        .error("Kitchen sender is not set, cannot send order to kitchen");
-                }
-            }
-            OrderStatus::Authorized => {
-                self.logger
-                    .info(format!("Order authorized with ID: {}", new_order.order_id));
-                if random_bool_by_given_probability(self.probability) {
-                    // Simulamos que el restaurante acepta el pedido
-                    self.logger.info(format!(
-                        "Restaurant {} accepted order {}",
-                        self.info.id, new_order.order_id
-                    ));
-                    new_order.status = OrderStatus::Pending;
-                    if let Some(kitchen_addr) = self.kitchen_address.clone() {
-                        self.logger
-                            .info(format!("Sending order {} to kitchen", new_order.order_id));
-                        // Enviamos el pedido a la cocina
-                        kitchen_addr.do_send(SendToKitchen {
-                            order: new_order.clone(),
-                        });
-                    } else {
-                        self.logger
-                            .error("Kitchen sender is not set, cannot send order to kitchen");
-                    }
-                    self.send_network_message(NetworkMessage::UpdateOrderStatus(
-                        UpdateOrderStatus {
-                            order: new_order.clone(),
-                        },
-                    ));
-                } else {
-                    // Simulamos que el restaurante rechaza el pedido
-                    self.logger.info(format!(
-                        "Restaurant {} rejected order {}",
-                        self.info.id, new_order.order_id
-                    ));
-                    new_order.status = OrderStatus::Cancelled;
-                    self.send_network_message(NetworkMessage::CancelOrder(CancelOrder {
-                        order: new_order,
-                    }));
-                    // Aquí podrías enviar un mensaje de rechazo al coordinador o al cliente
-                }
-            }
-            _ => {
-                self.logger.warn(format!(
-                    "Received NewOrder with non-pending nor authorized status: {:?}",
-                    new_order
                 ));
             }
         }
