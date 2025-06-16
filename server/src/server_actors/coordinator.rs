@@ -1,9 +1,7 @@
 use crate::messages::internal_messages::RegisterConnection;
 use crate::messages::internal_messages::*;
-use crate::server_actors::coordinator;
 use crate::server_actors::coordinator_manager::CoordinatorManager;
 use crate::server_actors::services::orders_services::OrderService;
-use crate::server_actors::storage;
 use crate::server_actors::storage::Storage;
 use actix::prelude::*;
 use common::bimap::BiMap;
@@ -630,7 +628,6 @@ impl Handler<NetworkMessage> for Coordinator {
                 self.logger.info(format!("Received LeaderElection message from {} with candidates {:?}", _msg.initiator, _msg.candidates));
             }
 
-
             NetworkMessage::Ping(msg_data) => {
                 self.logger.info("Received Ping message");
                 if let Some(coordinator_manager) = &self.coordinator_manager {
@@ -639,6 +636,7 @@ impl Handler<NetworkMessage> for Coordinator {
                     self.logger.info("CoordinatorManager not initialized yet.");
                 }
             }
+
             NetworkMessage::Pong(msg_data) => {
                 self.logger.info("Received Pong message");
                 if let Some(coordinator_manager) = &self.coordinator_manager {
@@ -647,8 +645,7 @@ impl Handler<NetworkMessage> for Coordinator {
                     self.logger.info("CoordinatorManager not initialized yet.");
                 }
             }
-
-
+            
             _ => {
                 self.logger.info(format!(
                     "NetworkMessage descartado/no implementado: {:?}",
