@@ -26,4 +26,22 @@ impl<K: std::hash::Hash + Eq + Clone, V: std::hash::Hash + Eq + Clone> BiMap<K, 
     pub fn get_by_value(&self, v: &V) -> Option<&K> {
         self.backward.get(v)
     }
+
+
+
+    pub fn remove_by_key(&mut self, k: &K) {
+        if let Some(v) = self.forward.remove(k) {
+            self.backward.remove(&v);
+        }
+    }
+
+
+    pub fn remove_by_value(&mut self, v: &V) {
+        if let Some(k) = self.backward.remove(v) {
+            self.forward.remove(&k);
+        }
+    }
+
+
+
 }

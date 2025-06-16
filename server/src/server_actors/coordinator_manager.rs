@@ -34,6 +34,8 @@ pub struct CoordinatorManager {
     /// Dirección del actor `Coordinator` local.
     pub coordinator_addr: Addr<Coordinator>,
     pong_pending: bool,
+    election_in_progress: bool
+
 }
 
 impl Actor for CoordinatorManager {
@@ -58,6 +60,7 @@ impl CoordinatorManager {
             logger: Logger::new("COORDINATOR_MANAGER"),
             coordinator_addr,
             pong_pending: false,
+            election_in_progress: false,
         }
     }
 
@@ -68,63 +71,121 @@ impl CoordinatorManager {
 
 
     pub fn start_leader_election(&mut self) {
+        self.election_in_progress = true;
         let election = NetworkMessage::LeaderElection(LeaderElection {
             initiator: self.my_socket_addr,
             candidates: vec![self.my_socket_addr],
         });
 
         if let Some(next) = self.find_next_in_ring() {
-            self.send_network_message(next, election);
+            if let Err(err) = self.send_network_message(next, election) {
+                self.logger.error(format!("Failed to send message to {}: {}", next, err));
+            }
+
             self.logger.info(format!("Iniciando elección. Enviado a {}", next));
         } else {
-            self.logger.warn("No hay siguiente nodo en el anillo para iniciar elección");
+            self.logger.warn("No hay siguiente nodo en el anillo para iniciar elección me autoproclamo líder");
+            // Si no hay siguiente nodo, me autoproclamo líder
+            self.coordinator_actual = Some(self.my_socket_addr);
+            self.election_in_progress = false;
+            // Broadcast a todos los nodos que soy el líder
+            self.broadcast_leader_is();
+
         }
     }
 
     fn find_next_in_ring(&self) -> Option<SocketAddr> {
-        // Obtener todos los nodos ordenados (incluyéndose a sí mismo)
-        let mut nodes = self.ring_nodes.clone();
+        // Obtener claves de comunicadores conectados (sin incluirme)
+        let mut nodes: Vec<_> = self
+            .coord_communicators
+            .keys()
+            .copied()
+            .filter(|addr| *addr != self.my_socket_addr)
+            .collect();
+
+        if nodes.is_empty() {
+            return None;
+        }
+
+        // Incluirme para saber quién soy en la rotación
         nodes.push(self.my_socket_addr);
         nodes.sort();
 
-        // Buscar el que sigue
+        // Buscar el siguiente en el anillo
         let idx = nodes.iter().position(|x| *x == self.my_socket_addr)?;
         let next = nodes.get((idx + 1) % nodes.len())?;
         Some(*next)
     }
-    
+
     fn start_heartbeat_checker(&mut self, ctx: &mut Context<Self>) {
         ctx.run_interval(std::time::Duration::from_secs(5), |act, ctx| {
+            if act.election_in_progress {
+                act.logger.info("Elección en progreso, omitiendo heartbeat.");
+                return;
+            }
+
             if let Some(leader) = act.coordinator_actual {
                 if leader == act.my_socket_addr {
                     act.logger.info("Soy el líder, no hago ping.");
-                    return; // 👈 Salteo el ping a mí mismo
+                    return;
                 }
 
                 if act.pong_pending {
                     act.logger.warn("No se recibió Pong del líder. Iniciando elección...");
                     act.coordinator_actual = None;
+                    act.election_in_progress = true;
+
+                    // 👉 Remover el nodo que no responde
+                    act.coord_communicators.remove(&leader);
+                    act.coord_addresses.remove_by_key(&leader);
+                    act.heartbeat_timestamps.remove(&leader);
+                    act.ring_nodes.retain(|&n| n != leader); // limpieza opcional
+
                     act.start_leader_election();
                 } else {
                     act.logger.info("Enviando Ping al líder...");
 
-                    let local_addr = act.coord_communicators
+                    let local_addr = act
+                        .coord_communicators
                         .get(&leader)
                         .map(|c| c.local_address)
                         .unwrap_or(act.my_socket_addr);
 
-                    act.send_network_message(leader, NetworkMessage::Ping(Ping {from: local_addr,}));
+                    let result = act.send_network_message(
+                        leader,
+                        NetworkMessage::Ping(Ping { from: local_addr }),
+                    );
 
-                    act.pong_pending = true;
+                    match result {
+                        Ok(_) => {
+                            act.pong_pending = true;
 
-                    // Timeout para esperar el Pong
-                    let addr = ctx.address();
-                    ctx.run_later(std::time::Duration::from_secs(3), move |_, _| {
-                        addr.do_send(CheckPongTimeout);
-                    });
+                            let addr = ctx.address();
+                            ctx.run_later(std::time::Duration::from_secs(3), move |_, _| {
+                                addr.do_send(CheckPongTimeout);
+                            });
+                        }
+                        Err(e) => {
+                            act.logger.warn(format!(
+                                "Fallo al enviar ping al líder: {}. Iniciando elección...",
+                                e
+                            ));
+                            act.coordinator_actual = None;
+                            act.election_in_progress = true;
+
+                            // Limpieza también en error
+                            act.coord_communicators.remove(&leader);
+                            act.coord_addresses.remove_by_key(&leader);
+                            act.heartbeat_timestamps.remove(&leader);
+                            act.ring_nodes.retain(|&n| n != leader);
+
+                            act.start_leader_election();
+                        }
+                    }
                 }
             } else {
                 act.logger.info("No hay líder actual. Iniciando elección...");
+                act.election_in_progress = true;
                 act.start_leader_election();
             }
         });
@@ -132,29 +193,37 @@ impl CoordinatorManager {
 
 
 
-    fn send_network_message(&self, target: SocketAddr, message: NetworkMessage) {
+
+    fn send_network_message(&self, target: SocketAddr, message: NetworkMessage) -> Result<(), String> {
         if let Some(communicator) = self.coord_communicators.get(&target) {
             if let Some(sender) = &communicator.sender {
-                self.logger
-                    .info(format!("Sent message to {}: {:?}", target, message));
+                self.logger.info(format!("Sent message to {}: {:?}", target, message));
                 sender.do_send(message);
+                Ok(())
             } else {
-                self.logger.error(format!(
-                    "Sender not initialized in communicator for {}",
-                    target
-                ));
+                let err_msg = format!("Sender not initialized in communicator for {}", target);
+                self.logger.error(&err_msg);
+                Err(err_msg)
             }
         } else {
-            self.logger
-                .error(format!("No communicator found for {}", target));
+            let err_msg = format!("No communicator found for {}", target);
+            self.logger.error(&err_msg);
+            Err(err_msg)
         }
     }
+
 
     /// Envía un `NetworkMessage` a todos los nodos remotos conectados
     fn broadcast_network_message(&self, message: NetworkMessage) {
         for addr in self.coord_communicators.keys() {
             if *addr != self.my_socket_addr {
-                self.send_network_message(*addr, message.clone());
+
+
+                if let Err(err) = self.send_network_message(*addr, message.clone()) {
+                    self.logger.error(format!("Failed to send message to {}: {}", *addr, err));
+                }
+
+
             }
         }
     }
@@ -178,7 +247,9 @@ impl CoordinatorManager {
                     user_id: self.id.clone(),
                 });
                 if *addr != self.my_socket_addr {
-                    self.send_network_message(*addr, message.clone());
+                    if let Err(err) = self.send_network_message(*addr, message.clone()) {
+                        self.logger.error(format!("Failed to send WhoIsLeader to {}: {}", *addr, err));
+                    }
                 }
                 self.logger
                     .info(format!("Broadcasting WhoIsLeader to {}", addr));
@@ -247,9 +318,10 @@ impl CoordinatorManager {
     }
 
     fn handle_leader_is(&mut self, msg: LeaderIs, _ctx: &mut Context<Self>) {
+
         self.logger
             .info(format!("Received LeaderIs: {}", msg.coord_addr));
-
+        self.election_in_progress = false;
         if self.coordinator_actual.is_none() {
             self.coordinator_actual = Some(msg.coord_addr);
             self.coordinator_addr.do_send(LeaderIs {
@@ -259,10 +331,11 @@ impl CoordinatorManager {
                 .info(format!("Updated local coordinator to {}", msg.coord_addr));
         } else if self.coordinator_actual != Some(msg.coord_addr) {
             self.logger.warn(format!(
-                "Conflicting LeaderIs received. Local: {:?}, Received: {}",
+                "Pisé a mi coordinador porque llegó LeaderIs. Local: {:?}, Received: {}",
                 self.coordinator_actual, msg.coord_addr
             ));
-            // Aquí podrías iniciar una nueva elección si sospechas inconsistencias
+            self.coordinator_actual = Some(msg.coord_addr); //piso al actual
+             
         }
     }
 
@@ -306,56 +379,12 @@ impl Handler<LeaderIs> for CoordinatorManager {
     type Result = ();
 
     fn handle(&mut self, msg: LeaderIs, _ctx: &mut Context<Self>) {
+        self.logger.info(format!("Líder recibido: {}", msg.coord_addr));
         self.handle_leader_is(msg, _ctx);
     }
 }
 
 
-impl Handler<NetworkMessage> for CoordinatorManager {
-    type Result = ();
-
-    fn handle(&mut self, msg: NetworkMessage, _ctx: &mut Self::Context) {
-        match msg {
-            NetworkMessage::LeaderElection(msg) => {
-                let mut candidates = msg.candidates.clone();
-            
-                if msg.initiator == self.my_socket_addr {
-                    // Completó el ciclo
-                    let new_leader = *candidates.iter().min().unwrap();
-                    self.logger.info(format!("Elección terminada. Nuevo líder: {}", new_leader));
-                    self.coordinator_actual = Some(new_leader);
-
-                    // Broadcast a todos
-                    for addr in &self.ring_nodes {
-                        self.send_network_message(*addr, NetworkMessage::LeaderIs(LeaderIs {
-                            coord_addr: new_leader,
-                        }));
-                    }
-                } else {
-                    // Sumarme como candidato
-                    candidates.push(self.my_socket_addr);
-                    if let Some(next) = self.find_next_in_ring() {
-                        self.send_network_message(next, NetworkMessage::LeaderElection(
-                            LeaderElection {initiator: msg.initiator,
-                            candidates: candidates,}
-                        ));
-                        self.logger.info(format!("Pasando elección a {}", next));
-                    }
-                }
-            }
-
-            NetworkMessage::LeaderIs(leader) => {
-                self.logger.info(format!("Líder recibido: {}", leader.coord_addr));
-                self.coordinator_actual = Some(leader.coord_addr);
-            }
-
-
-
-
-            _ => {}
-        }
-    }
-}
 
 impl Handler<CheckPongTimeout> for CoordinatorManager {
     type Result = ();
@@ -364,12 +393,18 @@ impl Handler<CheckPongTimeout> for CoordinatorManager {
         if self.pong_pending {
             self.logger.warn("Timeout esperando Pong. Iniciando elección...");
             self.pong_pending = false;
+
+            if let Some(dead_leader) = self.coordinator_actual {
+                self.coord_communicators.remove(&dead_leader);
+                self.coord_addresses.remove_by_key(&dead_leader);
+                self.heartbeat_timestamps.remove(&dead_leader);
+                self.ring_nodes.retain(|&n| n != dead_leader);
+            }
+
             self.coordinator_actual = None;
             self.start_leader_election();
         }
     }
-
-
 
     
 }
@@ -383,15 +418,15 @@ impl Handler<Ping> for CoordinatorManager {
         self.logger.info(format!("Recibido Ping de {}", msg.from));
 
         // Responder con Pong al remitente del Ping
-        self.send_network_message(
-            msg.from,
-            NetworkMessage::Pong(Pong{from: self.my_socket_addr}),
-        );
+
+        if let Err(err) = self.send_network_message(msg.from, NetworkMessage::Pong(Pong { from: self.my_socket_addr })) {
+
+            self.logger.error(format!("Failed to send message to {}: {}", msg.from, err));
+        }
 
 
-        
     }
-    
+
 }
 
 impl Handler<Pong> for CoordinatorManager {
@@ -406,3 +441,48 @@ impl Handler<Pong> for CoordinatorManager {
     
 }
 
+
+impl Handler<LeaderElection> for CoordinatorManager {
+    type Result = ();
+
+    fn handle(&mut self, msg: LeaderElection, _ctx: &mut Self::Context) {
+
+                let mut candidates = msg.candidates.clone();
+            
+                if msg.initiator == self.my_socket_addr {
+                    // Completó el ciclo
+                    self.election_in_progress = false;
+                    let new_leader = *candidates.iter().min().unwrap();
+                    self.logger.info(format!("Elección terminada. Nuevo líder: {}", new_leader));
+                    self.coordinator_actual = Some(new_leader);
+
+                    // Broadcast a todos
+                    for addr in &self.ring_nodes {
+                        if let Err(err) = self.send_network_message(*addr, NetworkMessage::LeaderIs(LeaderIs {
+                            coord_addr: new_leader,
+                        })) {
+                            self.logger.error(format!("Failed to send LeaderIs to {}: {}", addr, err));
+                        }
+
+                    }
+                } else {
+                    // Sumarme como candidato
+                    candidates.push(self.my_socket_addr);
+                    if let Some(next) = self.find_next_in_ring() {
+
+
+
+                        if let Err(err) = self.send_network_message(next, NetworkMessage::LeaderElection(
+                            LeaderElection {initiator: msg.initiator,
+                            candidates: candidates,}
+                        )) {
+                            self.logger.error(format!("Failed to send LeaderElection to {}: {}", next, err));
+                        } 
+
+
+
+                        self.logger.info(format!("Pasando elección a {}", next));
+                    }
+                }
+            }
+}

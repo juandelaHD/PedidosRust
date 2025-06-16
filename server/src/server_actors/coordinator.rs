@@ -315,6 +315,12 @@ impl Handler<LeaderIs> for Coordinator {
             "Updated current coordinator to: {}",
             msg.coord_addr
         ));
+        // Notificar al CoordinatorManager sobre el nuevo coordinador
+        if let Some(coordinator_manager) = &self.coordinator_manager {
+            coordinator_manager.do_send(msg);
+        } else {
+            self.logger.info("CoordinatorManager not initialized yet.");
+        }
     }
 }
 
@@ -711,10 +717,19 @@ impl Handler<NetworkMessage> for Coordinator {
                     .info("Received RecoverStorageOperations message");
             }
             NetworkMessage::LeaderElection(_msg) => {
+
+
                 self.logger.info(format!(
                     "Received LeaderElection message from {} with candidates {:?}",
                     _msg.initiator, _msg.candidates
                 ));
+                if let Some(coordinator_manager) = &self.coordinator_manager {
+                    coordinator_manager.do_send(_msg);
+                } else {
+                    self.logger.info("CoordinatorManager not initialized yet.");
+                }
+
+
             }
 
             NetworkMessage::Ping(msg_data) => {
