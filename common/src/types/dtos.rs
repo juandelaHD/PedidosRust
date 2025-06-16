@@ -7,7 +7,7 @@ use crate::types::order_status::OrderStatus;
 use actix::prelude::*;
 
 #[derive(Debug, Serialize, Deserialize, Message, Clone)]
-#[serde(tag = "type")]
+#[serde(tag = "user_type")]
 #[rtype(result = "()")]
 pub enum UserDTO {
     Client(ClientDTO),
@@ -42,7 +42,6 @@ pub struct RestaurantDTO {
     /// Marca de tiempo que registra la última actualización del restaurante.
     pub time_stamp: std::time::SystemTime,
 }
-
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeliveryDTO {

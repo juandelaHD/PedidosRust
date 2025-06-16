@@ -2,7 +2,6 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, Copy, PartialEq, Eq)]
 pub enum DeliveryStatus {
-    Initial,             // Estado inicial, antes de que se asigne un pedido
     Reconnecting,        // Reconectando a un servidor
     Recovering,          // Recuperando estado de un pedido
     Available,           // Listo para recibir ofertas de pedidos

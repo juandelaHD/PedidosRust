@@ -91,6 +91,7 @@ pub struct NewLeaderConnection {
 pub struct RegisterUser {
     pub origin_addr: SocketAddr,
     pub user_id: String,
+    pub position: (f32, f32),
 }
 
 #[derive(Message, Debug, Clone, Serialize, Deserialize)]

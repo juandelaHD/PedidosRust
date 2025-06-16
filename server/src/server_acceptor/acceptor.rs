@@ -1,15 +1,15 @@
+use crate::messages::internal_messages::{RegisterConnection, RegisterConnectionWithCoordinator};
+use crate::server_actors::coordinator::Coordinator;
 use actix::prelude::*;
 use common::logger::Logger;
 use common::network::communicator::Communicator;
 use common::network::peer_types::PeerType;
 use std::net::SocketAddr;
 use std::sync::Arc;
+use tokio::io::AsyncBufReadExt;
 use tokio::io::AsyncReadExt;
 use tokio::net::TcpListener;
 use tokio::net::TcpStream;
-use crate::messages::internal_messages::{RegisterConnection, RegisterConnectionManager};
-use crate::server_actors::coordinator::Coordinator;
-use tokio::io::AsyncBufReadExt;
 
 pub struct Acceptor {
     addr: SocketAddr,
@@ -18,10 +18,7 @@ pub struct Acceptor {
 }
 
 impl Acceptor {
-    pub fn new(
-        addr: SocketAddr,
-        coordinator_address: Addr<Coordinator>,
-    ) -> Self {
+    pub fn new(addr: SocketAddr, coordinator_address: Addr<Coordinator>) -> Self {
         Self {
             addr,
             coordinator_address,
@@ -55,21 +52,25 @@ impl Actor for Acceptor {
                                             if let Some(peer_type) =
                                                 PeerType::from_u8(peer_type_byte[0])
                                             {
-                                            let mut addr_line = String::new();
-                                            let mut reader = tokio::io::BufReader::new(&mut stream);
-                                            reader.read_line(&mut addr_line).await.unwrap_or_else(|_| {
-                                                logger.info(format!(
-                                                    "Error leyendo dirección desde {}",
-                                                    remote_addr
-                                                ));
-                                                0
-                                            });
+                                                let mut addr_line = String::new();
+                                                let mut reader =
+                                                    tokio::io::BufReader::new(&mut stream);
+                                                reader
+                                                    .read_line(&mut addr_line)
+                                                    .await
+                                                    .unwrap_or_else(|_| {
+                                                        logger.info(format!(
+                                                            "Error leyendo dirección desde {}",
+                                                            remote_addr
+                                                        ));
+                                                        0
+                                                    });
 
-                                            acceptor_addr.do_send(HandleConnection {
-                                                stream,
-                                                remote_addr,
-                                                peer_type,
-                                            });
+                                                acceptor_addr.do_send(HandleConnection {
+                                                    stream,
+                                                    remote_addr,
+                                                    peer_type,
+                                                });
                                             } else {
                                                 logger.info(format!(
                                                     "Tipo de peer inválido desde {}",
@@ -125,8 +126,8 @@ impl Handler<HandleConnection> for Acceptor {
                 let communicator =
                     Communicator::new(stream, self.coordinator_address.clone(), peer_type);
                 self.coordinator_address
-                    .do_send(RegisterConnectionManager {
-                        remote_addr, 
+                    .do_send(RegisterConnectionWithCoordinator {
+                        remote_addr,
                         communicator,
                     });
             }
@@ -135,7 +136,7 @@ impl Handler<HandleConnection> for Acceptor {
                 let communicator =
                     Communicator::new(stream, self.coordinator_address.clone(), peer_type);
                 self.coordinator_address.do_send(RegisterConnection {
-                    client_addr:  remote_addr,
+                    client_addr: remote_addr,
                     communicator,
                 });
             }

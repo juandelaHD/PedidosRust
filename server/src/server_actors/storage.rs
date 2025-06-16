@@ -1,10 +1,10 @@
 use crate::messages::internal_messages::{
     AddAuthorizedOrderToRestaurant, AddClient, AddDelivery, AddOrder, AddPendingOrderToRestaurant,
-    AddRestaurant, GetAllAvailableDeliveries, GetAllRestaurantsInfo, GetDeliveries, GetRestaurants,
-    RemoveAuthorizedOrderToRestaurant, RemoveClient, RemoveDelivery, RemoveOrder,
-    RemovePendingOrderToRestaurant, RemoveRestaurant, SetCurrentClientToDelivery,
-    SetCurrentOrderToDelivery, SetDeliveryPosition, SetDeliveryStatus, SetDeliveryToOrder,
-    SetOrderStatus, StorageLogMessage,
+    AddRestaurant, GetAllAvailableDeliveries, GetAllRestaurantsInfo, GetClient, GetDeliveries,
+    GetDelivery, GetOrder, GetRestaurant, GetRestaurants, RemoveAuthorizedOrderToRestaurant,
+    RemoveClient, RemoveDelivery, RemoveOrder, RemovePendingOrderToRestaurant, RemoveRestaurant,
+    SetCurrentClientToDelivery, SetCurrentOrderToDelivery, SetDeliveryPosition, SetDeliveryStatus,
+    SetDeliveryToOrder, SetOrderStatus, StorageLogMessage,
 };
 use actix::prelude::*;
 use common::logger::Logger;
@@ -101,6 +101,38 @@ impl Handler<AddOrder> for Storage {
                 msg.order.client_id
             ));
         }
+    }
+}
+
+impl Handler<GetClient> for Storage {
+    type Result = MessageResult<GetClient>;
+
+    fn handle(&mut self, msg: GetClient, _ctx: &mut Self::Context) -> Self::Result {
+        MessageResult(self.clients.get(&msg.restaurant_id).cloned())
+    }
+}
+
+impl Handler<GetRestaurant> for Storage {
+    type Result = MessageResult<GetRestaurant>;
+
+    fn handle(&mut self, msg: GetRestaurant, _ctx: &mut Self::Context) -> Self::Result {
+        MessageResult(self.restaurants.get(&msg.restaurant_id).cloned())
+    }
+}
+
+impl Handler<GetDelivery> for Storage {
+    type Result = MessageResult<GetDelivery>;
+
+    fn handle(&mut self, msg: GetDelivery, _ctx: &mut Self::Context) -> Self::Result {
+        MessageResult(self.deliverys.get(&msg.delivery_id).cloned())
+    }
+}
+
+impl Handler<GetOrder> for Storage {
+    type Result = MessageResult<GetOrder>;
+
+    fn handle(&mut self, msg: GetOrder, _ctx: &mut Self::Context) -> Self::Result {
+        MessageResult(self.orders.get(&msg.order_id).cloned())
     }
 }
 

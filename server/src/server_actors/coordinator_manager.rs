@@ -1,13 +1,12 @@
-use crate::messages::internal_messages::RegisterConnectionManager;
+use crate::messages::internal_messages::RegisterConnectionWithCoordinator;
 use crate::server_actors::coordinator::Coordinator;
 use actix::prelude::*;
 use common::bimap::BiMap;
 use common::logger::Logger;
-use common::messages::coordinatormanager_messages::{LeaderElection};
+use common::messages::coordinatormanager_messages::LeaderElection;
 use common::messages::shared_messages::NetworkMessage;
 use common::messages::{LeaderIs, StartRunning, WhoIsLeader};
 use common::network::communicator::Communicator;
-
 
 use std::{
     collections::HashMap,
@@ -115,7 +114,11 @@ impl CoordinatorManager {
 
     /// Obtiene el siguiente nodo en el anillo
     fn next_node_in_ring(&self) -> Option<SocketAddr> {
-        if let Some(pos) = self.ring_nodes.iter().position(|&n| n == self.my_socket_addr) {
+        if let Some(pos) = self
+            .ring_nodes
+            .iter()
+            .position(|&n| n == self.my_socket_addr)
+        {
             let next_idx = (pos + 1) % self.ring_nodes.len();
             Some(self.ring_nodes[next_idx])
         } else {
@@ -140,9 +143,10 @@ impl CoordinatorManager {
     // }
 
     fn send_network_message(&self, target: SocketAddr, message: NetworkMessage) {
-        if let Some(communicator) =  self.coord_communicators.get(&target) {
+        if let Some(communicator) = self.coord_communicators.get(&target) {
             if let Some(sender) = &communicator.sender {
-                self.logger.info(format!("Sent message to {}: {:?}", target, message));
+                self.logger
+                    .info(format!("Sent message to {}: {:?}", target, message));
                 sender.do_send(message);
             } else {
                 self.logger.error(format!(
@@ -151,7 +155,8 @@ impl CoordinatorManager {
                 ));
             }
         } else {
-            self.logger.error(format!("No communicator found for {}", target));
+            self.logger
+                .error(format!("No communicator found for {}", target));
         }
     }
 
@@ -167,7 +172,8 @@ impl CoordinatorManager {
     fn broadcast_leader_is(&self) {
         if let Some(leader) = self.coordinator_actual {
             let message = NetworkMessage::LeaderIs(LeaderIs { coord_addr: leader });
-            self.logger.info(format!("Broadcasting new leader: {}", leader));
+            self.logger
+                .info(format!("Broadcasting new leader: {}", leader));
             self.broadcast_network_message(message);
         }
     }
@@ -184,24 +190,25 @@ impl CoordinatorManager {
                 if *addr != self.my_socket_addr {
                     self.send_network_message(*addr, message.clone());
                 }
-                self.logger.info(format!(
-                    "Broadcasting WhoIsLeader to {}",
-                    addr
-                ));
+                self.logger
+                    .info(format!("Broadcasting WhoIsLeader to {}", addr));
             } else {
-                self.logger.warn(format!("No communicator found for {}", addr));
-            }            
+                self.logger
+                    .warn(format!("No communicator found for {}", addr));
+            }
         }
     }
 
     /// Preguntar a todos los nodos conocidos si hay un líder ya elegido
     fn ask_for_leader(&self, ctx: &mut Context<Self>) {
         self.broadcast_who_is_leader();
-       
+
         // Esperamos X segundos para ver si alguien responde
         ctx.run_later(Duration::from_secs(1), |actor: &mut Self, _ctx| {
             if actor.coordinator_actual.is_none() {
-                actor.logger.info("Asked all nodes for leader. No responses. Becoming leader...");
+                actor
+                    .logger
+                    .info("Asked all nodes for leader. No responses. Becoming leader...");
                 actor.coordinator_actual = Some(actor.my_socket_addr);
                 actor.coordinator_addr.do_send(LeaderIs {
                     coord_addr: actor.my_socket_addr,
@@ -222,44 +229,44 @@ impl CoordinatorManager {
             msg.origin_addr, msg.user_id, self.coordinator_actual
         ));
         // Insertar la dirección del socket en el mapa de direcciones de coordinadores
-        self.coord_addresses.insert(msg.origin_addr, msg.user_id.clone());
+        self.coord_addresses
+            .insert(msg.origin_addr, msg.user_id.clone());
 
         if let Some(leader) = self.coordinator_actual {
-            let response = NetworkMessage::LeaderIs(LeaderIs {
-                coord_addr: leader,
-            });
+            let response = NetworkMessage::LeaderIs(LeaderIs { coord_addr: leader });
             if let Some(registered_remote_addr) = self.coord_addresses.get_by_value(&msg.user_id) {
-                if let Some(communicator) =  self.coord_communicators.get(registered_remote_addr) {
+                if let Some(communicator) = self.coord_communicators.get(registered_remote_addr) {
                     if let Some(sender) = &communicator.sender {
                         sender.do_send(response);
-                        self.logger.info(format!("Sent LeaderIs to {}", msg.origin_addr));
+                        self.logger
+                            .info(format!("Sent LeaderIs to {}", msg.origin_addr));
                     } else {
                         self.logger.warn("Sender not initialized");
                     }
                 } else {
-                    self.logger.warn(format!("No communicator to {}", msg.origin_addr));
+                    self.logger
+                        .warn(format!("No communicator to {}", msg.origin_addr));
                 }
             } else {
-                self.logger.warn(format!(
-                    "No origin address found for {}",
-                    msg.origin_addr
-                ));
+                self.logger
+                    .warn(format!("No origin address found for {}", msg.origin_addr));
             }
         } else {
             self.logger.info("No coordinator known yet to respond");
         }
     }
 
-
     fn handle_leader_is(&mut self, msg: LeaderIs, _ctx: &mut Context<Self>) {
-        self.logger.info(format!("Received LeaderIs: {}", msg.coord_addr));
+        self.logger
+            .info(format!("Received LeaderIs: {}", msg.coord_addr));
 
         if self.coordinator_actual.is_none() {
             self.coordinator_actual = Some(msg.coord_addr);
             self.coordinator_addr.do_send(LeaderIs {
                 coord_addr: msg.coord_addr,
             });
-            self.logger.info(format!("Updated local coordinator to {}", msg.coord_addr));
+            self.logger
+                .info(format!("Updated local coordinator to {}", msg.coord_addr));
         } else if self.coordinator_actual != Some(msg.coord_addr) {
             self.logger.warn(format!(
                 "Conflicting LeaderIs received. Local: {:?}, Received: {}",
@@ -280,7 +287,8 @@ impl CoordinatorManager {
             // Soy el iniciador y el mensaje dio la vuelta
             if let Some(new_leader) = candidates.iter().min() {
                 self.coordinator_actual = Some(*new_leader);
-                self.logger.info(format!("New leader elected: {}", new_leader));
+                self.logger
+                    .info(format!("New leader elected: {}", new_leader));
                 self.broadcast_leader_is();
             }
         } else {
@@ -291,12 +299,11 @@ impl CoordinatorManager {
                     NetworkMessage::LeaderElection(LeaderElection { candidates }),
                 );
             } else {
-                self.logger.warn("No next node found to forward LeaderElection");
+                self.logger
+                    .warn("No next node found to forward LeaderElection");
             }
         }
     }
-
-
 }
 
 // impl Handler<LeaderElection> for CoordinatorManager {
@@ -330,12 +337,13 @@ impl CoordinatorManager {
 //     }
 // }
 
-impl Handler<RegisterConnectionManager> for CoordinatorManager {
+impl Handler<RegisterConnectionWithCoordinator> for CoordinatorManager {
     type Result = ();
 
-    fn handle(&mut self, msg: RegisterConnectionManager, _ctx: &mut Context<Self>) {
+    fn handle(&mut self, msg: RegisterConnectionWithCoordinator, _ctx: &mut Context<Self>) {
         // Registrar la conexión del CoordinatorManager
-        self.coord_communicators.insert(msg.remote_addr, msg.communicator);
+        self.coord_communicators
+            .insert(msg.remote_addr, msg.communicator);
     }
 }
 
