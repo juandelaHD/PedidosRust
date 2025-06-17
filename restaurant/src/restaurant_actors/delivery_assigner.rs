@@ -1,13 +1,13 @@
-use std::{
-    collections::{HashMap, VecDeque},
-};
 use crate::{
-    internal_messages::messages::SendThisOrder, restaurant_actors::restaurant::{Restaurant},
+    internal_messages::messages::SendThisOrder, restaurant_actors::restaurant::Restaurant,
 };
-use actix::{Actor, Handler, Addr};
+use actix::{Actor, Addr, Handler};
 use common::{
-    logger::Logger, messages::{DeliveryAccepted, DeliveryAvailable, RequestNearbyDelivery, UpdateOrderStatus}, types::{dtos::OrderDTO, order_status::OrderStatus, restaurant_info::RestaurantInfo}
+    logger::Logger,
+    messages::{DeliveryAccepted, DeliveryAvailable, RequestNearbyDelivery, UpdateOrderStatus},
+    types::{dtos::OrderDTO, order_status::OrderStatus, restaurant_info::RestaurantInfo},
 };
+use std::collections::{HashMap, VecDeque};
 
 pub struct DeliveryAssigner {
     /// Información sobre el restaurante.
@@ -22,10 +22,7 @@ pub struct DeliveryAssigner {
 }
 
 impl DeliveryAssigner {
-    pub fn new(
-        restaurant_info: RestaurantInfo,
-        restaurant_addr: Addr<Restaurant>,
-    ) -> Self {
+    pub fn new(restaurant_info: RestaurantInfo, restaurant_addr: Addr<Restaurant>) -> Self {
         let logger = Logger::new("DeliveryAssigner");
 
         DeliveryAssigner {
@@ -59,9 +56,7 @@ impl Handler<SendThisOrder> for DeliveryAssigner {
         // Add the order to the ready orders queue
         self.ready_orders.push_back(order.clone());
         // Update the order status in the restaurant
-        self.my_restaurant.do_send(UpdateOrderStatus {
-            order,
-        });
+        self.my_restaurant.do_send(UpdateOrderStatus { order });
         // Notify the server to find nearby deliveries
         self.my_restaurant.do_send(RequestNearbyDelivery {
             order: msg.order.clone(),
@@ -82,7 +77,8 @@ impl Handler<DeliveryAvailable> for DeliveryAssigner {
         // Check if there are ready orders to assign
         if let Some(order) = self.ready_orders.pop_front() {
             // Assign the order to the delivery person
-            self.orders_delivery.insert(order.order_id, msg.delivery_info.delivery_id.clone());
+            self.orders_delivery
+                .insert(order.order_id, msg.delivery_info.delivery_id.clone());
             // Notify the restaurant about the assigned order
             self.my_restaurant.do_send(DeliveryAccepted {
                 order,

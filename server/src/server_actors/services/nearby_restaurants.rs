@@ -88,7 +88,6 @@ impl Handler<RequestNearbyRestaurants> for NearbyRestaurantsService {
                                 client,
                                 restaurants: nearby,
                             });
-                            
                         }
                     }
                 }

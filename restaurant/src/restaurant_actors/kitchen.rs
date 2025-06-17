@@ -1,13 +1,11 @@
 use actix::prelude::*;
 use common::constants::NUMBER_OF_CHEFS;
 use common::logger::Logger;
-use common::messages::{UpdateOrderStatus};
+use common::messages::UpdateOrderStatus;
 use common::types::dtos::OrderDTO;
 use common::types::order_status::OrderStatus;
 //use common::messages::shared_messages::{NetworkMessage, OrderDTO};
-use crate::internal_messages::messages::{
-    AssignToChef, IAmAvailable, SendToKitchen,
-};
+use crate::internal_messages::messages::{AssignToChef, IAmAvailable, SendToKitchen};
 use crate::restaurant_actors::chef::Chef;
 use crate::restaurant_actors::delivery_assigner::DeliveryAssigner;
 use crate::restaurant_actors::restaurant::Restaurant;

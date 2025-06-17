@@ -3,7 +3,9 @@ use actix::prelude::*;
 use common::constants::BASE_DELAY_MILLIS;
 use common::logger::Logger;
 use common::messages::delivery_messages::{AcceptOrder, IAmAvailable, OrderDelivered};
-use common::messages::{shared_messages::*, DeliverThisOrder, DeliveryNoNeeded, IAmDelivering, NewOfferToDeliver};
+use common::messages::{
+    DeliverThisOrder, DeliveryNoNeeded, IAmDelivering, NewOfferToDeliver, shared_messages::*,
+};
 use common::network::communicator::Communicator;
 use common::network::connections::{connect_some, try_to_connect};
 use common::network::peer_types::PeerType;
@@ -362,11 +364,10 @@ impl Handler<DeliverThisOrder> for Delivery {
                 ));
                 self.status = DeliveryStatus::Delivering;
                 // Simular el tiempo de llegada al restaurante y al cliente
-                let distance_from_restaurant = calculate_distance(
-                    self.position,
-                    msg.restaurant_info.position
-                );
-                let distance_restaurant_from_client = calculate_distance(msg.restaurant_info.position, msg.order.client_position);
+                let distance_from_restaurant =
+                    calculate_distance(self.position, msg.restaurant_info.position);
+                let distance_restaurant_from_client =
+                    calculate_distance(msg.restaurant_info.position, msg.order.client_position);
                 let total_distance = distance_from_restaurant + distance_restaurant_from_client;
 
                 let delay_ms = BASE_DELAY_MILLIS + (total_distance as u64 * 1000);
@@ -382,7 +383,6 @@ impl Handler<DeliverThisOrder> for Delivery {
                     delivery_info: my_info.clone(),
                     expected_delivery_time: delay_ms,
                     order: msg.order.clone(),
-                    
                 }));
 
                 self.position = msg.order.client_position;

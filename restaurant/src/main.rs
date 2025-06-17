@@ -31,7 +31,12 @@ async fn main() -> std::io::Result<()> {
         id, position, SUCCESS_PROBABILITY
     );
 
-    let restaurant = Restaurant::new(RestaurantInfo { id, position }, SUCCESS_PROBABILITY, servers).await;
+    let restaurant = Restaurant::new(
+        RestaurantInfo { id, position },
+        SUCCESS_PROBABILITY,
+        servers,
+    )
+    .await;
 
     restaurant.start();
 

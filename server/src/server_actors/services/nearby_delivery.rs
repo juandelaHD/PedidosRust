@@ -74,7 +74,9 @@ impl Handler<RequestNearbyDelivery> for NearbyDeliveryService {
                         let nearby: Vec<DeliveryDTO> =
                             get_nearby_deliveries(act, deliveries.clone(), restaurant);
                         if nearby.is_empty() {
-                            logger.warn("No nearby deliveries found for the order. Sending all deliveries.");
+                            logger.warn(
+                                "No nearby deliveries found for the order. Sending all deliveries.",
+                            );
                             coordinator_addr.do_send(NearbyDeliveries {
                                 order,
                                 deliveries: deliveries.clone(),
@@ -86,11 +88,10 @@ impl Handler<RequestNearbyDelivery> for NearbyDeliveryService {
                                 order
                             ));
                             coordinator_addr.do_send(NearbyDeliveries {
-                            order,
-                            deliveries: nearby,
+                                order,
+                                deliveries: nearby,
                             });
                         }
-                        
                     }
                 }
                 Err(_) => {

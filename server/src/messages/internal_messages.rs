@@ -1,9 +1,9 @@
 //use crate::Chef;
-use crate::server_actors::storage::Storage;
-use actix::Message;
 use crate::server_actors::coordinator::Coordinator;
 use crate::server_actors::coordinator_manager::CoordinatorManager;
+use crate::server_actors::storage::Storage;
 use actix::Addr;
+use actix::Message;
 use common::network::communicator::Communicator;
 use common::types::delivery_status::DeliveryStatus;
 use common::types::dtos::ClientDTO;
@@ -298,4 +298,3 @@ pub struct SetActorsAddresses {
 /////////////////////////////////////////////////////////////////////
 // Mensajes de servicios internos
 /////////////////////////////////////////////////////////////////////
-

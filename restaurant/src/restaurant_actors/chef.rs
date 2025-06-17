@@ -1,4 +1,4 @@
-use std::{time::Duration};
+use std::time::Duration;
 
 use crate::{
     internal_messages::messages::{AssignToChef, IAmAvailable, SendThisOrder},
@@ -24,7 +24,6 @@ impl Chef {
     pub fn new(
         delivery_assigner_address: Addr<DeliveryAssigner>,
         kitchen_address: Addr<Kitchen>,
-
     ) -> Self {
         let logger = Logger::new("Chef");
         Chef {
@@ -32,7 +31,7 @@ impl Chef {
             kitchen_address,
             time_to_cook: Duration::from_secs(DEFAULT_TIME_TO_COOK),
             order: None,
-            logger
+            logger,
         }
     }
 }
@@ -61,7 +60,7 @@ impl Handler<AssignToChef> for Chef {
             } else {
                 logger.error("No order assigned to chef when time elapsed.".to_string());
             }
-            kitchen_sender.do_send(IAmAvailable { 
+            kitchen_sender.do_send(IAmAvailable {
                 chef_addr: ctx.address().clone(),
                 order: act.order.clone().unwrap(),
             });

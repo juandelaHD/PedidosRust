@@ -31,7 +31,7 @@ use tokio::net::TcpStream;
 pub struct Coordinator {
     pub id: String,
     /// Direcciones de todos los nodos en el anillo.
-    pub ring_nodes: Vec<SocketAddr>,
+    pub ring_nodes: HashMap<String, SocketAddr>,
     /// Dirección de este coordinator.
     pub my_addr: SocketAddr,
     /// Coordinador actual.
@@ -60,11 +60,13 @@ pub struct Coordinator {
 }
 
 impl Coordinator {
-    pub async fn new(srv_addr: SocketAddr, ring_nodes: Vec<SocketAddr>) -> Self {
+    pub async fn new(srv_addr: SocketAddr, ring_nodes: HashMap<String, SocketAddr>) -> Self {
         // Inicializar el coordinador con la dirección del servidor y los nodos del anillo
         // y un logger compartido.
+        let ring_nodes_vec: Vec<SocketAddr> = ring_nodes.values().cloned().collect();
+
         let pending_streams: HashMap<SocketAddr, TcpStream> =
-            connect_to_all(ring_nodes.clone(), PeerType::CoordinatorType).await;
+            connect_to_all(ring_nodes_vec, PeerType::CoordinatorType).await;
 
         if pending_streams.is_empty() {
             println!("No connections established.");
@@ -82,7 +84,7 @@ impl Coordinator {
             order_service: Some(OrderService::new().await.start()),
             nearby_restaurant_service: None,
             nearby_delivery_service: None,
-            storage: None
+            storage: None,
         }
     }
 
@@ -105,21 +107,29 @@ impl Coordinator {
 
     pub fn broadcast_deliveries(&self, order: OrderDTO, deliveries: Vec<DeliveryDTO>) {
         for delivery in deliveries {
-            if let Some(delivery_addr) = self.user_addresses.get_by_value(&delivery.delivery_id).cloned() {
+            if let Some(delivery_addr) = self
+                .user_addresses
+                .get_by_value(&delivery.delivery_id)
+                .cloned()
+            {
                 if let Some(communicator) = self.communicators.get(&delivery_addr) {
                     if let Some(sender) = &communicator.sender {
-                        sender.do_send(NetworkMessage::NewOfferToDeliver(NewOfferToDeliver { 
-                            order: order.clone()
+                        sender.do_send(NetworkMessage::NewOfferToDeliver(NewOfferToDeliver {
+                            order: order.clone(),
                         }));
                     } else {
-                        self.logger.info(format!("No sender found for {}", delivery.delivery_id));
+                        self.logger
+                            .info(format!("No sender found for {}", delivery.delivery_id));
                     }
                 } else {
-                    self.logger
-                        .info(format!("Communicator not found for {}",  delivery.delivery_id));
+                    self.logger.info(format!(
+                        "Communicator not found for {}",
+                        delivery.delivery_id
+                    ));
                 }
             } else {
-                self.logger.info(format!("User ID {} not found",  delivery.delivery_id));
+                self.logger
+                    .info(format!("User ID {} not found", delivery.delivery_id));
             }
         }
     }
@@ -168,19 +178,14 @@ impl Actor for Coordinator {
         self.storage = Some(storage_address.clone());
 
         // Inicializar el servicio de restaurantes cercanos
-        let nearby_restaurant_service = NearbyRestaurantsService::new(
-                storage_address.clone(),
-                ctx.address(),
-        );
+        let nearby_restaurant_service =
+            NearbyRestaurantsService::new(storage_address.clone(), ctx.address());
         self.nearby_restaurant_service = Some(nearby_restaurant_service.start());
         // Inicializar el servicio de delivery cercanos
-        let nearby_delivery_service = NearbyDeliveryService::new(
-            storage_address.clone(),
-                ctx.address(),
-        );
+        let nearby_delivery_service =
+            NearbyDeliveryService::new(storage_address.clone(), ctx.address());
         self.nearby_delivery_service = Some(nearby_delivery_service.start());
 
-        
         if let Some(order_service) = &self.order_service {
             order_service.do_send(SetActorsAddresses {
                 coordinator_addr: ctx.address(),
@@ -189,7 +194,6 @@ impl Actor for Coordinator {
         }
 
         self.logger.info("Services initialized.");
-
     }
 }
 
@@ -245,8 +249,6 @@ impl Handler<NotifyOrderUpdated> for Coordinator {
     type Result = ();
 
     fn handle(&mut self, msg: NotifyOrderUpdated, _ctx: &mut Self::Context) -> Self::Result {
-        
-    
         let peer_id = msg.peer_id.clone();
         self.send_network_message(peer_id, NetworkMessage::NotifyOrderUpdated(msg));
     }
@@ -307,24 +309,26 @@ impl Handler<WhoIsLeader> for Coordinator {
     }
 }
 
-impl Handler<LeaderIs> for Coordinator {
+impl Handler<LeaderIdIs> for Coordinator {
     type Result = ();
 
-    fn handle(&mut self, msg: LeaderIs, _ctx: &mut Self::Context) -> Self::Result {
-        // Actualizar el coordinador actual
-        self.current_coordinator = Some(msg.coord_addr);
+    fn handle(&mut self, msg: LeaderIdIs, _ctx: &mut Self::Context) -> Self::Result {
         self.logger.info(format!(
-            "Updated current coordinator to: {}",
-            msg.coord_addr
+            "Received LeaderIdIs with leader ID {}",
+            msg.leader_id
         ));
-        // Notificar al CoordinatorManager sobre el nuevo coordinador
-        if let Some(coordinator_manager) = &self.coordinator_manager {
-            coordinator_manager.do_send(msg);
+        if let Some(leader_addr) = self.ring_nodes.get(&msg.leader_id) {
+            self.current_coordinator = Some(*leader_addr);
         } else {
-            self.logger.info("CoordinatorManager not initialized yet.");
+            self.logger.info(format!(
+                "Leader ID {} not found in ring nodes.",
+                msg.leader_id
+            ));
         }
+        
     }
 }
+
 
 impl Handler<RetryLater> for Coordinator {
     type Result = ();
@@ -347,10 +351,11 @@ impl Handler<NewOrder> for Coordinator {
     fn handle(&mut self, msg: NewOrder, _ctx: &mut Self::Context) -> Self::Result {
         self.logger.info(format!(
             "Received new order: {:?} for restaurant: {}",
-            msg.order, msg.order.restaurant_id.clone()
+            msg.order,
+            msg.order.restaurant_id.clone()
         ));
         let restaurant_id = msg.order.restaurant_id.clone();
-        self.send_network_message(restaurant_id,  NetworkMessage::NewOrder(msg));
+        self.send_network_message(restaurant_id, NetworkMessage::NewOrder(msg));
     }
 }
 
@@ -360,12 +365,12 @@ impl Handler<OrderFinalized> for Coordinator {
     fn handle(&mut self, msg: OrderFinalized, _ctx: &mut Self::Context) -> Self::Result {
         self.logger.info(format!(
             "Received order finalized: {:?} for restaurant: {}",
-            msg.order, msg.order.restaurant_id.clone()
+            msg.order,
+            msg.order.restaurant_id.clone()
         ));
         let restaurant_id = msg.order.restaurant_id.clone();
         self.send_network_message(restaurant_id, NetworkMessage::OrderFinalized(msg));
     }
-    
 }
 
 impl Handler<NetworkMessage> for Coordinator {
@@ -396,9 +401,19 @@ impl Handler<NetworkMessage> for Coordinator {
                     ctx.address().do_send(msg_data)
                 }
             }
-            NetworkMessage::LeaderIs(msg_data) => {
-                self.logger.info("Received LeaderIs message");
+            NetworkMessage::LeaderIdIs(msg_data) => {
+                self.logger.info("Received LeaderIdIs message");
                 // Informar al CoordinatorManager sobre el nuevo líder
+
+                if let Some(leader_addr) = self.ring_nodes.get(&msg_data.leader_id) {
+                    self.current_coordinator = Some(*leader_addr);
+                } else {
+                    self.logger.info(format!(
+                        "Leader ID {} not found in ring nodes.",
+                        msg_data.leader_id
+                    ));
+                }
+                
                 if let Some(coordinator_manager) = &self.coordinator_manager {
                     coordinator_manager.do_send(msg_data);
                 } else {
@@ -446,13 +461,13 @@ impl Handler<NetworkMessage> for Coordinator {
                                                 e
                                             ));
                                             storage.as_ref().unwrap().do_send(AddClient {
-                                                    client: ClientDTO {
-                                                        client_position: msg_data.position,
-                                                        client_id: client_id_clone.clone(),
-                                                        client_order: None,
-                                                        time_stamp: std::time::SystemTime::now(),
-                                                    },
-                                                });
+                                                client: ClientDTO {
+                                                    client_position: msg_data.position,
+                                                    client_id: client_id_clone.clone(),
+                                                    client_order: None,
+                                                    time_stamp: std::time::SystemTime::now(),
+                                                },
+                                            });
                                             NetworkMessage::NoRecoveredInfo
                                         }
                                     }
@@ -631,7 +646,8 @@ impl Handler<NetworkMessage> for Coordinator {
                 if let Some(service) = &self.nearby_restaurant_service {
                     service.do_send(msg_data);
                 } else {
-                    self.logger.info("NearbyRestaurantsService not initialized yet.");
+                    self.logger
+                        .info("NearbyRestaurantsService not initialized yet.");
                 }
             }
 
@@ -686,7 +702,8 @@ impl Handler<NetworkMessage> for Coordinator {
                 if let Some(service) = &self.nearby_delivery_service {
                     service.do_send(msg_data);
                 } else {
-                    self.logger.warn("NearbyDeliveryService not initialized yet.");
+                    self.logger
+                        .warn("NearbyDeliveryService not initialized yet.");
                 }
             }
             NetworkMessage::DeliverThisOrder(_msg_data) => {
@@ -746,6 +763,26 @@ impl Handler<NetworkMessage> for Coordinator {
                 } else {
                     self.logger.info("CoordinatorManager not initialized yet.");
                 }
+            }
+
+            NetworkMessage::ConnectionClosed(msg_data) => {
+                self.logger.info(format!(
+                    "Connection closed for {}",
+                    msg_data.remote_addr
+                ));
+                let remote_addr = msg_data.remote_addr;
+                // Si el remote_addr está en self.communicators, lo eliminamos
+                if let Some(communicator) = self.communicators.get(&remote_addr) {
+                    // TODO: Handlear eliminacion de usuario
+                } else {
+                    if let Some(coordinator_manager) = &self.coordinator_manager {
+                    coordinator_manager.do_send(msg_data);
+                } else {
+                    self.logger.info("CoordinatorManager not initialized yet.");
+                }
+                }
+                
+                
             }
 
             _ => {

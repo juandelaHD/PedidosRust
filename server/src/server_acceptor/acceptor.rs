@@ -22,7 +22,7 @@ impl Acceptor {
         Self {
             addr,
             coordinator_address,
-            logger: Arc::new(Logger::new("ACCEPTOR")),
+            logger: Arc::new(Logger::new("ACCEPTOR"))
         }
     }
 }
@@ -128,7 +128,7 @@ impl Handler<HandleConnection> for Acceptor {
                 self.coordinator_address
                     .do_send(RegisterConnectionWithCoordinator {
                         remote_addr,
-                        communicator,
+                        communicator
                     });
             }
             PeerType::ClientType | PeerType::RestaurantType | PeerType::DeliveryType => {

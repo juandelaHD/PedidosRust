@@ -183,7 +183,8 @@ impl Handler<RemoveOrder> for Storage {
     type Result = ();
 
     fn handle(&mut self, msg: RemoveOrder, _ctx: &mut Self::Context) -> Self::Result {
-        self.logger.info(format!("Order removed: {}", msg.order.order_id));
+        self.logger
+            .info(format!("Order removed: {}", msg.order.order_id));
         if let Some(order) = self.orders.remove(&msg.order.order_id) {
             if let Some(client) = self.clients.get_mut(&order.client_id) {
                 client.client_order = None;

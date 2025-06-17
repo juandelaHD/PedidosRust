@@ -22,7 +22,10 @@ pub async fn connect_to_all(
                     continue;
                 }
 
-                stream.write_all(b"\n").await.unwrap_or_else(|_| eprintln!("Failed to send newline to {}", addr));
+                stream
+                    .write_all(b"\n")
+                    .await
+                    .unwrap_or_else(|_| eprintln!("Failed to send newline to {}", addr));
 
                 println!("Connected to {} as {:?}", addr, peer_type);
                 connections.insert(addr, stream);
@@ -36,11 +39,7 @@ pub async fn connect_to_all(
     connections
 }
 
-pub async fn connect_some(
-    servers: Vec<SocketAddr>,
-    peer_type: PeerType,
-) -> Option<TcpStream> {
-
+pub async fn connect_some(servers: Vec<SocketAddr>, peer_type: PeerType) -> Option<TcpStream> {
     for addr in servers {
         match try_to_connect(addr).await {
             Some(mut stream) => {
@@ -51,11 +50,14 @@ pub async fn connect_some(
                     continue;
                 }
 
-                stream.write_all(b"\n").await.unwrap_or_else(|_| eprintln!("Failed to send newline to {}", addr));
+                stream
+                    .write_all(b"\n")
+                    .await
+                    .unwrap_or_else(|_| eprintln!("Failed to send newline to {}", addr));
 
                 println!("Connected to {} as {:?}", addr, peer_type);
                 return Some(stream);
-}
+            }
             None => {
                 eprintln!("Failed to connect to {}", addr);
             }

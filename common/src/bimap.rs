@@ -27,14 +27,11 @@ impl<K: std::hash::Hash + Eq + Clone, V: std::hash::Hash + Eq + Clone> BiMap<K, 
         self.backward.get(v)
     }
 
-
-
     pub fn remove_by_key(&mut self, k: &K) {
         if let Some(v) = self.forward.remove(k) {
             self.backward.remove(&v);
         }
     }
-
 
     pub fn remove_by_value(&mut self, v: &V) {
         if let Some(k) = self.backward.remove(v) {
@@ -42,6 +39,11 @@ impl<K: std::hash::Hash + Eq + Clone, V: std::hash::Hash + Eq + Clone> BiMap<K, 
         }
     }
 
-
-
+    pub fn keys(&self) -> impl Iterator<Item = &K> {
+        self.forward.keys()
+    }
+    
+    pub fn values(&self) -> impl Iterator<Item = &V> {
+        self.forward.values()
+    }
 }
