@@ -2,6 +2,7 @@ use crate::{
     internal_messages::messages::SendThisOrder, restaurant_actors::restaurant::Restaurant,
 };
 use actix::{Actor, Addr, Handler};
+use colored::Color;
 use common::{
     logger::Logger,
     messages::{DeliverThisOrder, DeliveryAvailable, RequestNearbyDelivery, UpdateOrderStatus},
@@ -23,7 +24,7 @@ pub struct DeliveryAssigner {
 
 impl DeliveryAssigner {
     pub fn new(restaurant_info: RestaurantInfo, restaurant_addr: Addr<Restaurant>) -> Self {
-        let logger = Logger::new("DeliveryAssigner");
+        let logger = Logger::new("DeliveryAssigner", Color::BrightWhite);
 
         DeliveryAssigner {
             restaurant_info,

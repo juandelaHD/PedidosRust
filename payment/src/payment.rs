@@ -4,6 +4,7 @@ use common::messages::PaymentCompleted;
 use common::types::order_status::OrderStatus;
 
 use crate::payment_acceptor::RegisterConnection;
+use colored::Color;
 use common::logger::Logger;
 use common::messages::shared_messages::NetworkMessage;
 use common::network::communicator::Communicator;
@@ -26,7 +27,7 @@ impl PaymentGateway {
             authorized_orders: HashSet::new(),
             communicators: HashMap::new(),
             probability_of_success,
-            logger: Logger::new("Payment gateway"),
+            logger: Logger::new("Payment gateway", Color::BrightWhite),
         }
     }
     pub fn send_network_message(&self, destination: SocketAddr, message: NetworkMessage) {

@@ -3,6 +3,7 @@ use crate::restaurant_actors::chef::Chef;
 use crate::restaurant_actors::delivery_assigner::DeliveryAssigner;
 use crate::restaurant_actors::restaurant::Restaurant;
 use actix::prelude::*;
+use colored::Color;
 use common::constants::NUMBER_OF_CHEFS;
 use common::logger::Logger;
 use common::messages::UpdateOrderStatus;
@@ -26,7 +27,14 @@ impl Kitchen {
         my_restaurant: Addr<Restaurant>,
         my_delivery_assigner: Addr<DeliveryAssigner>,
     ) -> Self {
-        let logger = Logger::new("Kitchen");
+        let logger = Logger::new(
+            "Kitchen",
+            Color::TrueColor {
+                r: 255,
+                g: 140,
+                b: 0,
+            },
+        );
         Kitchen {
             pending_orders: VecDeque::new(),
             chefs_available: VecDeque::new(),

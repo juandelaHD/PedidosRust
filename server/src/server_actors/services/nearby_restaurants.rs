@@ -2,6 +2,7 @@ use crate::messages::internal_messages::GetAllRestaurantsInfo;
 use crate::server_actors::coordinator::Coordinator;
 use crate::server_actors::storage::Storage;
 use actix::prelude::*;
+use colored::Color;
 use common::constants::NEARBY_RADIUS;
 use common::logger::Logger;
 use common::messages::NearbyRestaurants;
@@ -18,7 +19,7 @@ pub struct NearbyRestaurantsService {
 
 impl NearbyRestaurantsService {
     pub fn new(storage_addr: Addr<Storage>, coordinator_addr: Addr<Coordinator>) -> Self {
-        let logger = Logger::new("Nearby Restaurants Service");
+        let logger = Logger::new("Nearby Restaurants Service", Color::Green);
         NearbyRestaurantsService {
             storage_addr,
             coordinator_addr,

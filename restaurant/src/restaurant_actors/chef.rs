@@ -3,6 +3,7 @@ use crate::{
     restaurant_actors::{delivery_assigner::DeliveryAssigner, kitchen::Kitchen},
 };
 use actix::{Actor, Addr, AsyncContext, Handler};
+use colored::Color;
 use common::constants::DEFAULT_TIME_TO_COOK;
 use common::{logger::Logger, types::dtos::OrderDTO};
 use std::time::Duration;
@@ -23,7 +24,7 @@ impl Chef {
         delivery_assigner_address: Addr<DeliveryAssigner>,
         kitchen_address: Addr<Kitchen>,
     ) -> Self {
-        let logger = Logger::new("Chef");
+        let logger = Logger::new("Chef", Color::BrightBlue);
         Chef {
             delivery_assigner_address,
             kitchen_address,

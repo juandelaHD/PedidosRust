@@ -3,19 +3,23 @@ use colored::*;
 #[derive(Debug, Clone)]
 pub struct Logger {
     pub name: String,
+    pub info_color: Color,
 }
 
 impl Logger {
-    pub fn new(name: impl Into<String>) -> Self {
+    pub fn new(name: impl Into<String>, info_color: Color) -> Self {
         Self {
             name: name.into().to_uppercase(),
+            info_color,
         }
     }
 
     pub fn info(&self, msg: impl AsRef<str>) {
         println!(
             "{} {}",
-            format!("[INFO][{}]", self.name).bold().bright_green(),
+            format!("[INFO][{}]", self.name)
+                .bold()
+                .color(self.info_color),
             msg.as_ref()
         );
     }

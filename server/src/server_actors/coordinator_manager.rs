@@ -1,6 +1,7 @@
 use crate::messages::internal_messages::RegisterConnectionWithCoordinator;
 use crate::server_actors::coordinator::Coordinator;
 use actix::prelude::*;
+use colored::Color;
 use common::bimap::BiMap;
 use common::logger::Logger;
 use common::messages::coordinatormanager_messages::{CheckPongTimeout, LeaderElection, Ping, Pong};
@@ -56,7 +57,7 @@ impl CoordinatorManager {
             heartbeat_timestamps: HashMap::new(),
             coord_communicators: HashMap::new(),
             coord_addresses: BiMap::new(),
-            logger: Logger::new("COORDINATOR_MANAGER"),
+            logger: Logger::new("COORDINATOR_MANAGER", Color::BrightBlue),
             coordinator_addr,
             pong_pending: false,
             election_in_progress: false,

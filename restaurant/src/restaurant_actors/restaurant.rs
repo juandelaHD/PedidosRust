@@ -19,6 +19,7 @@ use tokio::net::TcpStream;
 
 use crate::restaurant_actors::delivery_assigner::DeliveryAssigner;
 use crate::restaurant_actors::kitchen::Kitchen;
+use colored::Color;
 
 pub struct Restaurant {
     /// Información básica del restaurante
@@ -35,8 +36,8 @@ pub struct Restaurant {
 
 impl Restaurant {
     pub async fn new(info: RestaurantInfo, probability: f32, servers: Vec<SocketAddr>) -> Self {
-        let logger = Logger::new("Restaurant");
-        logger.info(format!("Starting restaurant with ID: {}", info.id));
+        let logger = Logger::new("Restaurant", Color::BrightGreen);
+        logger.info(format!("Hello: {}'s restaurant!", info.id));
         // Intentamos conectarnos a los servidores
         let pending_stream = connect_some(servers.clone(), PeerType::RestaurantType).await;
 

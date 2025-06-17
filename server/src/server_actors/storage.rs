@@ -9,6 +9,7 @@ use crate::messages::internal_messages::{
 };
 use crate::server_actors::coordinator::Coordinator;
 use actix::prelude::*;
+use colored::Color;
 use common::logger::Logger;
 use common::messages::{DeliveryAvailable, DeliveryNoNeeded};
 use common::types::order_status::OrderStatus;
@@ -47,7 +48,7 @@ impl Storage {
             storage_updates: HashMap::new(),
             accepted_deliveries: HashMap::new(),
             coordinator,
-            logger: Logger::new("Storage"),
+            logger: Logger::new("Storage", Color::White),
         }
     }
 }

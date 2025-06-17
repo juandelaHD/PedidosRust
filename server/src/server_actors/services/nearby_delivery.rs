@@ -2,6 +2,7 @@ use crate::messages::internal_messages::GetDeliveries;
 use crate::server_actors::coordinator::Coordinator;
 use crate::server_actors::storage::Storage;
 use actix::prelude::*;
+use colored::Color;
 use common::constants::NEARBY_RADIUS;
 use common::logger::Logger;
 use common::messages::coordinator_messages::NearbyDeliveries;
@@ -17,7 +18,7 @@ pub struct NearbyDeliveryService {
 
 impl NearbyDeliveryService {
     pub fn new(storage_address: Addr<Storage>, coordinator_address: Addr<Coordinator>) -> Self {
-        let logger = Logger::new("Nearby Delivery Service");
+        let logger = Logger::new("Nearby Delivery Service", Color::Green);
         NearbyDeliveryService {
             coordinator_address,
             storage_address,

@@ -1,11 +1,11 @@
 use crate::messages::internal_messages::{RegisterConnection, RegisterConnectionWithCoordinator};
 use crate::server_actors::coordinator::Coordinator;
 use actix::prelude::*;
+use colored::Color;
 use common::logger::Logger;
 use common::network::communicator::Communicator;
 use common::network::peer_types::PeerType;
 use std::net::SocketAddr;
-use std::sync::Arc;
 use tokio::io::AsyncBufReadExt;
 use tokio::io::AsyncReadExt;
 use tokio::net::TcpListener;
@@ -14,7 +14,7 @@ use tokio::net::TcpStream;
 pub struct Acceptor {
     addr: SocketAddr,
     coordinator_address: Addr<Coordinator>,
-    logger: Arc<Logger>,
+    logger: Logger,
 }
 
 impl Acceptor {
@@ -22,7 +22,7 @@ impl Acceptor {
         Self {
             addr,
             coordinator_address,
-            logger: Arc::new(Logger::new("ACCEPTOR")),
+            logger: Logger::new("ACCEPTOR", Color::BrightBlack),
         }
     }
 }

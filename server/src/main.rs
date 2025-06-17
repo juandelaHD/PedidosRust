@@ -4,8 +4,8 @@ use common::constants::{BASE_PORT, NUM_COORDINATORS};
 use server::server_acceptor::acceptor::Acceptor;
 use server::server_actors::coordinator::Coordinator;
 use std::env;
-use std::net::SocketAddr;
 use std::io::{self, Write};
+use std::net::SocketAddr;
 use tokio::signal::ctrl_c;
 
 #[actix::main]

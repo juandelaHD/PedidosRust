@@ -7,6 +7,7 @@ use crate::messages::internal_messages::{
 use crate::server_actors::coordinator::Coordinator;
 use crate::server_actors::storage::Storage;
 use actix::prelude::*;
+use colored::Color;
 use common::logger::Logger;
 use common::messages::{
     AcceptedOrder, BillPayment, DeliverThisOrder, DeliveryAccepted, DeliveryAvailable,
@@ -42,7 +43,7 @@ pub struct OrderService {
 
 impl OrderService {
     pub async fn new() -> Self {
-        let logger = Logger::new("Order Service");
+        let logger = Logger::new("Order Service", Color::Green);
 
         let payment_gateway_address = format!("{}:{}", SERVER_IP_ADDRESS, PAYMENT_GATEWAY_PORT)
             .parse::<SocketAddr>()
@@ -132,7 +133,6 @@ impl Actor for OrderService {
         if let Some(stream) = self.pending_stream.take() {
             let communicator = Communicator::new(stream, ctx.address(), PeerType::CoordinatorType);
             self.payment_gateway_address = Some(communicator);
-            self.logger.info("Connected to PaymentGateway successfully");
         } else {
             self.logger.error("Failed to connect to PaymentGateway");
         }

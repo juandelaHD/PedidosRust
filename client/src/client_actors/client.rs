@@ -2,6 +2,7 @@ use crate::client_actors::ui_handler::UIHandler;
 use crate::messages::internal_messages::*;
 use actix::fut::wrap_future;
 use actix::prelude::*;
+use colored::Color;
 use common::logger::Logger;
 use common::messages::NearbyRestaurants;
 use common::messages::OrderDelivered;
@@ -44,8 +45,8 @@ impl Client {
         client_id: String,
         client_position: (f32, f32),
     ) -> Self {
-        let logger = Logger::new(format!("Client {}", &client_id));
-        // Intentamos conectarnos a los servidores
+        let logger = Logger::new(format!("Client {}", &client_id), Color::Cyan);
+        logger.info(format!("Hello, {}!", client_id));
         let pending_stream = connect_some(servers.clone(), PeerType::ClientType).await;
 
         if pending_stream.is_none() {

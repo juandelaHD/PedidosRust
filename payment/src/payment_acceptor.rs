@@ -1,10 +1,10 @@
 use crate::payment::PaymentGateway;
 use actix::prelude::*;
+use colored::Color;
 use common::logger::Logger;
 use common::network::communicator::Communicator;
 use common::network::peer_types::PeerType;
 use std::net::SocketAddr;
-use std::sync::Arc;
 use tokio::io::AsyncBufReadExt;
 use tokio::io::AsyncReadExt;
 use tokio::net::TcpListener;
@@ -13,7 +13,7 @@ use tokio::net::TcpStream;
 pub struct PaymentAcceptor {
     addr: SocketAddr,
     payment_gateway_addr: Addr<PaymentGateway>,
-    logger: Arc<Logger>,
+    logger: Logger,
 }
 
 impl PaymentAcceptor {
@@ -21,7 +21,7 @@ impl PaymentAcceptor {
         Self {
             addr,
             payment_gateway_addr,
-            logger: Arc::new(Logger::new("Payment ACCEPTOR")),
+            logger: Logger::new("Payment ACCEPTOR", Color::BrightBlack),
         }
     }
 }

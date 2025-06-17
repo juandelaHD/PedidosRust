@@ -1,5 +1,6 @@
 use actix::fut::wrap_future;
 use actix::prelude::*;
+use colored::Color;
 use common::constants::BASE_DELAY_MILLIS;
 use common::logger::Logger;
 use common::messages::delivery_messages::{IAmAvailable, OrderDelivered};
@@ -44,8 +45,8 @@ impl Delivery {
         position: (f32, f32),
         probability: f32,
     ) -> Self {
-        let logger = Logger::new(format!("Delivery {}", &delivery_id));
-        logger.info(format!("Starting delivery with ID: {}", delivery_id));
+        let logger = Logger::new(format!("Delivery {}", &delivery_id), Color::BrightGreen);
+        logger.info(format!("Hello: {}!", delivery_id));
         // Intentamos conectarnos a los servidores
         let pending_stream = connect_some(servers.clone(), PeerType::DeliveryType).await;
 
@@ -81,7 +82,6 @@ impl Delivery {
     }
 
     pub fn start_running(&self, _ctx: &mut Context<Self>) {
-        self.logger.info("Starting delivery...");
         let actual_socket_addr = self
             .communicator
             .as_ref()

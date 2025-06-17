@@ -86,10 +86,6 @@ impl UIHandler {
 
 impl Actor for UIHandler {
     type Context = Context<Self>;
-
-    fn started(&mut self, _ctx: &mut Self::Context) {
-        self.logger.info("UIHandler iniciado!");
-    }
 }
 
 impl Handler<SelectNearbyRestaurants> for UIHandler {

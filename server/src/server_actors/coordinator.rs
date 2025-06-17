@@ -6,6 +6,7 @@ use crate::server_actors::services::nearby_restaurants::NearbyRestaurantsService
 use crate::server_actors::services::orders_services::OrderService;
 use crate::server_actors::storage::Storage;
 use actix::prelude::*;
+use colored::Color;
 use common::bimap::BiMap;
 use common::constants::BASE_PORT;
 use common::logger::Logger;
@@ -75,7 +76,7 @@ impl Coordinator {
             my_addr: srv_addr,
             current_coordinator: None,
             user_addresses: BiMap::new(),
-            logger: Logger::new("COORDINATOR"),
+            logger: Logger::new("COORDINATOR", Color::Black),
             coordinator_manager: None,
             communicators: HashMap::new(),
             pending_streams,
