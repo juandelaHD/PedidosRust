@@ -160,8 +160,6 @@ impl Actor for Coordinator {
             }
         }
 
-        self.logger.info("Communicators initialized.");
-
         // Enviar un startRunning al CoordinatorManager
         if let Some(coordinator_manager) = &self.coordinator_manager {
             coordinator_manager.do_send(StartRunning);

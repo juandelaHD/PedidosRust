@@ -43,7 +43,6 @@ pub struct OrderService {
 impl OrderService {
     pub async fn new() -> Self {
         let logger = Logger::new("OrderService");
-        logger.info("Initializing OrderService");
 
         let payment_gateway_address = format!("{}:{}", SERVER_IP_ADDRESS, PAYMENT_GATEWAY_PORT)
             .parse::<SocketAddr>()
@@ -130,7 +129,6 @@ impl Actor for OrderService {
     type Context = Context<Self>;
 
     fn started(&mut self, ctx: &mut Self::Context) {
-        self.logger.info("OrderService started");
         if let Some(stream) = self.pending_stream.take() {
             let communicator = Communicator::new(stream, ctx.address(), PeerType::CoordinatorType);
             self.payment_gateway_address = Some(communicator);

@@ -41,7 +41,11 @@ impl Restaurant {
         let pending_stream = connect_some(servers.clone(), PeerType::RestaurantType).await;
 
         if pending_stream.is_none() {
-            panic!("Failed to connect to any server. Try again later.");
+            logger.error(format!(
+                "Failed to connect to any server from the list: {:?}",
+                servers
+            ));
+            std::process::exit(1);
         }
 
         Self {

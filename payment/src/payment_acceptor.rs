@@ -126,10 +126,8 @@ impl Handler<HandleConnection> for PaymentAcceptor {
             peer_type,
         } = msg;
 
-        self.logger.info(format!(
-            "New connection from {} with peer type {:?}",
-            remote_addr, peer_type
-        ));
+        self.logger
+            .info(format!("New connection from {}", remote_addr));
         let communicator = Communicator::new(stream, self.payment_gateway_addr.clone(), peer_type);
         self.payment_gateway_addr.do_send(RegisterConnection {
             client_addr: remote_addr,

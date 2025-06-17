@@ -50,7 +50,8 @@ impl Delivery {
         let pending_stream = connect_some(servers.clone(), PeerType::DeliveryType).await;
 
         if pending_stream.is_none() {
-            panic!("Failed to connect to any server. Try again later.");
+            logger.error("Failed to connect to any server. Exiting delivery actor.");
+            std::process::exit(1);
         }
 
         Self {

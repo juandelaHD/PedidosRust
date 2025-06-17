@@ -26,7 +26,7 @@ impl PaymentGateway {
             authorized_orders: HashSet::new(),
             communicators: HashMap::new(),
             probability_of_success,
-            logger: Logger::new("Payment GATEWAY"),
+            logger: Logger::new("Payment gateway"),
         }
     }
     pub fn send_network_message(&self, destination: SocketAddr, message: NetworkMessage) {

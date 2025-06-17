@@ -40,7 +40,7 @@ where
                     if let Ok(msg) = serde_json::from_str::<NetworkMessage>(&line) {
                         addr.do_send(msg);
                     } else {
-                        panic!("Este mensaje no se puede deserializar: {}", line);
+                        panic!("This message cannot be deserialized: {}", line);
                     }
                 }
             }

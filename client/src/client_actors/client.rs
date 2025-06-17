@@ -49,7 +49,8 @@ impl Client {
         let pending_stream = connect_some(servers.clone(), PeerType::ClientType).await;
 
         if pending_stream.is_none() {
-            panic!("Failed to connect to any server. Try again later.");
+            logger.error("Failed to connect to any server. Exiting.");
+            std::process::exit(1);
         }
 
         Self {
@@ -427,15 +428,30 @@ impl Handler<NetworkMessage> for Client {
                     msg_data.order.status.to_string().to_uppercase()
                 ));
                 self.client_order = Some(msg_data.order.clone());
-                if msg_data.order.status == OrderStatus::Delivered {
-                    self.logger.info(format!(
-                        "Order {} has been delivered. Thanks for using our service!",
-                        msg_data.order.order_id
-                    ));
-                    ctx.stop();
-                    return;
+                match msg_data.order.status {
+                    OrderStatus::Delivered => {
+                        self.logger.info(format!(
+                            "Order {} has been delivered. Thanks for using our service!",
+                            msg_data.order.order_id
+                        ));
+                        ctx.stop();
+                    }
+                    OrderStatus::Unauthorized => {
+                        self.logger.info(format!(
+                            "Order {} has been unauthorized. Please try again later.",
+                            msg_data.order.order_id
+                        ));
+                        ctx.stop();
+                    }
+                    OrderStatus::Cancelled => {
+                        self.logger.info(format!(
+                            "Order {} has been cancelled. Please try again later.",
+                            msg_data.order.order_id
+                        ));
+                        ctx.stop();
+                    }
+                    _ => {}
                 }
-
                 self.manage_delivery_time(&msg_data.order, ctx);
             }
             _ => {
