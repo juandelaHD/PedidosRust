@@ -5,7 +5,7 @@ use crate::server_actors::storage::Storage;
 use actix::prelude::*;
 use common::messages::internal_messages::StorageLogMessage;
 use common::network::communicator::Communicator;
-use common::types::dtos::{DeliveryDTO, OrderDTO};
+use common::types::dtos::{DeliveryDTO, OrderDTO, Snapshot};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::net::SocketAddr;
@@ -89,3 +89,7 @@ pub struct GetMinLogIndex;
 pub struct GetLogsFromIndex {
     pub index: u64,
 }
+
+#[derive(Message, Debug, Clone, Serialize, Deserialize)]
+#[rtype(result = "Snapshot")]
+pub struct GetAllStorage;

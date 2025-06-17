@@ -1,4 +1,5 @@
 use colored::*;
+use chrono::Local;
 
 #[derive(Debug, Clone)]
 pub struct Logger {
@@ -14,31 +15,40 @@ impl Logger {
         }
     }
 
+    fn timestamp() -> String {
+        Local::now().format("%H:%M:%S").to_string()
+    }
+
     pub fn info(&self, msg: impl AsRef<str>) {
         println!(
-            "{} {}",
-            format!("[INFO][{}]", self.name)
+            "{} {} {}",
+            format!("[{}][INFO][{}]", Self::timestamp(), self.name)
                 .bold()
                 .color(self.info_color),
+            "→".dimmed(),
             msg.as_ref()
         );
     }
 
     pub fn warn(&self, msg: impl AsRef<str>) {
         println!(
-            "{} {}",
-            format!("[WARN][{}]", self.name).bold().yellow(),
+            "{} {} {}",
+            format!("[{}][WARN][{}]", Self::timestamp(), self.name)
+                .bold()
+                .yellow(),
+            "→".dimmed(),
             msg.as_ref()
         );
     }
 
     pub fn error(&self, msg: impl AsRef<str>) {
         eprintln!(
-            "{} {}",
-            format!("[ERROR][{}]", self.name)
+            "{} {} {}",
+            format!("[{}][ERROR][{}]", Self::timestamp(), self.name)
                 .bold()
                 .bright_red()
                 .blink(),
+            "→".dimmed(),
             msg.as_ref()
         );
     }

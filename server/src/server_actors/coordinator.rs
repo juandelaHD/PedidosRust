@@ -859,8 +859,21 @@ impl Handler<NetworkMessage> for Coordinator {
                     self.logger.info("CoordinatorManager not initialized yet.");
                 }
             }
-            NetworkMessage::RequestAllStorage(_msg_data) => {
+            NetworkMessage::RequestAllStorage(msg_data) => {
                 self.logger.info("Received RequestAllStorage message");
+                if let Some(coordinator_manager) = &self.coordinator_manager {
+                    coordinator_manager.do_send(msg_data);
+                } else {
+                    self.logger.info("CoordinatorManager not initialized yet.");
+                }
+            }
+            NetworkMessage::StorageSnapshot(msg_data) => {
+                self.logger.info("Received StorageSnapshot message");
+                if let Some(coordinator_manager) = &self.coordinator_manager {
+                    coordinator_manager.do_send(msg_data);
+                } else {
+                    self.logger.info("CoordinatorManager not initialized yet.");
+                }
             }
             NetworkMessage::RecoverStorageOperations(_msg_data) => {
                 self.logger

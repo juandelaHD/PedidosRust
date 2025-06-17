@@ -1,5 +1,5 @@
 use crate::messages::internal_messages::{
-    AddOrderAccepted, FinishDeliveryAssignment, GetLogsFromIndex, GetMinLogIndex,
+    AddOrderAccepted, FinishDeliveryAssignment, GetLogsFromIndex, GetMinLogIndex, GetAllStorage,
 };
 use crate::server_actors::coordinator::Coordinator;
 use actix::prelude::*;
@@ -12,12 +12,13 @@ use common::messages::internal_messages::{
     InsertAcceptedDelivery, RemoveAcceptedDeliveries, RemoveAuthorizedOrderToRestaurant,
     RemoveClient, RemoveDelivery, RemoveOrder, RemovePendingOrderToRestaurant, RemoveRestaurant,
     SetCurrentClientToDelivery, SetCurrentOrderToDelivery, SetDeliveryPosition, SetDeliveryStatus,
-    SetDeliveryToOrder, SetOrderStatus, StorageLogMessage,
+    SetDeliveryToOrder, SetOrderStatus, StorageLogMessage
 };
+use common::messages::coordinatormanager_messages::{StorageSnapshot};
 use common::messages::{DeliveryAvailable, DeliveryNoNeeded};
 use common::types::order_status::OrderStatus;
 use common::types::{
-    dtos::{ClientDTO, DeliveryDTO, OrderDTO, RestaurantDTO},
+    dtos::{ClientDTO, DeliveryDTO, OrderDTO, RestaurantDTO, Snapshot},
     restaurant_info::RestaurantInfo,
 };
 use std::collections::hash_map::Entry;
@@ -109,9 +110,6 @@ impl Handler<ApplyStorageUpdates> for Storage {
         } else {
             // Si NO es el líder:
             // 1. Elimina de su registro las operaciones que están en el registro pero NO en el mensaje recibido.
-            if let Some(min_id) = incoming_updates.iter().map(|(id, _)| id).min() {
-                self.min_persistent_log_index = *min_id;
-            }
             let current_ids: Vec<u64> = self.storage_updates.keys().cloned().collect();
             let incoming_ids: std::collections::HashSet<u64> =
                 incoming_updates.iter().map(|(id, _)| *id).collect();
@@ -137,6 +135,7 @@ impl Handler<ApplyStorageUpdates> for Storage {
                 }
             }
         }
+        println!("MIN_LOG_INDEX: {}", self.min_persistent_log_index);
     }
 }
 
@@ -206,6 +205,55 @@ impl Handler<StorageLogMessage> for Storage {
                 ctx.address().do_send(msg);
             }
         }
+    }
+}
+
+
+impl Handler<GetAllStorage> for Storage {
+    type Result = MessageResult<GetAllStorage>;
+
+    fn handle(&mut self, _msg: GetAllStorage, _ctx: &mut Self::Context) -> Self::Result {
+        // Enviar toda la información del storage al coordinator.
+        let snapshot = Snapshot {
+            clients: self.clients.clone(),
+            restaurants: self.restaurants.clone(),
+            deliverys: self.deliverys.clone(),
+            orders: self.orders.clone(),
+            accepted_deliveries: self.accepted_deliveries.clone(),
+            next_log_id: self.next_log_id,
+            min_persistent_log_index: self.min_persistent_log_index,
+        };
+        self.logger.info("Snapshot sent to coordinator manager.");
+        MessageResult(snapshot)
+    }
+}
+
+impl Handler<StorageSnapshot> for Storage {
+    type Result = ();
+
+    fn handle(&mut self, msg: StorageSnapshot, _ctx: &mut Self::Context) -> Self::Result {
+        // Por cada elemento que viene en el snapshot, lo piso en el storage.
+        let snapshot = msg.snapshot.clone();
+
+        for (client_id, client) in snapshot.clients {
+            self.clients.insert(client_id, client);
+        }
+        for (restaurant_id, restaurant) in snapshot.restaurants {
+            self.restaurants.insert(restaurant_id, restaurant);
+        }
+        for (delivery_id, delivery) in snapshot.deliverys {
+            self.deliverys.insert(delivery_id, delivery);
+        }
+        for (order_id, order) in snapshot.orders {
+            self.orders.insert(order_id, order);
+        }
+        for (order_id, deliveries) in snapshot.accepted_deliveries {
+            self.accepted_deliveries
+                .insert(order_id, deliveries.into_iter().collect());
+        }
+        self.next_log_id = snapshot.next_log_id;
+        self.min_persistent_log_index = snapshot.min_persistent_log_index;
+        self.logger.info("Storage snapshot updated from coordinator.");
     }
 }
 

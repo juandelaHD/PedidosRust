@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use serde_with::{DisplayFromStr, serde_as};
 use std::collections::HashMap;
 use std::net::SocketAddr;
+use crate::types::dtos::Snapshot;
 
 #[derive(Serialize, Deserialize, Debug, Message, Clone)]
 #[rtype(result = "()")]
@@ -22,7 +23,15 @@ pub struct StorageUpdates {
 
 #[derive(Serialize, Deserialize, Debug, Message, Clone)]
 #[rtype(result = "()")]
-pub struct RequestAllStorage;
+pub struct RequestAllStorage {
+    pub coordinator_id: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, Message, Clone)]
+#[rtype(result = "()")]
+pub struct StorageSnapshot {
+    pub snapshot: Snapshot,
+}
 
 #[derive(Serialize, Deserialize, Debug, Message, Clone)]
 #[rtype(result = "()")]

@@ -15,6 +15,14 @@ impl<K: std::hash::Hash + Eq + Clone, V: std::hash::Hash + Eq + Clone> BiMap<K, 
     }
 
     pub fn insert(&mut self, k: K, v: V) {
+        // Elimina cualquier valor anterior asociado a la clave
+        if let Some(old_v) = self.forward.get(&k) {
+            self.backward.remove(old_v);
+        }
+        // Elimina cualquier clave anterior asociada al valor
+        if let Some(old_k) = self.backward.get(&v) {
+            self.forward.remove(old_k);
+        }
         self.forward.insert(k.clone(), v.clone());
         self.backward.insert(v, k);
     }

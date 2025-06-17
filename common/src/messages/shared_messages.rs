@@ -60,12 +60,14 @@ pub enum NetworkMessage {
     RequestNewStorageUpdates(RequestNewStorageUpdates),
     StorageUpdates(StorageUpdates),
     RequestAllStorage(RequestAllStorage),
+    StorageSnapshot(StorageSnapshot),
     RecoverStorageOperations(RecoverStorageOperations),
     LeaderElection(LeaderElection),
     Ping(Ping),
     Pong(Pong),
 
     RetryLater(RetryLater),
+
 
     // TCP Connection
     ConnectionClosed(ConnectionClosed),

@@ -1,10 +1,10 @@
 use std::collections::HashSet;
 
 use serde::{Deserialize, Serialize};
-
 use crate::types::delivery_status::DeliveryStatus;
 use crate::types::order_status::OrderStatus;
 use actix::prelude::*;
+use std::collections::HashMap;
 
 #[derive(Debug, Serialize, Deserialize, Message, Clone)]
 #[serde(tag = "user_type")]
@@ -92,4 +92,23 @@ impl std::hash::Hash for OrderDTO {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.order_id.hash(state);
     }
+}
+
+#[derive(Debug, Serialize, Deserialize, Message, Clone)]
+#[rtype(result = "()")]
+pub struct Snapshot {
+    /// Diccionario con información sobre clientes.
+    pub clients: HashMap<String, ClientDTO>,
+    /// Diccionario con información sobre restaurantes.
+    pub restaurants: HashMap<String, RestaurantDTO>,
+    /// Diccionario con información sobre deliverys.
+    pub deliverys: HashMap<String, DeliveryDTO>,
+    /// Diccionario de órdenes.
+    pub orders: HashMap<u64, OrderDTO>,
+    /// Deliveries que solicitaron aceptar órdenes.
+    pub accepted_deliveries: HashMap<u64, HashSet<String>>,
+    /// Índice del próximo log.
+    pub next_log_id: u64,
+    /// Índice de la mínima operación persistente en el log.
+    pub min_persistent_log_index: u64,
 }
