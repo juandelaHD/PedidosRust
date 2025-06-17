@@ -90,7 +90,6 @@ pub struct LeaderIdIs {
     pub leader_id: String,
 }
 
-
 // TODO: Borrar, quedó viejo
 #[derive(Message, Debug, Clone, Serialize, Deserialize)]
 #[rtype(result = "()")]

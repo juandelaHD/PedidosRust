@@ -4,8 +4,8 @@ use actix::prelude::*;
 use common::bimap::BiMap;
 use common::logger::Logger;
 use common::messages::coordinatormanager_messages::{CheckPongTimeout, LeaderElection, Ping, Pong};
-use common::messages::shared_messages::{NetworkMessage, ConnectionClosed};
-use common::messages::{StartRunning, WhoIsLeader, LeaderIdIs};
+use common::messages::shared_messages::{ConnectionClosed, NetworkMessage};
+use common::messages::{LeaderIdIs, StartRunning, WhoIsLeader};
 use common::network::communicator::Communicator;
 
 use std::{
@@ -25,7 +25,7 @@ pub struct CoordinatorManager {
     /// Mapa de direcciones de nodos coordinadores y sus comunicadores.
     pub coord_communicators: HashMap<SocketAddr, Communicator<Coordinator>>,
     /// Mapa bidireccional de direcciones de coordinadores y sus IDs
-    pub coord_addresses: BiMap<SocketAddr, String>, 
+    pub coord_addresses: BiMap<SocketAddr, String>,
     /// Dirección de este servidor.
     pub my_socket_addr: SocketAddr,
     /// Logger.
@@ -54,7 +54,6 @@ impl CoordinatorManager {
         ring_nodes: HashMap<String, SocketAddr>,
         coordinator_addr: Addr<Coordinator>,
     ) -> Self {
-
         let mut coord_addresses = BiMap::new();
         for (id, addr) in ring_nodes.iter() {
             coord_addresses.insert(addr.clone(), id.clone());
@@ -112,17 +111,20 @@ impl CoordinatorManager {
         let nodes = nodes_ids
             .iter()
             .filter_map(|id| {
-            self.coord_addresses
-                .get_by_value(id)
-                .cloned()
-                .and_then(|addr| {
-                if self.coord_communicators.contains_key(&addr) || id == &self.id {
-                    Some(addr)
-                } else {
-                    self.logger.warn(format!("Address {} for ID {} not in coord_communicators", addr, id));
-                    None
-                }
-                })
+                self.coord_addresses
+                    .get_by_value(id)
+                    .cloned()
+                    .and_then(|addr| {
+                        if self.coord_communicators.contains_key(&addr) || id == &self.id {
+                            Some(addr)
+                        } else {
+                            self.logger.warn(format!(
+                                "Address {} for ID {} not in coord_communicators",
+                                addr, id
+                            ));
+                            None
+                        }
+                    })
             })
             .collect::<Vec<_>>();
 
@@ -162,7 +164,6 @@ impl CoordinatorManager {
                     act.coord_addresses.remove_by_key(&leader);
                     //act.heartbeat_timestamps.remove(&leader);
 
-
                     act.start_leader_election();
                 } else {
                     act.logger.info("Enviando Ping al líder...");
@@ -172,7 +173,6 @@ impl CoordinatorManager {
                         .get(&leader)
                         .map(|c| c.local_address)
                         .unwrap_or(act.my_socket_addr);
-                    
 
                     let result = act.send_network_message(
                         leader,
@@ -185,9 +185,10 @@ impl CoordinatorManager {
                             act.pong_leader_addr = Some(leader);
 
                             let addr = ctx.address();
-                            let handler = ctx.run_later(std::time::Duration::from_secs(3), move |_, _| {
-                                addr.do_send(CheckPongTimeout);
-                            });
+                            let handler =
+                                ctx.run_later(std::time::Duration::from_secs(3), move |_, _| {
+                                    addr.do_send(CheckPongTimeout);
+                                });
                             act.waiting_pong_timer = Some(handler);
                         }
                         Err(e) => {
@@ -202,7 +203,6 @@ impl CoordinatorManager {
                             act.coord_communicators.remove(&leader);
                             act.coord_addresses.remove_by_key(&leader);
                             //act.heartbeat_timestamps.remove(&leader);
-
 
                             act.pong_pending = false;
                             act.start_leader_election();
@@ -225,7 +225,8 @@ impl CoordinatorManager {
     ) -> Result<(), String> {
         if let Some(communicator) = self.coord_communicators.get(&target) {
             if let Some(sender) = &communicator.sender {
-                self.logger.info(format!("Sending message to {}: {:?}", target, message));
+                self.logger
+                    .info(format!("Sending message to {}: {:?}", target, message));
                 match sender.try_send(message) {
                     Ok(_) => {
                         //self.logger.info(format!("✅ Sent successfully to {}", target));
@@ -269,7 +270,6 @@ impl CoordinatorManager {
         }
     }
 
-
     /// Envía un `NetworkMessage` a todos los nodos remotos conectados
     fn broadcast_network_message(&mut self, message: NetworkMessage) {
         for addr in self.coord_communicators.keys().copied().collect::<Vec<_>>() {
@@ -285,7 +285,9 @@ impl CoordinatorManager {
     fn broadcast_leader_is(&mut self) {
         if let Some(leader) = self.coordinator_actual {
             if let Some(leader_id) = self.coord_addresses.get_by_key(&leader) {
-                let message = NetworkMessage::LeaderIdIs(LeaderIdIs { leader_id: leader_id.to_string() });
+                let message = NetworkMessage::LeaderIdIs(LeaderIdIs {
+                    leader_id: leader_id.to_string(),
+                });
                 self.logger
                     .info(format!("Broadcasting new leader: {}", leader));
                 self.broadcast_network_message(message);
@@ -295,7 +297,6 @@ impl CoordinatorManager {
                     leader
                 ));
             }
-            
         }
     }
 
@@ -322,14 +323,17 @@ impl CoordinatorManager {
                 match self.send_network_message(addr, message.clone()) {
                     Ok(_) => {
                         sent = true;
-                        self.logger.info(format!("Broadcasting WhoIsLeader to {}", addr));
+                        self.logger
+                            .info(format!("Broadcasting WhoIsLeader to {}", addr));
                     }
                     Err(err) => {
-                        self.logger.error(format!("Failed to send WhoIsLeader to {}: {}", addr, err));
+                        self.logger
+                            .error(format!("Failed to send WhoIsLeader to {}: {}", addr, err));
                     }
                 }
             } else {
-                self.logger.warn(format!("No communicator found for {}", addr));
+                self.logger
+                    .warn(format!("No communicator found for {}", addr));
             }
         }
 
@@ -340,7 +344,6 @@ impl CoordinatorManager {
         }
     }
 
-
     /// Preguntar a todos los nodos conocidos si hay un líder ya elegido
     fn ask_for_leader(&mut self, ctx: &mut Context<Self>) {
         let id = self.id.clone();
@@ -349,11 +352,11 @@ impl CoordinatorManager {
                 // Esperamos X segundos para ver si alguien responde
                 ctx.run_later(Duration::from_secs(3), |actor: &mut Self, _ctx| {
                     if actor.coordinator_actual.is_none() {
-                        actor.logger.info("Asked all nodes for leader. No responses. Becoming leader...");
+                        actor
+                            .logger
+                            .info("Asked all nodes for leader. No responses. Becoming leader...");
                         actor.coordinator_actual = Some(actor.my_socket_addr);
-                        actor.coordinator_addr.do_send(LeaderIdIs {
-                            leader_id: id,
-                        });
+                        actor.coordinator_addr.do_send(LeaderIdIs { leader_id: id });
                         actor.broadcast_leader_is();
                     } else {
                         actor.logger.info(format!(
@@ -370,14 +373,11 @@ impl CoordinatorManager {
                 ));
                 // Nos autoproclamamos líder directamente
                 self.coordinator_actual = Some(self.my_socket_addr);
-                self.coordinator_addr.do_send(LeaderIdIs {
-                    leader_id: id,
-                });
+                self.coordinator_addr.do_send(LeaderIdIs { leader_id: id });
                 self.broadcast_leader_is();
             }
         }
     }
-
 
     fn handle_who_is_leader(&mut self, msg: WhoIsLeader, _ctx: &mut Context<Self>) {
         self.logger.info(format!(
@@ -390,38 +390,41 @@ impl CoordinatorManager {
 
         if let Some(leader) = self.coordinator_actual {
             if let Some(leader_id) = self.coord_addresses.get_by_key(&leader) {
-                let response = NetworkMessage::LeaderIdIs(LeaderIdIs { leader_id: leader_id.to_string() });
-            if let Some(registered_remote_addr) = self.coord_addresses.get_by_value(&msg.user_id) {
-                if let Some(communicator) = self.coord_communicators.get(registered_remote_addr) {
-                    if let Some(sender) = &communicator.sender {
-                        sender.do_send(response);
-                        self.logger
-                            .info(format!("Sent LeaderIdIs to {}", msg.origin_addr));
+                let response = NetworkMessage::LeaderIdIs(LeaderIdIs {
+                    leader_id: leader_id.to_string(),
+                });
+                if let Some(registered_remote_addr) =
+                    self.coord_addresses.get_by_value(&msg.user_id)
+                {
+                    if let Some(communicator) = self.coord_communicators.get(registered_remote_addr)
+                    {
+                        if let Some(sender) = &communicator.sender {
+                            sender.do_send(response);
+                            self.logger
+                                .info(format!("Sent LeaderIdIs to {}", msg.origin_addr));
+                        } else {
+                            self.logger.warn("Sender not initialized");
+                        }
                     } else {
-                        self.logger.warn("Sender not initialized");
+                        self.logger
+                            .warn(format!("No communicator to {}", msg.origin_addr));
                     }
                 } else {
                     self.logger
-                        .warn(format!("No communicator to {}", msg.origin_addr));
+                        .warn(format!("No origin address found for {}", msg.origin_addr));
                 }
-            } else {
-                self.logger
-                    .warn(format!("No origin address found for {}", msg.origin_addr));
-            }
             } else {
                 self.logger.warn(format!(
                     "No leader ID found for current coordinator address: {}",
                     leader
                 ));
             }
-            
         } else {
             self.logger.info("No coordinator known yet to respond");
         }
     }
 
     fn handle_leader_is(&mut self, msg: LeaderIdIs, _ctx: &mut Context<Self>) {
-        
         self.election_in_progress = false;
         if self.coordinator_actual.is_none() {
             if let Some(leader_addr) = self.coord_addresses.get_by_value(&msg.leader_id) {
@@ -436,28 +439,22 @@ impl CoordinatorManager {
                     msg.leader_id
                 ));
             }
-            
-            
-
-
-
 
             self.coordinator_addr.do_send(LeaderIdIs {
                 leader_id: msg.leader_id.clone(),
             });
             self.logger
                 .info(format!("Updated local coordinator to {}", msg.leader_id));
-
-
-
-        } else if let Some(registered_remote_addr) = self.coord_addresses.get_by_value(&msg.leader_id)  {
+        } else if let Some(registered_remote_addr) =
+            self.coord_addresses.get_by_value(&msg.leader_id)
+        {
             if self.coordinator_actual != Some(*registered_remote_addr) {
                 self.logger.warn(format!(
                     "Pisé a mi coordinador porque llegó LeaderIdIs. Local: {:?}, Received: {}",
                     self.coordinator_actual, *registered_remote_addr
                 ));
                 self.coordinator_actual = Some(*registered_remote_addr); //piso al actual
-        }
+            }
         }
     }
 }
@@ -517,7 +514,6 @@ impl Handler<CheckPongTimeout> for CoordinatorManager {
                 self.coord_communicators.remove(&dead_leader);
                 self.coord_addresses.remove_by_key(&dead_leader);
                 //self.heartbeat_timestamps.remove(&dead_leader);
-
             }
 
             self.coordinator_actual = None;
@@ -569,19 +565,15 @@ impl Handler<LeaderElection> for CoordinatorManager {
             self.logger
                 .info(format!("Elección terminada. Nuevo líder: {}", new_leader));
 
-
             if let Some(leader_addr) = self.coord_addresses.get_by_value(&new_leader) {
                 self.coordinator_actual = Some(*leader_addr);
                 self.broadcast_leader_is();
-
             } else {
                 self.logger.warn(format!(
                     "No se encontró dirección para el nuevo líder: {}",
                     new_leader
                 ));
             }
-
-
         } else {
             // Sumarme como candidato
             candidates.push(self.id.clone());
@@ -609,17 +601,18 @@ impl Handler<ConnectionClosed> for CoordinatorManager {
     type Result = ();
 
     fn handle(&mut self, msg: ConnectionClosed, ctx: &mut Self::Context) {
-        self.logger.info(format!("Connection closed: {}", msg.remote_addr));
+        self.logger
+            .info(format!("Connection closed: {}", msg.remote_addr));
         // Eliminar el comunicador y la dirección del nodo
         self.coord_communicators.remove(&msg.remote_addr);
         self.coord_addresses.remove_by_key(&msg.remote_addr);
 
-
-
         // Si el nodo cerrado era el líder actual, iniciamos una elección
         if self.coordinator_actual == Some(msg.remote_addr) {
-            self.logger
-                .warn(format!("Líder caído: {}. Iniciando elección...", msg.remote_addr));
+            self.logger.warn(format!(
+                "Líder caído: {}. Iniciando elección...",
+                msg.remote_addr
+            ));
             self.coordinator_actual = None;
             self.election_in_progress = true;
 
@@ -632,7 +625,6 @@ impl Handler<ConnectionClosed> for CoordinatorManager {
 
             self.start_leader_election();
         }
-
 
         //self.heartbeat_timestamps.remove(&msg.addr);
     }

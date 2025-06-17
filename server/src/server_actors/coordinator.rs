@@ -325,10 +325,8 @@ impl Handler<LeaderIdIs> for Coordinator {
                 msg.leader_id
             ));
         }
-        
     }
 }
-
 
 impl Handler<RetryLater> for Coordinator {
     type Result = ();
@@ -413,7 +411,7 @@ impl Handler<NetworkMessage> for Coordinator {
                         msg_data.leader_id
                     ));
                 }
-                
+
                 if let Some(coordinator_manager) = &self.coordinator_manager {
                     coordinator_manager.do_send(msg_data);
                 } else {
@@ -766,23 +764,19 @@ impl Handler<NetworkMessage> for Coordinator {
             }
 
             NetworkMessage::ConnectionClosed(msg_data) => {
-                self.logger.info(format!(
-                    "Connection closed for {}",
-                    msg_data.remote_addr
-                ));
+                self.logger
+                    .info(format!("Connection closed for {}", msg_data.remote_addr));
                 let remote_addr = msg_data.remote_addr;
                 // Si el remote_addr está en self.communicators, lo eliminamos
                 if let Some(communicator) = self.communicators.get(&remote_addr) {
                     // TODO: Handlear eliminacion de usuario
                 } else {
                     if let Some(coordinator_manager) = &self.coordinator_manager {
-                    coordinator_manager.do_send(msg_data);
-                } else {
-                    self.logger.info("CoordinatorManager not initialized yet.");
+                        coordinator_manager.do_send(msg_data);
+                    } else {
+                        self.logger.info("CoordinatorManager not initialized yet.");
+                    }
                 }
-                }
-                
-                
             }
 
             _ => {

@@ -1,10 +1,10 @@
 use actix::dev::ToEnvelope;
 use actix::prelude::*;
 // Update the path below if 'common' is a sibling module or crate; adjust as needed:
-use crate::messages::shared_messages::{NetworkMessage, ConnectionClosed};
+use crate::messages::shared_messages::{ConnectionClosed, NetworkMessage};
+use std::net::SocketAddr;
 use tokio::io::{AsyncBufReadExt, BufReader, ReadHalf};
 use tokio::net::TcpStream;
-use std::net::SocketAddr;
 
 pub struct TCPReceiver<A: Actor + Handler<NetworkMessage>> {
     remote_addr: SocketAddr,
@@ -48,11 +48,9 @@ where
                     }
                 }
                 println!("EEEEEE TCPReceiver: Connection closed for {}", remote_addr);
-                addr.do_send(NetworkMessage::ConnectionClosed(
-                    ConnectionClosed {
-                        remote_addr,
-                    },
-                ));
+                addr.do_send(NetworkMessage::ConnectionClosed(ConnectionClosed {
+                    remote_addr,
+                }));
             }
             .into_actor(self),
         );

@@ -42,7 +42,7 @@ impl<K: std::hash::Hash + Eq + Clone, V: std::hash::Hash + Eq + Clone> BiMap<K, 
     pub fn keys(&self) -> impl Iterator<Item = &K> {
         self.forward.keys()
     }
-    
+
     pub fn values(&self) -> impl Iterator<Item = &V> {
         self.forward.values()
     }
