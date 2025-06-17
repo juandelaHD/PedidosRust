@@ -17,7 +17,6 @@ use common::utils::calculate_distance;
 use std::net::SocketAddr;
 use std::time::Duration;
 use tokio::net::TcpStream;
-use tokio::time::sleep;
 
 pub struct Delivery {
     /// Vector de direcciones de servidores
@@ -155,7 +154,7 @@ impl Handler<SendRegistration> for Delivery {
         self.send_network_message(NetworkMessage::RegisterUser(RegisterUser {
             origin_addr: local_address,
             user_id: self.delivery_id.clone(),
-            position: self.position.clone(),
+            position: self.position,
         }));
     }
 }
@@ -340,7 +339,7 @@ impl Handler<NewOfferToDeliver> for Delivery {
                 let my_info = DeliveryDTO {
                     delivery_id: self.delivery_id.clone(),
                     delivery_position: self.position,
-                    status: self.status.clone(),
+                    status: self.status,
                     current_order: Some(msg.order.clone()),
                     current_client_id: Some(msg.order.client_id.clone()),
                     time_stamp: std::time::SystemTime::now(),
@@ -483,8 +482,9 @@ impl Handler<NetworkMessage> for Delivery {
         match msg {
             // Users messages
             NetworkMessage::LeaderIs(msg_data) => ctx.address().do_send(msg_data),
-            NetworkMessage::RecoveredInfo(user_dto_opt) => match user_dto_opt {
-                user_dto => match user_dto {
+            NetworkMessage::RecoveredInfo(user_dto_opt) => {
+                let user_dto = user_dto_opt;
+                match user_dto {
                     UserDTO::Delivery(delivery_dto) => {
                         if delivery_dto.delivery_id == self.delivery_id {
                             self.logger.info(format!(
@@ -507,8 +507,8 @@ impl Handler<NetworkMessage> for Delivery {
                             other
                         ));
                     }
-                },
-            },
+                }
+            }
 
             NetworkMessage::NoRecoveredInfo => {
                 self.logger

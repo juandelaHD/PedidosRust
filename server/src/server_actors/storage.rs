@@ -140,7 +140,7 @@ impl Handler<AddOrderAccepted> for Storage {
                 // Agrego la orden y el delivery a accepted_deliveries.
                 self.accepted_deliveries
                     .entry(msg.order.order_id)
-                    .or_insert_with(HashSet::new)
+                    .or_default()
                     .insert(msg.delivery.delivery_id.clone());
 
                 // Reenviar el mensaje al address contenida en el mensaje
@@ -328,7 +328,7 @@ impl Handler<AddPendingOrderToRestaurant> for Storage {
         if let Some(restaurant) = self.restaurants.get_mut(&msg.restaurant_id) {
             if let Some(order) = self.orders.get(&msg.order.order_id) {
                 // TODO: Ver si hay que eliminar la orden de authorized_orders acá
-                restaurant.authorized_orders.remove(&order);
+                restaurant.authorized_orders.remove(order);
                 restaurant.pending_orders.insert(order.clone());
             } else {
                 self.logger

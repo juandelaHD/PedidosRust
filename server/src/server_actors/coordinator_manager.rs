@@ -464,7 +464,7 @@ impl Handler<LeaderElection> for CoordinatorManager {
                     next,
                     NetworkMessage::LeaderElection(LeaderElection {
                         initiator: msg.initiator,
-                        candidates: candidates,
+                        candidates,
                     }),
                 ) {
                     self.logger.error(format!(

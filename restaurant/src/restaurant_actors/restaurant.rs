@@ -3,8 +3,8 @@ use actix::fut::wrap_future;
 use actix::prelude::*;
 use common::logger::Logger;
 use common::messages::{
-    DeliverThisOrder, DeliveryAccepted, LeaderIs, NetworkMessage, NewLeaderConnection, NewOrder,
-    RecoverProcedure, RegisterUser, RequestNearbyDelivery, UpdateOrderStatus, WhoIsLeader,
+    DeliverThisOrder, DeliveryAccepted, LeaderIs, NetworkMessage, NewOrder, RecoverProcedure,
+    RegisterUser, RequestNearbyDelivery, UpdateOrderStatus, WhoIsLeader,
 };
 use common::network::communicator::Communicator;
 use common::network::connections::{connect_some, try_to_connect};
@@ -63,7 +63,7 @@ impl Restaurant {
                 self.logger.error("Sender not initialized in communicator");
             }
         } else {
-            self.logger.error(&format!("Communicator not found!",));
+            self.logger.error("Communicator not found!");
         }
     }
 
@@ -130,7 +130,7 @@ impl Handler<LeaderIs> for Restaurant {
             self.send_network_message(NetworkMessage::RegisterUser(RegisterUser {
                 origin_addr: local_address,
                 user_id: self.info.id.clone(),
-                position: self.info.position.clone(),
+                position: self.info.position,
             }));
             return;
         }
@@ -333,8 +333,9 @@ impl Handler<NetworkMessage> for Restaurant {
         match msg {
             // All Users messages
             NetworkMessage::LeaderIs(msg_data) => ctx.address().do_send(msg_data),
-            NetworkMessage::RecoveredInfo(user_dto_opt) => match user_dto_opt {
-                user_dto => match user_dto {
+            NetworkMessage::RecoveredInfo(user_dto_opt) => {
+                let user_dto = user_dto_opt;
+                match user_dto {
                     UserDTO::Restaurant(restaurant_dto) => {
                         if restaurant_dto.restaurant_id == self.info.id {
                             self.logger.info(format!(
@@ -357,8 +358,8 @@ impl Handler<NetworkMessage> for Restaurant {
                             other
                         ));
                     }
-                },
-            },
+                }
+            }
             NetworkMessage::NoRecoveredInfo => {
                 self.logger
                     .info("No recovered info received, waiting for new orders.");
@@ -376,9 +377,9 @@ impl Handler<NetworkMessage> for Restaurant {
                 ));
             }
             NetworkMessage::DeliveryAvailable(_msg_data) => {
-                self.delivery_assigner_address
-                    .as_ref()
-                    .map(|addr| addr.do_send(_msg_data));
+                if let Some(addr) = self.delivery_assigner_address.as_ref() {
+                    addr.do_send(_msg_data);
+                }
             }
             _ => {
                 self.logger.info(format!(

@@ -40,7 +40,7 @@ impl Actor for Acceptor {
             async move {
                 match TcpListener::bind(addr).await {
                     Ok(listener) => {
-                        logger.info(format!("Acceptor started on {}", addr));
+                        logger.info(format!("Server Acceptor started on {}", addr));
 
                         loop {
                             match listener.accept().await {
@@ -60,8 +60,8 @@ impl Actor for Acceptor {
                                                     .await
                                                     .unwrap_or_else(|_| {
                                                         logger.info(format!(
-                                                            "Error leyendo dirección desde {}",
-                                                            remote_addr
+                                                            "Error reading address line from {}",
+                                                            remote_addr,
                                                         ));
                                                         0
                                                     });
@@ -73,27 +73,27 @@ impl Actor for Acceptor {
                                                 });
                                             } else {
                                                 logger.info(format!(
-                                                    "Tipo de peer inválido desde {}",
+                                                    "Received unsupported peer type byte from {}",
                                                     remote_addr
                                                 ));
                                             }
                                         }
                                         Err(e) => {
                                             logger.info(format!(
-                                                "Error leyendo tipo de peer desde {}: {}",
+                                                "Error while reading peer type from {}: {}",
                                                 remote_addr, e
                                             ));
                                         }
                                     }
                                 }
                                 Err(e) => {
-                                    logger.info(format!("Error aceptando conexión: {}", e));
+                                    logger.info(format!("Error accepting connection: {}", e));
                                 }
                             }
                         }
                     }
                     Err(e) => {
-                        logger.info(format!("Error al bindear TCP listener: {}", e));
+                        logger.info(format!("Error binding listener: {}", e));
                     }
                 }
             }
@@ -122,7 +122,6 @@ impl Handler<HandleConnection> for Acceptor {
 
         match peer_type {
             PeerType::CoordinatorType => {
-                println!("Conexión de Coordinador desde {:?}", remote_addr);
                 let communicator =
                     Communicator::new(stream, self.coordinator_address.clone(), peer_type);
                 self.coordinator_address
@@ -132,7 +131,6 @@ impl Handler<HandleConnection> for Acceptor {
                     });
             }
             PeerType::ClientType | PeerType::RestaurantType | PeerType::DeliveryType => {
-                println!("Conexión de Usuario desde {:?}", remote_addr);
                 let communicator =
                     Communicator::new(stream, self.coordinator_address.clone(), peer_type);
                 self.coordinator_address.do_send(RegisterConnection {
@@ -141,7 +139,10 @@ impl Handler<HandleConnection> for Acceptor {
                 });
             }
             _ => {
-                println!("Conexión de tipo desconocido desde {:?}", remote_addr);
+                self.logger.info(format!(
+                    "Received unsupported peer type {:?} from {}",
+                    peer_type, remote_addr
+                ));
             }
         }
     }

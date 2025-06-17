@@ -56,7 +56,7 @@ impl Handler<AssignToChef> for Chef {
                 });
                 logger.info(format!("Order {:?} is ready for delivery.", order.order_id));
             } else {
-                logger.error("No order assigned to chef when time elapsed.".to_string());
+                logger.error("No order assigned to chef when time elapsed.");
             }
             kitchen_sender.do_send(IAmAvailable {
                 chef_addr: ctx.address().clone(),

@@ -14,7 +14,7 @@ async fn main() {
     let port = if args.len() > 1 {
         args[1].parse::<u16>().expect("Invalid port number")
     } else {
-        BASE_PORT // default a 8080
+        BASE_PORT
     };
 
     let my_addr = format!("{}:{}", SERVER_IP_ADDRESS, port)
@@ -23,7 +23,7 @@ async fn main() {
     // Construir la lista completa de ring_nodes
     let ip: std::net::IpAddr = SERVER_IP_ADDRESS.parse().unwrap();
     let ring_nodes = (0..NUM_COORDINATORS)
-        .map(|i| SocketAddr::new(ip, BASE_PORT + i as u16))
+        .map(|i| SocketAddr::new(ip, BASE_PORT + i))
         .filter(|addr| *addr != my_addr)
         .collect::<Vec<SocketAddr>>();
     // Iniciar el Coordinator

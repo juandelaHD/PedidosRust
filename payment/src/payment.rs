@@ -37,7 +37,7 @@ impl PaymentGateway {
                 self.logger.error("Sender not initialized in communicator");
             }
         } else {
-            self.logger.error(&format!("Communicator not found!",));
+            self.logger.error("Communicator not found!");
         }
     }
 }

@@ -19,7 +19,7 @@ async fn main() -> io::Result<()> {
 
     let servers: Vec<SocketAddr> = (0..NUM_COORDINATORS)
         .map(|i| {
-            format!("{}:{}", SERVER_IP_ADDRESS, BASE_PORT + i as u16)
+            format!("{}:{}", SERVER_IP_ADDRESS, BASE_PORT + i)
                 .parse()
                 .expect("Dirección IP inválida")
         })

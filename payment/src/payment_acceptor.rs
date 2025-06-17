@@ -39,7 +39,7 @@ impl Actor for PaymentAcceptor {
             async move {
                 match TcpListener::bind(addr).await {
                     Ok(listener) => {
-                        logger.info(format!("PaymentAcceptor started on {}", addr));
+                        logger.info(format!("Payment acceptor started on {}", addr));
 
                         loop {
                             match listener.accept().await {
@@ -59,7 +59,7 @@ impl Actor for PaymentAcceptor {
                                                     .await
                                                     .unwrap_or_else(|_| {
                                                         logger.info(format!(
-                                                            "Error leyendo dirección desde {}",
+                                                            "Error reading address line from {}",
                                                             remote_addr
                                                         ));
                                                         0
@@ -72,27 +72,27 @@ impl Actor for PaymentAcceptor {
                                                 });
                                             } else {
                                                 logger.info(format!(
-                                                    "Tipo de peer inválido desde {}",
+                                                    "Unknown peer type byte from {}",
                                                     remote_addr
                                                 ));
                                             }
                                         }
                                         Err(e) => {
                                             logger.info(format!(
-                                                "Error leyendo tipo de peer desde {}: {}",
+                                                "Error reading peer type from {}: {}",
                                                 remote_addr, e
                                             ));
                                         }
                                     }
                                 }
                                 Err(e) => {
-                                    logger.info(format!("Error aceptando conexión: {}", e));
+                                    logger.info(format!("Error accepting connection: {}", e));
                                 }
                             }
                         }
                     }
                     Err(e) => {
-                        logger.info(format!("Error al bindear TCP listener: {}", e));
+                        logger.info(format!("Error binding to {}: {}", addr, e));
                     }
                 }
             }
@@ -126,16 +126,14 @@ impl Handler<HandleConnection> for PaymentAcceptor {
             peer_type,
         } = msg;
 
-        match peer_type {
-            _ => {
-                println!("Conexión de entrante desde {:?}", remote_addr);
-                let communicator =
-                    Communicator::new(stream, self.payment_gateway_addr.clone(), peer_type);
-                self.payment_gateway_addr.do_send(RegisterConnection {
-                    client_addr: remote_addr,
-                    communicator,
-                });
-            }
-        }
+        self.logger.info(format!(
+            "New connection from {} with peer type {:?}",
+            remote_addr, peer_type
+        ));
+        let communicator = Communicator::new(stream, self.payment_gateway_addr.clone(), peer_type);
+        self.payment_gateway_addr.do_send(RegisterConnection {
+            client_addr: remote_addr,
+            communicator,
+        });
     }
 }

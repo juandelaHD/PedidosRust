@@ -39,3 +39,9 @@ impl<K: std::hash::Hash + Eq + Clone, V: std::hash::Hash + Eq + Clone> BiMap<K, 
         }
     }
 }
+
+impl<K: std::hash::Hash + Eq + Clone, V: std::hash::Hash + Eq + Clone> Default for BiMap<K, V> {
+    fn default() -> Self {
+        Self::new()
+    }
+}

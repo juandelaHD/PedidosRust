@@ -73,7 +73,7 @@ impl Client {
                 self.logger.error("Sender not initialized in communicator");
             }
         } else {
-            self.logger.error(&format!("Communicator not found!",));
+            self.logger.error("Communicator not found!");
         }
     }
 
@@ -365,9 +365,8 @@ impl Handler<NetworkMessage> for Client {
     fn handle(&mut self, msg: NetworkMessage, ctx: &mut Self::Context) -> Self::Result {
         match msg {
             NetworkMessage::RetryLater(_msg_data) => {
-                self.logger.info(format!(
-                    "Sorry, but the server is busy. Please try again later."
-                ));
+                self.logger
+                    .info("Sorry, but the server is busy. Please try again later.");
             }
             // All Users messages
             NetworkMessage::LeaderIs(msg_data) => {
