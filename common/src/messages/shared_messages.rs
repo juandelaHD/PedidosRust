@@ -17,6 +17,7 @@ pub enum NetworkMessage {
     // All Users messages
     WhoIsLeader(WhoIsLeader),
     LeaderIs(LeaderIs),
+    LeaderIdIs(LeaderIdIs),
     RegisterUser(RegisterUser),
     RecoveredInfo(UserDTO),
     NoRecoveredInfo,
@@ -65,6 +66,9 @@ pub enum NetworkMessage {
     Pong(Pong),
 
     RetryLater(RetryLater),
+
+    // TCP Connection
+    ConnectionClosed(ConnectionClosed),
 }
 
 #[derive(Serialize, Deserialize, Debug, Message, Clone)]
@@ -78,6 +82,12 @@ pub struct WhoIsLeader {
 #[rtype(result = "()")]
 pub struct LeaderIs {
     pub coord_addr: SocketAddr,
+}
+
+#[derive(Serialize, Deserialize, Debug, Message, Clone)]
+#[rtype(result = "()")]
+pub struct LeaderIdIs {
+    pub leader_id: String,
 }
 
 // TODO: Borrar, quedó viejo
@@ -110,4 +120,10 @@ pub struct RecoverProcedure {
 #[rtype(result = "()")]
 pub struct RetryLater {
     pub origin_addr: SocketAddr,
+}
+
+#[derive(Serialize, Deserialize, Debug, Message, Clone)]
+#[rtype(result = "()")]
+pub struct ConnectionClosed {
+    pub remote_addr: SocketAddr,
 }

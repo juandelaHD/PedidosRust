@@ -35,7 +35,7 @@ use tokio::net::TcpStream;
 pub struct Coordinator {
     pub id: String,
     /// Direcciones de todos los nodos en el anillo.
-    pub ring_nodes: Vec<SocketAddr>,
+    pub ring_nodes: HashMap<String, SocketAddr>,
     /// Dirección de este coordinator.
     pub my_addr: SocketAddr,
     /// Coordinador actual.
@@ -65,11 +65,13 @@ pub struct Coordinator {
 }
 
 impl Coordinator {
-    pub async fn new(srv_addr: SocketAddr, ring_nodes: Vec<SocketAddr>) -> Self {
+    pub async fn new(srv_addr: SocketAddr, ring_nodes: HashMap<String, SocketAddr>) -> Self {
         // Inicializar el coordinador con la dirección del servidor y los nodos del anillo
         // y un logger compartido.
+        let ring_nodes_vec: Vec<SocketAddr> = ring_nodes.values().cloned().collect();
+
         let pending_streams: HashMap<SocketAddr, TcpStream> =
-            connect_to_all(ring_nodes.clone(), PeerType::CoordinatorType).await;
+            connect_to_all(ring_nodes_vec, PeerType::CoordinatorType).await;
 
         if pending_streams.is_empty() {
             println!("No connections established.");
@@ -389,21 +391,21 @@ impl Handler<WhoIsLeader> for Coordinator {
     }
 }
 
-impl Handler<LeaderIs> for Coordinator {
+impl Handler<LeaderIdIs> for Coordinator {
     type Result = ();
 
-    fn handle(&mut self, msg: LeaderIs, _ctx: &mut Self::Context) -> Self::Result {
-        // Actualizar el coordinador actual
-        self.current_coordinator = Some(msg.coord_addr);
+    fn handle(&mut self, msg: LeaderIdIs, _ctx: &mut Self::Context) -> Self::Result {
         self.logger.info(format!(
-            "Updated current coordinator to: {}",
-            msg.coord_addr
+            "Received LeaderIdIs with leader ID {}",
+            msg.leader_id
         ));
-        // Notificar al CoordinatorManager sobre el nuevo coordinador
-        if let Some(coordinator_manager) = &self.coordinator_manager {
-            coordinator_manager.do_send(msg);
+        if let Some(leader_addr) = self.ring_nodes.get(&msg.leader_id) {
+            self.current_coordinator = Some(*leader_addr);
         } else {
-            self.logger.info("CoordinatorManager not initialized yet.");
+            self.logger.info(format!(
+                "Leader ID {} not found in ring nodes.",
+                msg.leader_id
+            ));
         }
     }
 }
@@ -506,9 +508,19 @@ impl Handler<NetworkMessage> for Coordinator {
                     ctx.address().do_send(msg_data)
                 }
             }
-            NetworkMessage::LeaderIs(msg_data) => {
-                self.logger.info("Received LeaderIs message");
+            NetworkMessage::LeaderIdIs(msg_data) => {
+                self.logger.info("Received LeaderIdIs message");
                 // Informar al CoordinatorManager sobre el nuevo líder
+
+                if let Some(leader_addr) = self.ring_nodes.get(&msg_data.leader_id) {
+                    self.current_coordinator = Some(*leader_addr);
+                } else {
+                    self.logger.info(format!(
+                        "Leader ID {} not found in ring nodes.",
+                        msg_data.leader_id
+                    ));
+                }
+
                 if let Some(coordinator_manager) = &self.coordinator_manager {
                     coordinator_manager.do_send(msg_data);
                 } else {
@@ -867,6 +879,22 @@ impl Handler<NetworkMessage> for Coordinator {
                     coordinator_manager.do_send(msg_data);
                 } else {
                     self.logger.info("CoordinatorManager not initialized yet.");
+                }
+            }
+
+            NetworkMessage::ConnectionClosed(msg_data) => {
+                self.logger
+                    .info(format!("Connection closed for {}", msg_data.remote_addr));
+                let remote_addr = msg_data.remote_addr;
+                // Si el remote_addr está en self.communicators, lo eliminamos
+                if let Some(communicator) = self.communicators.get(&remote_addr) {
+                    // TODO: Handlear eliminacion de usuario
+                } else {
+                    if let Some(coordinator_manager) = &self.coordinator_manager {
+                        coordinator_manager.do_send(msg_data);
+                    } else {
+                        self.logger.info("CoordinatorManager not initialized yet.");
+                    }
                 }
             }
 

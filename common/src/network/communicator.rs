@@ -35,7 +35,7 @@ where
             peer_address,
             sender: Some(Arc::new(TCPSender::new(write_half).start())),
             receiver: Some(Arc::new(
-                TCPReceiver::new(read_half, destination_address).start(),
+                TCPReceiver::new(read_half, peer_address, destination_address).start(),
             )),
             peer_type,
         }

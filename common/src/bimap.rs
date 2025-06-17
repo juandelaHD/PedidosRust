@@ -38,6 +38,14 @@ impl<K: std::hash::Hash + Eq + Clone, V: std::hash::Hash + Eq + Clone> BiMap<K, 
             self.forward.remove(&k);
         }
     }
+
+    pub fn keys(&self) -> impl Iterator<Item = &K> {
+        self.forward.keys()
+    }
+
+    pub fn values(&self) -> impl Iterator<Item = &V> {
+        self.forward.values()
+    }
 }
 
 impl<K: std::hash::Hash + Eq + Clone, V: std::hash::Hash + Eq + Clone> Default for BiMap<K, V> {

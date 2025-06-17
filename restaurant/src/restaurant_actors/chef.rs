@@ -49,10 +49,8 @@ impl Handler<AssignToChef> for Chef {
         let delivery_assigner = self.delivery_assigner_address.clone();
         let logger = self.logger.clone();
         let kitchen_sender = self.kitchen_address.clone();
-        self.logger.info(format!(
-            "Chef finished cooking order: {:?}",
-            msg.order.dish_name
-        ));
+        self.logger
+            .info(format!("Chef is cooking order: {:?}", msg.order.dish_name));
         ctx.run_later(self.time_to_cook, move |act, ctx| {
             if let Some(order) = &act.order {
                 // Notify the delivery assigner that the order is ready

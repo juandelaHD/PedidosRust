@@ -52,8 +52,8 @@ pub struct Pong {
 #[derive(Serialize, Deserialize, Debug, Message, Clone)]
 #[rtype(result = "()")]
 pub struct LeaderElection {
-    pub initiator: SocketAddr,
-    pub candidates: Vec<SocketAddr>,
+    pub initiator: String,
+    pub candidates: Vec<String>,
 }
 
 #[derive(Message)]
