@@ -324,8 +324,6 @@ impl Handler<NewOfferToDeliver> for Delivery {
         match self.status {
             // Si estoy disponible, acepto el pedido
             DeliveryStatus::Available => {
-                self.logger
-                    .info(format!("Accepting order ID: {}", msg.order.order_id));
                 // Probabilidad de aceptar el pedido
                 let accept_order = rand::random::<f32>() < self.probability;
                 if !accept_order {

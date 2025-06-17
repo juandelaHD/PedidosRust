@@ -27,6 +27,7 @@ use common::types::dtos::RestaurantDTO;
 use common::types::dtos::UserDTO;
 use common::types::order_status::OrderStatus;
 use std::collections::HashSet;
+use std::time::Duration;
 use std::{collections::HashMap, net::SocketAddr};
 use tokio::net::TcpStream;
 
@@ -60,6 +61,7 @@ pub struct Coordinator {
     pub logger: Logger,
     pub coordinator_manager: Option<Addr<CoordinatorManager>>,
     pub pending_streams: HashMap<SocketAddr, TcpStream>,
+    pub order_timers: HashMap<u64, SpawnHandle>,
 }
 
 impl Coordinator {
@@ -86,6 +88,7 @@ impl Coordinator {
             nearby_restaurant_service: None,
             nearby_delivery_service: None,
             storage: None,
+            order_timers: HashMap::new(),
         }
     }
 
@@ -105,8 +108,13 @@ impl Coordinator {
             self.logger.info(format!("User ID {} not found", user_id));
         }
     }
-
-    pub fn broadcast_deliveries(&self, order: OrderDTO, deliveries: Vec<DeliveryDTO>) {
+    // Cuando haces el broadcast:
+    pub fn broadcast_deliveries(
+        &mut self,
+        order: OrderDTO,
+        deliveries: Vec<DeliveryDTO>,
+        ctx: &mut Context<Self>,
+    ) {
         for delivery in deliveries {
             if let Some(delivery_addr) = self
                 .user_addresses
@@ -132,6 +140,42 @@ impl Coordinator {
                 self.logger
                     .info(format!("User ID {} not found", delivery.delivery_id));
             }
+        }
+
+        // Iniciar timer para la orden
+        let order_id = order.order_id;
+        let timer_duration = Duration::from_secs(30); // Por ejemplo, 30 segundos
+
+        let handle = ctx.run_later(timer_duration, move |actor, _ctx| {
+            actor.logger.warn(format!(
+                "Order {} timed out, no delivery accepted.",
+                order_id
+            ));
+            _ctx.address().do_send(CancelOrder {
+                order: OrderDTO {
+                    order_id,
+                    client_id: order.client_id.clone(),
+                    dish_name: order.dish_name.clone(),
+                    restaurant_id: order.restaurant_id.clone(),
+                    status: OrderStatus::Cancelled,
+                    delivery_id: None,
+                    client_position: order.client_position,
+                    expected_delivery_time: 0,
+                    time_stamp: std::time::SystemTime::now(),
+                },
+            });
+            actor.order_timers.remove(&order_id);
+        });
+
+        self.order_timers.insert(order_id, handle);
+    }
+
+    // Cuando recibes OrderAccepted:
+    fn handle_order_accepted(&mut self, order_id: u64, ctx: &mut Context<Self>) {
+        if let Some(handle) = self.order_timers.remove(&order_id) {
+            ctx.cancel_future(handle);
+            self.logger
+                .info(format!("Order {} accepted, timer cancelled.", order_id));
         }
     }
 }
@@ -238,9 +282,9 @@ impl Handler<NearbyRestaurants> for Coordinator {
 impl Handler<NearbyDeliveries> for Coordinator {
     type Result = ();
 
-    fn handle(&mut self, msg: NearbyDeliveries, _ctx: &mut Self::Context) -> Self::Result {
+    fn handle(&mut self, msg: NearbyDeliveries, ctx: &mut Self::Context) -> Self::Result {
         // Buscar el comunicador del cliente
-        self.broadcast_deliveries(msg.order, msg.deliveries);
+        self.broadcast_deliveries(msg.order, msg.deliveries, ctx);
     }
 }
 
@@ -416,6 +460,19 @@ impl Handler<CancelOrder> for Coordinator {
             self.send_network_message(restaurant_id, NetworkMessage::CancelOrder(msg.clone()));
         }
         // En cualquier otro estado, tambien le aviso al cliente
+        if msg.order.status == OrderStatus::Cancelled {
+            self.logger.info(format!(
+                "Cancelling order {} for client {}",
+                msg.order.order_id, msg.order.client_id
+            ));
+            self.storage.as_ref().unwrap().do_send(RemoveOrder {
+                order: msg.order.clone(),
+            });
+            self.send_network_message(
+                msg.order.restaurant_id.clone(),
+                NetworkMessage::CancelOrder(msg.clone()),
+            );
+        }
         let client_id = msg.order.client_id.clone();
         self.send_network_message(client_id, NetworkMessage::CancelOrder(msg));
     }
@@ -709,7 +766,7 @@ impl Handler<NetworkMessage> for Coordinator {
             NetworkMessage::AcceptedOrder(msg_data) => {
                 self.logger
                     .info("Received AcceptOrder message, not implemented yet");
-                // envio al order service para que haga la logica de exclusion mutua centralizada
+                self.handle_order_accepted(msg_data.order.order_id, ctx);
                 if let Some(order_service) = &self.order_service {
                     order_service.do_send(msg_data);
                 } else {

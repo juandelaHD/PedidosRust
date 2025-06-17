@@ -103,7 +103,7 @@ impl Client {
         if order.status == OrderStatus::Delivering {
             self.logger.info(format!(
                 "Estimated delivery time for your order: {:.2} seconds.",
-                order.expected_delivery_time as f64
+                order.expected_delivery_time as f64 / 1000.0
             ));
 
             // Cancelar timer anterior si existe

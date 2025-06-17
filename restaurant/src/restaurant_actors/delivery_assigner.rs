@@ -26,7 +26,7 @@ pub struct DeliveryAssigner {
 
 impl DeliveryAssigner {
     pub fn new(restaurant_info: RestaurantInfo, restaurant_addr: Addr<Restaurant>) -> Self {
-        let logger = Logger::new("DeliveryAssigner", Color::BrightWhite);
+        let logger = Logger::new("Delivery Assigner", Color::BrightWhite);
 
         DeliveryAssigner {
             restaurant_info,
