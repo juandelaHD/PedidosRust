@@ -19,27 +19,45 @@ use rand::Rng;
 use std::net::SocketAddr;
 use tokio::net::TcpStream;
 
+/// Represents a client actor in the restaurant ordering system.
+///
+/// The `Client` actor manages the user's session, communicates with the server cluster,
+/// handles order creation and status updates, and interacts with the UI handler.
+/// It is responsible for sending and receiving network messages, tracking the current order,
+/// and managing delivery timers.
 pub struct Client {
-    /// Vector de direcciones de servidores
+    /// List of server socket addresses to connect to.
     pub servers: Vec<SocketAddr>,
-    /// Identificador único del comensal.
+    /// Unique identifier for the client.
     pub client_id: String,
-    /// Posición actual del cliente en coordenadas 2D.
+    /// Current position of the client in 2D coordinates.
     pub client_position: (f32, f32),
-    /// Restaurante elegido para el pedido.
-    // pub selected_restaurant: Option<String>,
-    /// Pedido actual.
+    /// Current order placed by the client, if any.
     pub client_order: Option<OrderDTO>,
-    /// Canal de envío hacia el actor `UIHandler`.
+    /// Address of the UI handler actor.
     pub ui_handler: Option<Addr<UIHandler>>,
-    /// Comunicador asociado al `Server`.
+    /// Communicator for network interactions with the server.
     pub communicator: Option<Communicator<Client>>,
-    pub pending_stream: Option<TcpStream>, // Guarda el stream hasta que arranque
+    /// Pending TCP stream before the actor starts.
+    pub pending_stream: Option<TcpStream>,
+    /// Logger for client events.
     pub logger: Logger,
+    /// Handle for the delivery timer, if active.
     delivery_timer: Option<actix::SpawnHandle>,
 }
 
 impl Client {
+    /// Creates a new `Client` instance, connecting to one of the available servers.
+    ///
+    /// ## Arguments
+    ///
+    /// * `servers` - A vector of server socket addresses.
+    /// * `client_id` - The unique identifier for the client.
+    /// * `client_position` - The initial position of the client.
+    ///
+    /// ## Returns
+    ///
+    /// Returns a new `Client` instance.
     pub async fn new(
         servers: Vec<SocketAddr>,
         client_id: String,
@@ -67,6 +85,11 @@ impl Client {
         }
     }
 
+    /// Sends a network message to the connected server via the communicator.
+    ///
+    /// ## Arguments
+    ///
+    /// * `message` - The network message to send.
     pub fn send_network_message(&self, message: NetworkMessage) {
         if let Some(communicator) = &self.communicator {
             if let Some(sender) = &communicator.sender {
@@ -79,6 +102,12 @@ impl Client {
         }
     }
 
+    /// Starts the client logic by requesting the current leader from the server 
+    /// (Sends a WhoIsLeader message).
+    ///
+    /// ## Arguments
+    ///
+    /// * `_ctx` - The Actix actor context.
     pub fn start_running(&self, _ctx: &mut Context<Self>) {
         let actual_socket_addr = self
             .communicator
@@ -91,6 +120,15 @@ impl Client {
         }));
     }
 
+    /// Manages the delivery timer for the current order.
+    ///
+    /// If the order is in the `Delivering` state, a timer is started to track the expected delivery time.
+    /// If the order is delivered or cancelled, the timer is cancelled.
+    ///
+    /// ## Arguments
+    ///
+    /// * `order` - The order to track.
+    /// * `ctx` - The Actix actor context.
     pub fn manage_delivery_time(&mut self, order: &OrderDTO, ctx: &mut actix::Context<Self>) {
         if order.client_id != self.client_id {
             self.logger.warn(format!(
@@ -157,6 +195,14 @@ impl Client {
 impl Actor for Client {
     type Context = Context<Self>;
 
+    /// Called when the `Client` actor is started.
+    ///
+    /// Initializes the network communicator and the UI handler, then begins the client logic
+    /// by requesting the current leader from the server cluster.
+    ///
+    /// # Arguments
+    ///
+    /// * `ctx` - The Actix actor context.
     fn started(&mut self, ctx: &mut Self::Context) {
         let communicator = Communicator::new(
             self.pending_stream
@@ -174,12 +220,16 @@ impl Actor for Client {
     }
 }
 
+/// Message used to update the network communicator for the client.
 pub struct UpdateCommunicator(pub Communicator<Client>);
 
 impl Message for UpdateCommunicator {
     type Result = ();
 }
 
+/// Handler for the `UpdateCommunicator` message.
+///
+/// Updates the client's communicator with a new instance, typically after reconnecting to a new leader.
 impl Handler<UpdateCommunicator> for Client {
     type Result = ();
 
@@ -188,6 +238,10 @@ impl Handler<UpdateCommunicator> for Client {
     }
 }
 
+/// Handler for the `LeaderIs` message.
+///
+/// Handles notification of the current leader's address. If not already connected to the leader,
+/// attempts to establish a new connection and updates the communicator.
 impl Handler<LeaderIs> for Client {
     type Result = ();
 
@@ -244,6 +298,10 @@ impl Handler<LeaderIs> for Client {
     }
 }
 
+/// Handler for the `RecoverProcedure` message.
+///
+/// Restores the client's state from a recovery message, including position and current order.
+/// If there is no active order, requests nearby restaurants.
 impl Handler<RecoverProcedure> for Client {
     type Result = ();
 
@@ -318,6 +376,9 @@ impl Handler<RecoverProcedure> for Client {
     }
 }
 
+/// Handler for the `SendThisOrder` message.
+///
+/// Creates a new order with the selected restaurant and dish, and sends it to the server.
 impl Handler<SendThisOrder> for Client {
     type Result = ();
 
@@ -348,6 +409,9 @@ impl Handler<SendThisOrder> for Client {
     }
 }
 
+/// Handler for the `NearbyRestaurants` message.
+///
+/// Forwards the list of nearby restaurants to the UI handler for user selection.
 impl Handler<NearbyRestaurants> for Client {
     type Result = ();
 

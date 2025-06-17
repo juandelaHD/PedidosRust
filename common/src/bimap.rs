@@ -54,6 +54,14 @@ impl<K: std::hash::Hash + Eq + Clone, V: std::hash::Hash + Eq + Clone> BiMap<K, 
     pub fn values(&self) -> impl Iterator<Item = &V> {
         self.forward.values()
     }
+
+    pub fn contains_key(&self, k: &K) -> bool {
+        self.forward.contains_key(k)
+    }
+    
+    pub fn contains_value(&self, v: &V) -> bool {
+        self.backward.contains_key(v)
+    }
 }
 
 impl<K: std::hash::Hash + Eq + Clone, V: std::hash::Hash + Eq + Clone> Default for BiMap<K, V> {

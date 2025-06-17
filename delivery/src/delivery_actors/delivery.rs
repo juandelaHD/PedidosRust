@@ -19,26 +19,48 @@ use std::net::SocketAddr;
 use std::time::Duration;
 use tokio::net::TcpStream;
 
+/// The `Delivery` actor represents a delivery person in the distributed restaurant ordering system.
+///
+/// This actor is responsible for:
+/// - Registering itself with the server cluster.
+/// - Receiving and accepting delivery offers.
+/// - Simulating the delivery process (including travel and delivery time).
+/// - Updating its status and reporting order delivery.
+/// - Handling recovery and reconnection scenarios.
 pub struct Delivery {
-    /// Vector de direcciones de servidores
+    /// List of server socket addresses to connect to.
     pub servers: Vec<SocketAddr>,
-    /// Identificador único del delivery.
+    /// Unique identifier for the delivery actor.
     pub delivery_id: String,
-    /// Posición actual del delivery.
+    /// Current position of the delivery actor.
     pub position: (f32, f32),
-    /// Estado actual del delivery: Disponible, Ocupado, Entregando.
+    /// Current status of the delivery actor (Available, Busy, Delivering, etc.).
     pub status: DeliveryStatus,
-    //  Probabilidad de que rechace un pedido disponible de un restaurante.
+    /// Probability of rejecting an available order.
     pub probability: f32,
-    /// Pedido actual en curso, si lo hay.
+    /// Current order being delivered, if any.
     pub current_order: Option<OrderDTO>,
-    /// Comunicador asociado al Server.
+    /// Communicator for network interactions with the server.
     pub communicator: Option<Communicator<Delivery>>,
-    pub pending_stream: Option<TcpStream>, // Guarda los streams hasta que arranque
+    /// Pending TCP stream before the actor starts.
+    pub pending_stream: Option<TcpStream>,
+    /// Logger for delivery events.
     pub logger: Logger,
 }
 
 impl Delivery {
+    /// Creates a new `Delivery` instance and attempts to connect to the server cluster.
+    ///
+    /// # Arguments
+    ///
+    /// * `servers` - A vector of server socket addresses.
+    /// * `delivery_id` - The unique identifier for the delivery actor.
+    /// * `position` - The initial position of the delivery actor.
+    /// * `probability` - Probability of rejecting an order.
+    ///
+    /// # Returns
+    ///
+    /// Returns a new `Delivery` instance.
     pub async fn new(
         servers: Vec<SocketAddr>,
         delivery_id: String,
@@ -68,6 +90,11 @@ impl Delivery {
         }
     }
 
+    /// Sends a network message to the connected server via the communicator.
+    ///
+    /// # Arguments
+    ///
+    /// * `message` - The network message to send.
     pub fn send_network_message(&self, message: NetworkMessage) {
         if let Some(communicator) = &self.communicator {
             if let Some(sender) = &communicator.sender {
@@ -81,6 +108,11 @@ impl Delivery {
         }
     }
 
+    /// Starts the delivery logic by requesting the current leader from the server.
+    ///
+    /// # Arguments
+    ///
+    /// * `_ctx` - The Actix actor context.
     pub fn start_running(&self, _ctx: &mut Context<Self>) {
         let actual_socket_addr = self
             .communicator
@@ -93,6 +125,18 @@ impl Delivery {
         }));
     }
 
+    /// Calculates the delivery delay in milliseconds based on the distance from the delivery's
+    /// current position to the restaurant and from the restaurant to the client.
+    ///
+    /// # Arguments
+    ///
+    /// * `restaurant_position` - The position of the restaurant.
+    /// * `client_position` - The position of the client.
+    /// * `base_delay_millis` - The base delay in milliseconds.
+    ///
+    /// # Returns
+    ///
+    /// Returns the total estimated delivery delay in milliseconds.
     pub fn calcular_delay_ms(
         &self,
         restaurant_position: (f32, f32),
@@ -110,6 +154,13 @@ impl Delivery {
 impl Actor for Delivery {
     type Context = Context<Self>;
 
+    /// Called when the `Delivery` actor is started.
+    ///
+    /// Initializes the network communicator and begins the delivery logic.
+    ///
+    /// # Arguments
+    ///
+    /// * `ctx` - The Actix actor context.
     fn started(&mut self, ctx: &mut Self::Context) {
         let communicator = Communicator::new(
             self.pending_stream
@@ -123,12 +174,16 @@ impl Actor for Delivery {
     }
 }
 
+/// Message used to update the network communicator for the delivery actor.
 pub struct UpdateCommunicator(pub Communicator<Delivery>);
 
 impl Message for UpdateCommunicator {
     type Result = ();
 }
 
+/// Handler for the `UpdateCommunicator` message.
+///
+/// Updates the delivery's communicator with a new instance, typically after reconnecting to a new leader.
 impl Handler<UpdateCommunicator> for Delivery {
     type Result = ();
 
@@ -137,12 +192,16 @@ impl Handler<UpdateCommunicator> for Delivery {
     }
 }
 
+/// Message used to trigger registration with the server.
 pub struct SendRegistration();
 
 impl Message for SendRegistration {
     type Result = ();
 }
 
+/// Handler for the `SendRegistration` message.
+///
+/// Registers the delivery actor with the server by sending a `RegisterUser` message.
 impl Handler<SendRegistration> for Delivery {
     type Result = ();
 
@@ -160,6 +219,10 @@ impl Handler<SendRegistration> for Delivery {
     }
 }
 
+/// Handler for the `LeaderIs` message.
+///
+/// Handles notification of the current leader's address. If not already connected to the leader,
+/// attempts to establish a new connection and updates the communicator.
 impl Handler<LeaderIs> for Delivery {
     type Result = ();
 
@@ -217,6 +280,10 @@ impl Handler<LeaderIs> for Delivery {
     }
 }
 
+/// Handler for the `RecoverProcedure` message.
+///
+/// Restores the delivery's state from a recovery message, including position, status, and current order.
+/// If in the middle of a delivery, resumes the appropriate process.
 impl Handler<RecoverProcedure> for Delivery {
     type Result = ();
 
@@ -313,6 +380,9 @@ impl Handler<RecoverProcedure> for Delivery {
     }
 }
 
+/// Handler for the `NewOfferToDeliver` message.
+///
+/// Handles a new delivery offer. If available, may accept the order based on probability.
 impl Handler<NewOfferToDeliver> for Delivery {
     type Result = ();
 
@@ -363,6 +433,9 @@ impl Handler<NewOfferToDeliver> for Delivery {
     }
 }
 
+/// Handler for the `DeliveryNoNeeded` message.
+///
+/// Handles notification that a delivery is no longer needed, resetting the current order and status.
 impl Handler<DeliveryNoNeeded> for Delivery {
     type Result = ();
 
@@ -385,6 +458,9 @@ impl Handler<DeliveryNoNeeded> for Delivery {
     }
 }
 
+/// Handler for the `DeliverThisOrder` message.
+///
+/// Simulates the delivery process, updates the order status, and notifies the server upon completion.
 impl Handler<DeliverThisOrder> for Delivery {
     type Result = ();
 
@@ -437,6 +513,9 @@ impl Handler<DeliverThisOrder> for Delivery {
     }
 }
 
+/// Handler for the `OrderDelivered` message.
+///
+/// Marks the order as delivered, notifies the server, and sets the delivery status to available.
 impl Handler<OrderDelivered> for Delivery {
     type Result = ();
 
@@ -480,6 +559,10 @@ impl Handler<OrderDelivered> for Delivery {
     }
 }
 
+/// Handler for all incoming `NetworkMessage` messages.
+///
+/// Handles various network events, such as leader changes, delivery offers, order updates,
+/// and recovery information. Updates the delivery state and interacts with the server as needed.
 impl Handler<NetworkMessage> for Delivery {
     type Result = ();
     fn handle(&mut self, msg: NetworkMessage, ctx: &mut Self::Context) -> Self::Result {

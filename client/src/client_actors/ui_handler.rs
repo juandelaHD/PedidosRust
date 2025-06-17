@@ -5,18 +5,37 @@ use common::logger::Logger;
 use common::types::restaurant_info::RestaurantInfo;
 use std::io::{self, Write};
 
-/// Actor UIHandler: Interfaz humano-sistema
+/// The `UIHandler` actor is responsible for managing the user interface interactions
+/// in the client application. It prompts the user to select a restaurant and dish,
+/// and communicates the user's choices to the `Client` actor.
 pub struct UIHandler {
-    /// Canal de envío hacia el actor `Client`
+    /// Address of the `Client` actor to send user selections to.
     pub client: Addr<Client>,
+    /// Logger for UI-related messages and errors.
     pub logger: Logger,
 }
 
 impl UIHandler {
+    /// Creates a new `UIHandler` instance.
+    ///
+    /// ## Arguments
+    ///
+    /// * `client` - Address of the `Client` actor.
+    /// * `logger` - Logger instance for UI messages.
     pub fn new(client: Addr<Client>, logger: Logger) -> Self {
         UIHandler { client, logger }
     }
 
+    /// Prompts the user to select a restaurant and enter a dish name.
+    ///
+    /// ## Arguments
+    ///
+    /// * `_ctx` - The Actix actor context.
+    /// * `possible_restaurants` - A list of available restaurants to choose from.
+    ///
+    /// ## Returns
+    ///
+    /// Returns a tuple containing the selected restaurant ID and the dish name.
     fn ask_user_order(
         &self,
         _ctx: &mut Context<Self>,
@@ -88,6 +107,12 @@ impl Actor for UIHandler {
     type Context = Context<Self>;
 }
 
+/// Handles the `SelectNearbyRestaurants` message.
+///
+/// Extracts the list of nearby restaurants and dishes.
+///
+/// Prompts the user to select a restaurant and dish, then sending the 
+/// selection to the `Client` actor.
 impl Handler<SelectNearbyRestaurants> for UIHandler {
     type Result = ();
 

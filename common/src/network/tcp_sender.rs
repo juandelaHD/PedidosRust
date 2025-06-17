@@ -98,7 +98,19 @@ pub struct SendError(pub String);
 
 impl Actor for TCPSender {
     type Context = Context<Self>;
+
+    fn started(&mut self, ctx: &mut Self::Context) {
+        // Cada 2 segundos (ajusta el intervalo según tu necesidad)
+        ctx.run_interval(std::time::Duration::from_secs(2), |act, ctx| {
+            if !act.queue.is_empty() && act.writer.is_some() {
+                ctx.notify(ProcessQueue);
+            } else {
+                println!("[TCPSender] No messages to process or writer is None, skipping processing.");
+            }
+        });
+    }
 }
+
 
 struct ProcessQueue;
 
@@ -111,6 +123,8 @@ impl Handler<NetworkMessage> for TCPSender {
 
     fn handle(&mut self, msg: NetworkMessage, ctx: &mut Self::Context) {
         self.queue.push_back(msg);
+        println!("[TCPSender] Message added to queue, queue size: {}", self.queue.len());
+        println!("[TCPSender] Current queue: {:?}", self.queue);
         if self.queue.len() == 1 {
             ctx.notify(ProcessQueue);
         }

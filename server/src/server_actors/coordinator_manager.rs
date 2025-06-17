@@ -296,9 +296,6 @@ impl CoordinatorManager {
     }
 
 
-
-
-
     fn start_heartbeat_checker(&mut self, ctx: &mut Context<Self>) {
         ctx.run_interval(INTERVAL_HEARTBEAT, |act, ctx| {
             if act.election_in_progress {
@@ -673,7 +670,24 @@ impl Handler<RequestAllStorage> for CoordinatorManager {
             "Received RequestAllStorage from {}",
             msg.coordinator_id
         ));
-
+        let id = msg.coordinator_id.clone();
+        
+        if let Some(remote_addr) = self.coord_addresses.get_by_value(&id) {
+            if !self.coord_communicators.contains_key(remote_addr) {
+                self.logger.warn(format!(
+                    "Coordinador {} no está conectado, no puedo enviarle actualizaciones de Storage",
+                    id
+                ));
+                return;
+            }
+        } else {
+            self.logger.warn(format!(
+                "No se encontró dirección para el coordinador: {}",
+                id
+            ));
+            return;
+        }
+        
         let storage_addr = self.storage.clone();
         let remote_addr = self
             .coord_addresses
@@ -856,6 +870,26 @@ impl Handler<RequestNewStorageUpdates> for CoordinatorManager {
     type Result = ();
 
     fn handle(&mut self, msg: RequestNewStorageUpdates, _ctx: &mut Context<Self>) {
+        // lo buscamos en el bimap de direcciones y luego en comunicadores. Si no esta en comunicadores, no lo tenemos conectado
+        let id = msg.coordinator_id.clone();
+        
+        if let Some(remote_addr) = self.coord_addresses.get_by_value(&id) {
+            if !self.coord_communicators.contains_key(remote_addr) {
+                self.logger.warn(format!(
+                    "Coordinador {} no está conectado, no puedo enviarle actualizaciones de Storage",
+                    id
+                ));
+                return;
+            }
+        } else {
+            self.logger.warn(format!(
+                "No se encontró dirección para el coordinador: {}",
+                id
+            ));
+            return;
+        }
+        
+        
         self.logger.info(format!(
             "Recibida solicitud de actualizaciones de Storage desde el nodo {}",
             msg.start_index
@@ -907,17 +941,28 @@ impl Handler<ConnectionClosed> for CoordinatorManager {
             .info(format!("Connection closed: {}", msg.remote_addr));
         // Eliminar el comunicador y la dirección del nodo
         self.coord_communicators.remove(&msg.remote_addr);
-        self.coord_addresses.remove_by_key(&msg.remote_addr);
 
-        // println!(
-        //     "Nodo cerrado: {}. Coordinadores actuales: {:?}",
-        //     msg.remote_addr, self.coord_communicators
-        // );
-        // println!("  ");
-        // println!(
-        //     "Direcciones de coordinadores: {:?}",
-        //     self.coord_addresses
-        // );
+        // Preguntar a Agus por qué lo comenté
+        // self.coord_addresses.remove_by_key(&msg.remote_addr);
+       
+        // Lo reemplacé con esto de acá:
+        if let Some(closed_id) = self.coord_addresses.get_by_key(&msg.remote_addr).cloned() {
+            if let Some(acceptor_addr) = self.ring_nodes.get(&closed_id) {
+                // Actualizar el address del nodo cerrado al del aceptado
+                self.coord_addresses.insert(*acceptor_addr, closed_id.clone());
+                self.logger.info(format!(
+                    "Actualizado address de {} a {}",
+                    closed_id, *acceptor_addr
+                ));
+            } else {
+                self.logger.warn("No previous node found to update address.");
+            }
+        } else {
+            self.logger.warn(format!(
+                "No ID found for closed node at address: {}",
+                msg.remote_addr
+            ));
+        }
 
         // Si el nodo cerrado era el líder actual, iniciamos una elección
         if self.coordinator_actual == Some(msg.remote_addr) {

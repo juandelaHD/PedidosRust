@@ -353,6 +353,7 @@ impl Handler<WhoIsLeader> for Coordinator {
 
         // Si el origen está en user_addresses, actualizar el ID del usuario
         if let Some(_user_id) = self.user_addresses.get_by_key(&user_address) {
+            println!("EL ORIGEN ESTA EN USER_ADDRESSES");
             self.user_addresses
                 .insert(user_address, msg.user_id.clone());
             self.logger.info(format!(
@@ -365,6 +366,7 @@ impl Handler<WhoIsLeader> for Coordinator {
                 "No user ID found for {}. Adding as UNKNOWN_USER.",
                 user_address
             ));
+             println!("EL ORIGEN NOOO ESTA EN USER_ADDRESSES");
             // Si no está, lo actualizamos o lo agregamos
             self.user_addresses
                 .insert(user_address, msg.user_id.clone());
@@ -373,6 +375,7 @@ impl Handler<WhoIsLeader> for Coordinator {
         //  Si hay un coordinador actual, se lo notificamos al cliente
         if let Some(addr) = self.current_coordinator {
             if let Some(sender) = &self.communicators[&msg.origin_addr].sender {
+                println!("ENVIANDO LEADER IS A {}", msg.origin_addr);
                 sender.do_send(NetworkMessage::LeaderIs(LeaderIs { coord_addr: (addr) }));
             } else {
                 self.logger
@@ -382,14 +385,11 @@ impl Handler<WhoIsLeader> for Coordinator {
             // Si no hay coordinador actual, le preguntamos al CoordinatorManager
             self.logger
                 .info("No current coordinator available. Check Server Election implementation.");
-            // TODO: delete this when election is ready
-            if let Some(sender) = &self.communicators[&msg.origin_addr].sender {
-                sender.do_send(NetworkMessage::LeaderIs(LeaderIs {
-                    coord_addr: (self.my_addr),
-                }));
+            if let Some(coordinator_manager) = &self.coordinator_manager {
+                coordinator_manager.do_send(msg);
             } else {
                 self.logger
-                    .info(format!("No sender found for {}", msg.origin_addr));
+                    .info("CoordinatorManager not initialized yet, cannot handle WhoIsLeader.");
             }
         }
     }
@@ -487,7 +487,8 @@ impl Handler<CancelOrder> for Coordinator {
 impl Handler<NetworkMessage> for Coordinator {
     type Result = ();
     fn handle(&mut self, msg: NetworkMessage, ctx: &mut Self::Context) -> Self::Result {
-        match msg {
+        println!("Received NetworkMessage: {:?}", msg);
+        match msg {    
             // All Users messages
             NetworkMessage::WhoIsLeader(msg_data) => {
                 if self.current_coordinator.is_none() {
@@ -915,7 +916,13 @@ impl Handler<NetworkMessage> for Coordinator {
                 let remote_addr = msg_data.remote_addr;
                 // Si el remote_addr está en self.communicators, lo eliminamos
                 if let Some(communicator) = self.communicators.get(&remote_addr) {
-                    // TODO: Handlear eliminacion de usuario
+                    self.communicators.remove(&remote_addr);
+                    self.user_addresses.remove_by_key(&remote_addr);
+                    self.logger.info(format!(
+                        "Removed communicator for {}",
+                        remote_addr
+                    ));
+
                 } else {
                     if let Some(coordinator_manager) = &self.coordinator_manager {
                         coordinator_manager.do_send(msg_data);
