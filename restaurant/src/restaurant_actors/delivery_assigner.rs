@@ -5,7 +5,9 @@ use actix::{Actor, Addr, Handler};
 use colored::Color;
 use common::{
     logger::Logger,
-    messages::{DeliverThisOrder, DeliveryAvailable, RequestNearbyDelivery, UpdateOrderStatus},
+    messages::{
+        CancelOrder, DeliverThisOrder, DeliveryAvailable, RequestNearbyDelivery, UpdateOrderStatus,
+    },
     types::{dtos::OrderDTO, order_status::OrderStatus, restaurant_info::RestaurantInfo},
 };
 use std::collections::HashMap;
@@ -13,7 +15,7 @@ use std::collections::HashMap;
 pub struct DeliveryAssigner {
     /// Información sobre el restaurante.
     pub restaurant_info: RestaurantInfo,
-    /// Queue de pedidos listos para ser despachados.
+    /// Diccionario de pedidos listos para ser despachados.
     pub ready_orders: HashMap<u64, OrderDTO>,
     /// Diccionario de ordenes enviadas y su delivery asignado.
     pub orders_delivery: HashMap<u64, String>,
@@ -57,10 +59,12 @@ impl Handler<SendThisOrder> for DeliveryAssigner {
         // Add the order to the ready orders queue
         self.ready_orders.insert(order.order_id, order.clone());
         // Update the order status in the restaurant
-        self.my_restaurant.do_send(UpdateOrderStatus { order });
+        self.my_restaurant.do_send(UpdateOrderStatus {
+            order: order.clone(),
+        });
         // Notify the server to find nearby deliveries
         self.my_restaurant.do_send(RequestNearbyDelivery {
-            order: msg.order.clone(),
+            order: order.clone(),
             restaurant_info: self.restaurant_info.clone(),
         });
     }
@@ -93,5 +97,16 @@ impl Handler<DeliveryAvailable> for DeliveryAssigner {
                 msg.delivery_info.delivery_id
             ));
         }
+    }
+}
+
+impl Handler<CancelOrder> for DeliveryAssigner {
+    type Result = ();
+
+    fn handle(&mut self, msg: CancelOrder, _ctx: &mut Self::Context) -> Self::Result {
+        self.logger
+            .warn(format!("Cancelling order: {}", msg.order.order_id));
+        // Remove the order from ready orders if it exists
+        self.ready_orders.remove(&msg.order.order_id);
     }
 }

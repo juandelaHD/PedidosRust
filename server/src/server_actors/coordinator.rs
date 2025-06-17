@@ -10,6 +10,7 @@ use colored::Color;
 use common::bimap::BiMap;
 use common::constants::BASE_PORT;
 use common::logger::Logger;
+use common::messages::CancelOrder;
 use common::messages::DeliverThisOrder;
 use common::messages::OrderFinalized;
 use common::messages::UpdateOrderStatus;
@@ -24,6 +25,7 @@ use common::types::dtos::DeliveryDTO;
 use common::types::dtos::OrderDTO;
 use common::types::dtos::RestaurantDTO;
 use common::types::dtos::UserDTO;
+use common::types::order_status::OrderStatus;
 use std::collections::HashSet;
 use std::{collections::HashMap, net::SocketAddr};
 use tokio::net::TcpStream;
@@ -400,6 +402,25 @@ impl Handler<OrderFinalized> for Coordinator {
     }
 }
 
+impl Handler<CancelOrder> for Coordinator {
+    type Result = ();
+
+    fn handle(&mut self, msg: CancelOrder, _ctx: &mut Self::Context) -> Self::Result {
+        self.logger.info(format!(
+            "Received cancel order request for order ID: {}, status was: {:?}",
+            msg.order.order_id, msg.order.status
+        ));
+        // Si el pedido esta en estado "ReadyForDelivery", le aviso al restaurante que no hay delivery (cancelando el pedido)
+        if msg.order.status == OrderStatus::ReadyForDelivery {
+            let restaurant_id = msg.order.restaurant_id.clone();
+            self.send_network_message(restaurant_id, NetworkMessage::CancelOrder(msg.clone()));
+        }
+        // En cualquier otro estado, tambien le aviso al cliente
+        let client_id = msg.order.client_id.clone();
+        self.send_network_message(client_id, NetworkMessage::CancelOrder(msg));
+    }
+}
+
 impl Handler<NetworkMessage> for Coordinator {
     type Result = ();
     fn handle(&mut self, msg: NetworkMessage, ctx: &mut Self::Context) -> Self::Result {
@@ -721,10 +742,6 @@ impl Handler<NetworkMessage> for Coordinator {
                 } else {
                     self.logger.info("OrderService not initialized yet.");
                 }
-            }
-            NetworkMessage::CancelOrder(_msg_data) => {
-                self.logger
-                    .info("Received CancelOrder message, not implemented yet");
             }
             NetworkMessage::RequestNearbyDelivery(msg_data) => {
                 if let Some(service) = &self.nearby_delivery_service {

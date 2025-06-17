@@ -1,10 +1,11 @@
-use crate::messages::internal_messages::GetDeliveries;
+use crate::messages::internal_messages::{GetDeliveries, RemoveOrder};
 use crate::server_actors::coordinator::Coordinator;
 use crate::server_actors::storage::Storage;
 use actix::prelude::*;
 use colored::Color;
 use common::constants::NEARBY_RADIUS;
 use common::logger::Logger;
+use common::messages::CancelOrder;
 use common::messages::coordinator_messages::NearbyDeliveries;
 use common::messages::restaurant_messages::RequestNearbyDelivery;
 use common::types::dtos::DeliveryDTO;
@@ -52,7 +53,7 @@ impl Handler<RequestNearbyDelivery> for NearbyDeliveryService {
         let coordinator_addr = self.coordinator_address.clone();
         let logger = self.logger.clone();
         let get_nearby_deliveries = NearbyDeliveryService::get_nearby_deliveries;
-
+        let storage_addr = self.storage_address.clone();
         let restaurant = msg.restaurant_info.position;
         let order = msg.order;
         self.logger.info(format!(
@@ -66,7 +67,10 @@ impl Handler<RequestNearbyDelivery> for NearbyDeliveryService {
                 Ok(deliveries) => {
                     if deliveries.is_empty() {
                         logger.warn("Retrived  no deliveries from storage.");
-                        // TODO: Check if this is a valid case or if we should handle it differently
+                        coordinator_addr.do_send(CancelOrder {
+                            order: order.clone(),
+                        });
+                        storage_addr.do_send(RemoveOrder { order });
                     } else {
                         logger.info(format!(
                             "Retrieved {} deliveries from storage.",

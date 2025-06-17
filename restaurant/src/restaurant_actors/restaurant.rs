@@ -381,9 +381,18 @@ impl Handler<NetworkMessage> for Restaurant {
                     msg_data.order.order_id
                 ));
             }
-            NetworkMessage::DeliveryAvailable(_msg_data) => {
+            NetworkMessage::DeliveryAvailable(msg_data) => {
                 if let Some(addr) = self.delivery_assigner_address.as_ref() {
-                    addr.do_send(_msg_data);
+                    addr.do_send(msg_data);
+                }
+            }
+            NetworkMessage::CancelOrder(msg_data) => {
+                self.logger.info(format!(
+                    "Order with ID: {} has been cancelled.",
+                    msg_data.order.order_id
+                ));
+                if let Some(addr) = self.delivery_assigner_address.as_ref() {
+                    addr.do_send(msg_data);
                 }
             }
             _ => {

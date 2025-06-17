@@ -423,6 +423,25 @@ impl Handler<NetworkMessage> for Client {
                 ));
                 ctx.address().do_send(msg_data);
             }
+            NetworkMessage::CancelOrder(msg_data) => {
+                // Chequeo si el pedido es el mio
+                if let Some(order) = &self.client_order {
+                    if order.order_id == msg_data.order.order_id {
+                        self.logger
+                            .info("Your order has been cancelled. Try again later.");
+                        self.client_order = None; // Limpiamos el pedido actual
+                    } else {
+                        self.logger.error(format!(
+                            "Received cancel request for order {}, but I have order {}",
+                            msg_data.order.order_id, order.order_id
+                        ));
+                    }
+                } else {
+                    self.logger
+                        .warn("No restaurants found for the order. Try again later.");
+                }
+            }
+
             NetworkMessage::NotifyOrderUpdated(msg_data) => {
                 self.logger.info(format!(
                     "Your order is now: {:?}",

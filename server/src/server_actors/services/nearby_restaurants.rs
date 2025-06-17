@@ -5,8 +5,11 @@ use actix::prelude::*;
 use colored::Color;
 use common::constants::NEARBY_RADIUS;
 use common::logger::Logger;
+use common::messages::CancelOrder;
 use common::messages::NearbyRestaurants;
 use common::messages::RequestNearbyRestaurants;
+use common::types::dtos::OrderDTO;
+use common::types::order_status::OrderStatus;
 use common::types::restaurant_info::RestaurantInfo;
 use common::utils::calculate_distance;
 
@@ -57,6 +60,18 @@ impl Handler<RequestNearbyRestaurants> for NearbyRestaurantsService {
         let location = msg.client.client_position;
         let get_nearby_restaurants = NearbyRestaurantsService::get_nearby_restaurants;
 
+        let order_dummy_cancelled = OrderDTO {
+            order_id: 0,
+            client_id: msg.client.client_id,
+            dish_name: "None".to_string(),
+            restaurant_id: "None".to_string(),
+            status: OrderStatus::Cancelled,
+            delivery_id: None,
+            client_position: msg.client.client_position,
+            expected_delivery_time: 0,
+            time_stamp: std::time::SystemTime::now(),
+        };
+
         storage_addr
             .send(GetAllRestaurantsInfo)
             .into_actor(self)
@@ -64,7 +79,9 @@ impl Handler<RequestNearbyRestaurants> for NearbyRestaurantsService {
                 Ok(restaurants) => {
                     if restaurants.is_empty() {
                         logger.warn("Retrieved no restaurants from storage.");
-                        // TODO: Handle empty restaurant list appropriately
+                        coordinator_addr.do_send(CancelOrder {
+                            order: order_dummy_cancelled,
+                        });
                     } else {
                         logger.info(format!(
                             "Retrieved {} restaurants from storage.",
