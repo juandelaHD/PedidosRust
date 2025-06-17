@@ -15,7 +15,7 @@ use common::types::dtos::RestaurantDTO;
 use common::types::order_status::OrderStatus;
 use common::types::restaurant_info::RestaurantInfo;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::net::SocketAddr;
 
 /////////////////////////////////////////////////////////////////////
@@ -66,15 +66,13 @@ pub struct SetStorageUpdatesLog {
 pub enum StorageLogMessage {
     AddClient(AddClient),
     AddRestaurant(AddRestaurant),
-    AddDelivery(AddDelivery),
+    AddDelivery(AddDelivery), 
     RemoveClient(RemoveClient),
     RemoveRestaurant(RemoveRestaurant),
     RemoveDelivery(RemoveDelivery),
-    GetRestaurants(GetRestaurants),
     SetDeliveryPosition(SetDeliveryPosition),
     SetCurrentClientToDelivery(SetCurrentClientToDelivery),
     SetDeliveryStatus(SetDeliveryStatus),
-
     AcceptedOrder(AcceptedOrder),
 
     /// mensajes con order service
@@ -87,7 +85,9 @@ pub enum StorageLogMessage {
     SetCurrentOrderToDelivery(SetCurrentOrderToDelivery),
     SetDeliveryToOrder(SetDeliveryToOrder),
     SetOrderStatus(SetOrderStatus),
-    // SetOrderToClient(SetOrderToClient),
+
+    InsertAcceptedDelivery(InsertAcceptedDelivery),
+    RemoveAcceptedDeliveries(RemoveAcceptedDeliveries),
 }
 
 #[derive(Message, Debug, Clone, Serialize, Deserialize)]
@@ -317,3 +317,21 @@ pub struct SetActorsAddresses {
 /////////////////////////////////////////////////////////////////////
 // Mensajes de servicios internos
 /////////////////////////////////////////////////////////////////////
+
+
+#[derive(Message, Debug, Clone, Serialize, Deserialize)]
+#[rtype(result = "()")]
+pub struct InsertAcceptedDelivery {
+    pub order_id: u64,
+    pub delivery_id: String,
+}
+
+#[derive(Message, Debug, Clone, Serialize, Deserialize)]
+#[rtype(result = "Option<HashSet<String>>")]
+pub struct RemoveAcceptedDeliveries {
+    pub order_id: u64,
+}
+
+#[derive(Message, Debug, Clone, Serialize, Deserialize)]
+#[rtype(result = "u64")]
+pub struct GetMinLogIndex;

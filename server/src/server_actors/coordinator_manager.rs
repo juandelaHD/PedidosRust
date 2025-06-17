@@ -1,9 +1,10 @@
-use crate::messages::internal_messages::RegisterConnectionWithCoordinator;
+use crate::messages::internal_messages::{RegisterConnectionWithCoordinator, GetMinLogIndex};
 use crate::server_actors::coordinator::Coordinator;
+use crate::server_actors::storage::Storage;
 use actix::prelude::*;
 use colored::Color;
 use common::bimap::BiMap;
-use common::constants::{INTERVAL_HEARTBEAT, TIMEOUT_HEARTBEAT, TIMEOUT_LEADER_RESPONSE};
+use common::constants::{INTERVAL_HEARTBEAT, TIMEOUT_HEARTBEAT, TIMEOUT_LEADER_RESPONSE, INTERVAL_STORAGE};
 use common::logger::Logger;
 use common::messages::coordinatormanager_messages::{CheckPongTimeout, LeaderElection, Ping, Pong};
 use common::messages::shared_messages::{ConnectionClosed, NetworkMessage};
@@ -36,9 +37,12 @@ pub struct CoordinatorManager {
     pong_pending: bool,
     /// Indica si hay una elección de líder en progreso.
     election_in_progress: bool,
-
+    /// Dirección del Storage
+    pub storage: Addr<Storage>,
     pong_leader_addr: Option<SocketAddr>,
     waiting_pong_timer: Option<actix::SpawnHandle>,
+    get_storage_updates_timer: Option<actix::SpawnHandle>,
+    actual_min_log_index: Option<u64>,
 }
 
 impl Actor for CoordinatorManager {
@@ -51,6 +55,7 @@ impl CoordinatorManager {
         my_coordinator_addr: SocketAddr,
         ring_nodes: HashMap<String, SocketAddr>,
         coordinator_addr: Addr<Coordinator>,
+        storage: Addr<Storage>,
     ) -> Self {
         let mut coord_addresses = BiMap::new();
         for (id, addr) in ring_nodes.iter() {
@@ -69,8 +74,11 @@ impl CoordinatorManager {
             coordinator_addr,
             pong_pending: false,
             election_in_progress: false,
+            storage,
             pong_leader_addr: None,
             waiting_pong_timer: None,
+            get_storage_updates_timer: None,
+            actual_min_log_index: None,
         }
     }
 
@@ -99,6 +107,27 @@ impl CoordinatorManager {
             // Broadcast a todos los nodos que soy el líder
             self.broadcast_leader_is();
         }
+    }
+
+    pub fn start_storage_updates_checker(&mut self, ctx: &mut Context<Self>) {
+        if self.get_storage_updates_timer.is_some() {
+            return; // Ya está corriendo
+        }
+
+        let addr = ctx.address();
+        let handler = ctx.run_interval(INTERVAL_STORAGE, move |act, ctx| {
+            if act.election_in_progress {
+                act.logger
+                    .info("Elección en progreso, omitiendo actualizaciones de Storage.");
+                return;
+            }
+
+            act.logger.info("Verificando actualizaciones de Storage...");
+
+            
+        });
+
+        act.get_storage_updates_timer = Some(handler);
     }
 
     fn find_next_in_ring(&self) -> Option<SocketAddr> {
@@ -476,6 +505,8 @@ impl Handler<StartRunning> for CoordinatorManager {
         self.ask_for_leader(ctx);
         // Iniciar el chequeo de heartbeats al lider actual
         self.start_heartbeat_checker(ctx);
+        // Iniciar el chequeo de actualizaciones de Storage
+        self.start_storage_updates_checker(ctx);
     }
 }
 

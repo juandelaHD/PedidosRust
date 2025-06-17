@@ -12,6 +12,7 @@ pub const SERVER_IP_ADDRESS: &str = "127.0.0.1";
 pub const PAYMENT_GATEWAY_PORT: u16 = BASE_PORT + NUM_COORDINATORS + 1;
 pub const PAYMENT_SUCCESS_PROBABILITY: f32 = 0.7;
 pub const INTERVAL_HEARTBEAT: Duration = Duration::from_secs(5);
+pub const INTERVAL_STORAGE: Duration = Duration::from_secs(3);
 pub const TIMEOUT_HEARTBEAT: Duration = Duration::from_secs(3);
 pub const TIMEOUT_LEADER_RESPONSE: Duration = Duration::from_secs(3);
 pub const NUMBER_OF_CHEFS: usize = 4;

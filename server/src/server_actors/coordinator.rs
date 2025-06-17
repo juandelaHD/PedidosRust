@@ -186,12 +186,19 @@ impl Actor for Coordinator {
     type Context = Context<Self>;
 
     fn started(&mut self, ctx: &mut Self::Context) {
+        // Inicializar el servicio de almacenamiento
+        let storage = Storage::new(ctx.address());
+        let storage_address = storage.start();
+        self.storage = Some(storage_address.clone());
+
         let coordinator_manager = CoordinatorManager::new(
             self.id.clone(),
             self.my_addr,
             self.ring_nodes.clone(),
             ctx.address(),
+            storage_address.clone(),
         );
+
         self.coordinator_manager = Some(coordinator_manager.start());
         self.logger.info("Coordinator started.");
 
@@ -217,10 +224,7 @@ impl Actor for Coordinator {
                 .info("CoordinatorManager not initialized yet, cannot start running.");
         }
 
-        // Inicializar el servicio de almacenamiento
-        let storage = Storage::new(ctx.address());
-        let storage_address = storage.start();
-        self.storage = Some(storage_address.clone());
+
 
         // Inicializar el servicio de restaurantes cercanos
         let nearby_restaurant_service =
