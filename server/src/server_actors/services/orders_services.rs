@@ -1,14 +1,16 @@
 use crate::messages::internal_messages::{
-    AddAuthorizedOrderToRestaurant, AddOrder, AddOrderAccepted, AddPendingOrderToRestaurant,
-    FinishDeliveryAssignment, RemoveAuthorizedOrderToRestaurant, RemoveOrder,
-    RemovePendingOrderToRestaurant, SetActorsAddresses, SetCurrentOrderToDelivery,
-    SetDeliveryToOrder, SetOrderStatus,
+    AddOrderAccepted, FinishDeliveryAssignment, SetActorsAddresses,
 };
 use crate::server_actors::coordinator::Coordinator;
 use crate::server_actors::storage::Storage;
 use actix::prelude::*;
 use colored::Color;
 use common::logger::Logger;
+use common::messages::internal_messages::{
+    AddAuthorizedOrderToRestaurant, AddOrder, AddPendingOrderToRestaurant,
+    RemoveAuthorizedOrderToRestaurant, RemoveOrder, RemovePendingOrderToRestaurant,
+    SetCurrentOrderToDelivery, SetDeliveryToOrder, SetOrderStatus,
+};
 use common::messages::{
     AcceptedOrder, BillPayment, DeliverThisOrder, DeliveryAccepted, DeliveryAvailable,
     DeliveryNoNeeded, NotifyOrderUpdated, OrderFinalized, RequestAuthorization, RequestThisOrder,

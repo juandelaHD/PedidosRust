@@ -1,4 +1,4 @@
-use crate::messages::internal_messages::{GetDeliveries, RemoveOrder};
+use common::messages::internal_messages::{GetDeliveries, RemoveOrder};
 use crate::server_actors::coordinator::Coordinator;
 use crate::server_actors::storage::Storage;
 use actix::prelude::*;

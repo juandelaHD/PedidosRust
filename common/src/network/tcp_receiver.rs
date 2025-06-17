@@ -41,10 +41,16 @@ where
             async move {
                 let mut lines = reader.lines();
                 while let Ok(Some(line)) = lines.next_line().await {
-                    if let Ok(msg) = serde_json::from_str::<NetworkMessage>(&line) {
-                        addr.do_send(msg);
-                    } else {
-                        panic!("This message cannot be deserialized: {}", line);
+                    match serde_json::from_str::<NetworkMessage>(&line) {
+                        Ok(msg) => {
+                            addr.do_send(msg);
+                        }
+                        Err(e) => {
+                            panic!(
+                                "This message cannot be deserialized: {}. Error: {}",
+                                line, e
+                            );
+                        }
                     }
                 }
                 addr.do_send(NetworkMessage::ConnectionClosed(ConnectionClosed {

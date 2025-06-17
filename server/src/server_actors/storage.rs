@@ -1,22 +1,26 @@
 use crate::messages::internal_messages::{
-    AddAuthorizedOrderToRestaurant, AddClient, AddDelivery, AddOrder, AddOrderAccepted,
-    AddPendingOrderToRestaurant, AddRestaurant, FinishDeliveryAssignment,
-    GetAllAvailableDeliveries, GetAllRestaurantsInfo, GetClient, GetDeliveries, GetDelivery,
-    GetOrder, GetRestaurant, GetRestaurants, RemoveAuthorizedOrderToRestaurant, RemoveClient,
-    RemoveDelivery, RemoveOrder, RemovePendingOrderToRestaurant, RemoveRestaurant,
-    SetCurrentClientToDelivery, SetCurrentOrderToDelivery, SetDeliveryPosition, SetDeliveryStatus,
-    SetDeliveryToOrder, SetOrderStatus, StorageLogMessage, InsertAcceptedDelivery, RemoveAcceptedDeliveries, GetMinLogIndex
+    AddOrderAccepted, FinishDeliveryAssignment, GetLogsFromIndex, GetMinLogIndex,
 };
 use crate::server_actors::coordinator::Coordinator;
 use actix::prelude::*;
 use colored::Color;
 use common::logger::Logger;
+use common::messages::internal_messages::{
+    AddAuthorizedOrderToRestaurant, AddClient, AddDelivery, AddOrder, AddPendingOrderToRestaurant,
+    AddRestaurant, ApplyStorageUpdates, GetAllAvailableDeliveries, GetAllRestaurantsInfo,
+    GetClient, GetDeliveries, GetDelivery, GetOrder, GetRestaurant, GetRestaurants,
+    InsertAcceptedDelivery, RemoveAcceptedDeliveries, RemoveAuthorizedOrderToRestaurant,
+    RemoveClient, RemoveDelivery, RemoveOrder, RemovePendingOrderToRestaurant, RemoveRestaurant,
+    SetCurrentClientToDelivery, SetCurrentOrderToDelivery, SetDeliveryPosition, SetDeliveryStatus,
+    SetDeliveryToOrder, SetOrderStatus, StorageLogMessage,
+};
 use common::messages::{DeliveryAvailable, DeliveryNoNeeded};
 use common::types::order_status::OrderStatus;
 use common::types::{
     dtos::{ClientDTO, DeliveryDTO, OrderDTO, RestaurantDTO},
     restaurant_info::RestaurantInfo,
 };
+use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
 
 pub struct Storage {
@@ -52,7 +56,7 @@ impl Storage {
             accepted_deliveries: HashMap::new(),
             storage_updates: HashMap::new(),
             next_log_id: 1,
-            min_persistent_log_index: 0, 
+            min_persistent_log_index: 0,
             coordinator,
             logger: Logger::new("Storage", Color::White),
         }
@@ -71,7 +75,137 @@ impl Handler<GetMinLogIndex> for Storage {
     type Result = u64;
 
     fn handle(&mut self, _msg: GetMinLogIndex, _ctx: &mut Self::Context) -> Self::Result {
-       self.min_persistent_log_index
+        self.min_persistent_log_index
+    }
+}
+
+impl Handler<GetLogsFromIndex> for Storage {
+    type Result = MessageResult<GetLogsFromIndex>;
+
+    fn handle(&mut self, msg: GetLogsFromIndex, _ctx: &mut Self::Context) -> Self::Result {
+        let mut logs = HashMap::new();
+        for (id, log) in &self.storage_updates {
+            if *id >= msg.index {
+                logs.insert(*id, log.clone());
+            }
+        }
+        MessageResult(logs)
+    }
+}
+
+impl Handler<ApplyStorageUpdates> for Storage {
+    type Result = ();
+
+    fn handle(&mut self, msg: ApplyStorageUpdates, ctx: &mut Self::Context) -> Self::Result {
+        let is_leader = msg.is_leader;
+        let incoming_updates = msg.updates;
+
+        if is_leader {
+            // Si es el líder, elimina todas las operaciones recibidas de su registro.
+            for (log_id, _) in &incoming_updates {
+                self.storage_updates.remove(log_id);
+                self.min_persistent_log_index = *log_id + 1;
+            }
+        } else {
+            // Si NO es el líder:
+            // 1. Elimina de su registro las operaciones que están en el registro pero NO en el mensaje recibido.
+            if let Some(min_id) = incoming_updates.iter().map(|(id, _)| id).min() {
+                self.min_persistent_log_index = *min_id;
+            }
+            let current_ids: Vec<u64> = self.storage_updates.keys().cloned().collect();
+            let incoming_ids: std::collections::HashSet<u64> =
+                incoming_updates.iter().map(|(id, _)| *id).collect();
+
+            for id in current_ids.iter() {
+                if !incoming_ids.contains(id) {
+                    self.storage_updates.remove(id);
+                    self.min_persistent_log_index = *id + 1;
+                }
+            }
+
+            // 2. Aplica y guarda en su registro las operaciones que están en el mensaje recibido pero NO en el registro.
+            for (id, update) in incoming_updates {
+                match self.storage_updates.entry(id) {
+                    Entry::Occupied(_) => {}
+                    Entry::Vacant(entry) => {
+                        // Aplica la operación
+                        ctx.address().do_send(update.clone());
+
+                        // Guarda la operación en el registro
+                        entry.insert(update);
+                    }
+                }
+            }
+        }
+    }
+}
+
+impl Handler<StorageLogMessage> for Storage {
+    type Result = ();
+
+    fn handle(&mut self, msg: StorageLogMessage, ctx: &mut Self::Context) -> Self::Result {
+        match msg {
+            StorageLogMessage::AddClient(msg) => {
+                ctx.address().do_send(msg);
+            }
+            StorageLogMessage::AddRestaurant(msg) => {
+                ctx.address().do_send(msg);
+            }
+            StorageLogMessage::AddDelivery(msg) => {
+                ctx.address().do_send(msg);
+            }
+            StorageLogMessage::AddOrder(msg) => {
+                ctx.address().do_send(msg);
+            }
+            StorageLogMessage::InsertAcceptedDelivery(msg) => {
+                ctx.address().do_send(msg);
+            }
+            StorageLogMessage::AddAuthorizedOrderToRestaurant(msg) => {
+                ctx.address().do_send(msg);
+            }
+            StorageLogMessage::AddPendingOrderToRestaurant(msg) => {
+                ctx.address().do_send(msg);
+            }
+            StorageLogMessage::RemoveAcceptedDeliveries(msg) => {
+                ctx.address().do_send(msg);
+            }
+            StorageLogMessage::RemoveClient(msg) => {
+                ctx.address().do_send(msg);
+            }
+            StorageLogMessage::RemoveRestaurant(msg) => {
+                ctx.address().do_send(msg);
+            }
+            StorageLogMessage::RemoveDelivery(msg) => {
+                ctx.address().do_send(msg);
+            }
+            StorageLogMessage::RemoveAuthorizedOrderToRestaurant(msg) => {
+                ctx.address().do_send(msg);
+            }
+            StorageLogMessage::RemovePendingOrderToRestaurant(msg) => {
+                ctx.address().do_send(msg);
+            }
+            StorageLogMessage::RemoveOrder(msg) => {
+                ctx.address().do_send(msg);
+            }
+            StorageLogMessage::SetDeliveryPosition(msg) => {
+                ctx.address().do_send(msg);
+            }
+            StorageLogMessage::SetCurrentClientToDelivery(msg) => {
+                ctx.address().do_send(msg);
+            }
+            StorageLogMessage::SetCurrentOrderToDelivery(msg) => {
+                ctx.address().do_send(msg);
+            }
+            StorageLogMessage::SetDeliveryStatus(msg) => {
+                ctx.address().do_send(msg);
+            }
+            StorageLogMessage::SetDeliveryToOrder(msg) => {
+                ctx.address().do_send(msg);
+            }
+            StorageLogMessage::SetOrderStatus(msg) => {
+                ctx.address().do_send(msg);
+            }
+        }
     }
 }
 
@@ -158,7 +292,6 @@ impl Handler<AddOrderAccepted> for Storage {
                     order_id: msg.order.order_id,
                     delivery_id: msg.delivery.delivery_id.clone(),
                 });
-                
             } else {
                 // No existe una delivery aceptada para esta orden.
                 self.logger.info(format!(
@@ -197,9 +330,9 @@ impl Handler<InsertAcceptedDelivery> for Storage {
 
     fn handle(&mut self, msg: InsertAcceptedDelivery, _ctx: &mut Self::Context) -> Self::Result {
         self.accepted_deliveries
-                    .entry(msg.order_id)
-                    .or_default()
-                    .insert(msg.delivery_id.clone());
+            .entry(msg.order_id)
+            .or_default()
+            .insert(msg.delivery_id.clone());
         self.add_to_log(StorageLogMessage::InsertAcceptedDelivery(msg.clone()));
     }
 }
@@ -225,7 +358,9 @@ impl Handler<AddAuthorizedOrderToRestaurant> for Storage {
                 msg.restaurant_id
             ));
         }
-        self.add_to_log(StorageLogMessage::AddAuthorizedOrderToRestaurant(msg.clone()));
+        self.add_to_log(StorageLogMessage::AddAuthorizedOrderToRestaurant(
+            msg.clone(),
+        ));
     }
 }
 
@@ -256,7 +391,6 @@ impl Handler<AddPendingOrderToRestaurant> for Storage {
     }
 }
 
-
 impl Handler<FinishDeliveryAssignment> for Storage {
     type Result = ();
 
@@ -268,7 +402,9 @@ impl Handler<FinishDeliveryAssignment> for Storage {
 
         let fut = ctx
             .address()
-            .send(RemoveAcceptedDeliveries { order_id: order.order_id })
+            .send(RemoveAcceptedDeliveries {
+                order_id: order.order_id,
+            })
             .into_actor(self)
             .then(move |res, _act, _ctx| {
                 match res {
@@ -283,8 +419,7 @@ impl Handler<FinishDeliveryAssignment> for Storage {
                                     delivery_info: delivery.clone(),
                                 });
                             } else {
-                                logger
-                                    .warn(format!("Delivery not found for id: {}", delivery_id));
+                                logger.warn(format!("Delivery not found for id: {}", delivery_id));
                             }
                         }
                     }
@@ -348,7 +483,6 @@ impl Handler<GetOrder> for Storage {
     }
 }
 
-
 // --------------- REMOVES ------------------ //
 
 impl Handler<RemoveClient> for Storage {
@@ -398,7 +532,6 @@ impl Handler<RemoveDelivery> for Storage {
     }
 }
 
-
 impl Handler<RemoveAuthorizedOrderToRestaurant> for Storage {
     type Result = ();
 
@@ -420,7 +553,9 @@ impl Handler<RemoveAuthorizedOrderToRestaurant> for Storage {
                 msg.restaurant_id
             ));
         }
-        self.add_to_log(StorageLogMessage::RemoveAuthorizedOrderToRestaurant(msg.clone()));
+        self.add_to_log(StorageLogMessage::RemoveAuthorizedOrderToRestaurant(
+            msg.clone(),
+        ));
     }
 }
 
@@ -445,7 +580,9 @@ impl Handler<RemovePendingOrderToRestaurant> for Storage {
                 msg.restaurant_id
             ));
         }
-        self.add_to_log(StorageLogMessage::RemovePendingOrderToRestaurant(msg.clone()));
+        self.add_to_log(StorageLogMessage::RemovePendingOrderToRestaurant(
+            msg.clone(),
+        ));
     }
 }
 
@@ -497,7 +634,6 @@ impl Handler<RemoveOrder> for Storage {
 }
 
 // --------------- SETTERS ------------------ //
-
 
 impl Handler<SetDeliveryPosition> for Storage {
     type Result = ();

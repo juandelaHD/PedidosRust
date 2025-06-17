@@ -16,7 +16,6 @@ pub enum UserDTO {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-
 pub struct ClientDTO {
     /// Posición actual del cliente en coordenadas 2D.
     pub client_position: (f32, f32),

@@ -1,14 +1,21 @@
-use crate::messages::internal_messages::{RegisterConnectionWithCoordinator, GetMinLogIndex};
+use crate::messages::internal_messages::{
+    GetLogsFromIndex, GetMinLogIndex, RegisterConnectionWithCoordinator,
+};
 use crate::server_actors::coordinator::Coordinator;
 use crate::server_actors::storage::Storage;
 use actix::prelude::*;
 use colored::Color;
 use common::bimap::BiMap;
-use common::constants::{INTERVAL_HEARTBEAT, TIMEOUT_HEARTBEAT, TIMEOUT_LEADER_RESPONSE, INTERVAL_STORAGE};
+use common::constants::{
+    INTERVAL_HEARTBEAT, INTERVAL_STORAGE, TIMEOUT_HEARTBEAT, TIMEOUT_LEADER_RESPONSE,
+};
 use common::logger::Logger;
 use common::messages::coordinatormanager_messages::{CheckPongTimeout, LeaderElection, Ping, Pong};
 use common::messages::shared_messages::{ConnectionClosed, NetworkMessage};
-use common::messages::{LeaderIdIs, StartRunning, WhoIsLeader};
+use common::messages::{
+    ApplyStorageUpdates, LeaderIdIs, RequestNewStorageUpdates, StartRunning, StorageUpdates,
+    WhoIsLeader,
+};
 use common::network::communicator::Communicator;
 
 use std::{collections::HashMap, net::SocketAddr};
@@ -42,7 +49,6 @@ pub struct CoordinatorManager {
     pong_leader_addr: Option<SocketAddr>,
     waiting_pong_timer: Option<actix::SpawnHandle>,
     get_storage_updates_timer: Option<actix::SpawnHandle>,
-    actual_min_log_index: Option<u64>,
 }
 
 impl Actor for CoordinatorManager {
@@ -78,7 +84,6 @@ impl CoordinatorManager {
             pong_leader_addr: None,
             waiting_pong_timer: None,
             get_storage_updates_timer: None,
-            actual_min_log_index: None,
         }
     }
 
@@ -114,7 +119,14 @@ impl CoordinatorManager {
             return; // Ya está corriendo
         }
 
-        let addr = ctx.address();
+        // let addr = ctx.address();
+        let storage_addr = self.storage.clone();
+        let previous_node_addr_opt = self.find_previous_in_ring();
+        if previous_node_addr_opt.is_none() {
+            return;
+        }
+        let previous_node_addr = previous_node_addr_opt.unwrap();
+
         let handler = ctx.run_interval(INTERVAL_STORAGE, move |act, ctx| {
             if act.election_in_progress {
                 act.logger
@@ -124,10 +136,42 @@ impl CoordinatorManager {
 
             act.logger.info("Verificando actualizaciones de Storage...");
 
-            
+            // Enviar GetMinLogIndex al storage y esperar la respuesta
+            storage_addr
+                .send(GetMinLogIndex)
+                .into_actor(act)
+                .then(move |res, act, _ctx| {
+                    match res {
+                        Ok(min_log_index) => {
+                            act.logger.info(format!(
+                                "Recibido minLogIndex: {:?}, enviando RequestNewStorageUpdates al siguiente nodo.",
+                                min_log_index
+                            ));
+                            
+                            // Enviar RequestNewStorageUpdates al siguiente nodo del anillo
+                            if let Err(e) = act.send_network_message(previous_node_addr, NetworkMessage::RequestNewStorageUpdates(RequestNewStorageUpdates {
+                                coordinator_id: act.id.clone(),
+                                start_index: min_log_index,
+                            })) {
+                                act.logger.warn(format!(
+                                    "Error al enviar RequestNewStorageUpdates: {}",
+                                    e
+                                ));
+                            }
+                        }
+                        Err(e) => {
+                            act.logger.warn(format!(
+                                "Error al obtener minLogIndex de storage: {:?}",
+                                e
+                            ));
+                        }
+                    }
+                    fut::ready(())
+                })
+                .spawn(ctx);
         });
 
-        act.get_storage_updates_timer = Some(handler);
+        self.get_storage_updates_timer = Some(handler);
     }
 
     fn find_next_in_ring(&self) -> Option<SocketAddr> {
@@ -164,6 +208,43 @@ impl CoordinatorManager {
         let idx = nodes.iter().position(|x| *x == self.my_socket_addr)?;
         let next = nodes.get((idx + 1) % nodes.len())?;
         Some(*next)
+    }
+
+    fn find_previous_in_ring(&self) -> Option<SocketAddr> {
+        // Obtener claves de comunicadores conectados (sin incluirme)
+        let mut nodes_ids = self.ring_nodes.keys().cloned().collect::<Vec<_>>();
+        nodes_ids.sort();
+
+        let nodes = nodes_ids
+            .iter()
+            .filter_map(|id| {
+                self.coord_addresses
+                    .get_by_value(id)
+                    .cloned()
+                    .and_then(|addr| {
+                        if self.coord_communicators.contains_key(&addr) || id == &self.id {
+                            Some(addr)
+                        } else {
+                            self.logger.warn(format!(
+                                "Address {} for ID {} not in coord_communicators",
+                                addr, id
+                            ));
+                            None
+                        }
+                    })
+            })
+            .collect::<Vec<_>>();
+
+        if nodes.len() < 2 {
+            // si soy el unico nodo o no hay nodos, no hay siguiente
+            return None;
+        }
+
+        // Buscar el anterior en el anillo
+        let idx = nodes.iter().position(|x| *x == self.my_socket_addr)?;
+        let prev_idx = if idx == 0 { nodes.len() - 1 } else { idx - 1 };
+        let prev = nodes.get(prev_idx)?;
+        Some(*prev)
     }
 
     fn start_heartbeat_checker(&mut self, ctx: &mut Context<Self>) {
@@ -622,6 +703,72 @@ impl Handler<LeaderElection> for CoordinatorManager {
                 self.logger.info(format!("Pasando elección a {}", next));
             }
         }
+    }
+}
+
+impl Handler<StorageUpdates> for CoordinatorManager {
+    type Result = ();
+
+    fn handle(&mut self, msg: StorageUpdates, _ctx: &mut Context<Self>) {
+        self.logger.info(format!(
+            "Recibidas {} actualizaciones de Storage, reenviando a storage...",
+            msg.updates.len()
+        ));
+        // HashMap -> Vector en orden en base a los keys (indices)
+        let mut updates_vec: Vec<_> = msg.updates.into_iter().collect();
+        updates_vec.sort_by_key(|(index, _)| *index);
+        // Enviar los logs al storage
+        self.storage.do_send(ApplyStorageUpdates {
+            is_leader: self.coordinator_actual == Some(self.my_socket_addr),
+            updates: updates_vec,
+        });
+    }
+}
+
+impl Handler<RequestNewStorageUpdates> for CoordinatorManager {
+    type Result = ();
+
+    fn handle(&mut self, msg: RequestNewStorageUpdates, _ctx: &mut Context<Self>) {
+        self.logger.info(format!(
+            "Recibida solicitud de actualizaciones de Storage desde el nodo {}",
+            msg.start_index
+        ));
+
+        // Enviar las actualizaciones de Storage al nodo que lo solicitó
+        self.storage
+            .send(GetLogsFromIndex {
+                index: msg.start_index,
+            })
+            .into_actor(self)
+            .then(move |res, act, _ctx| {
+                match res {
+                    Ok(updates) => {
+                        // Aquí deberíamos enviar las actualizaciones desde min_log_index hasta el final
+                        // Por simplicidad, enviamos un mensaje vacío
+
+                        let remote_addr = act
+                            .coord_addresses
+                            .get_by_value(&msg.coordinator_id)
+                            .cloned()
+                            .unwrap();
+
+                        act.send_network_message(
+                            remote_addr,
+                            NetworkMessage::StorageUpdates(StorageUpdates { updates }),
+                        )
+                        .unwrap_or_else(|e| {
+                            act.logger
+                                .error(format!("Error al enviar StorageUpdates: {}", e))
+                        });
+                    }
+                    Err(e) => {
+                        act.logger
+                            .warn(format!("Error al obtener minLogIndex de storage: {:?}", e));
+                    }
+                }
+                fut::ready(())
+            })
+            .spawn(_ctx);
     }
 }
 

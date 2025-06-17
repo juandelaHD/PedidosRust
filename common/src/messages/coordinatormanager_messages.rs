@@ -1,18 +1,23 @@
+use crate::messages::StorageLogMessage;
 use actix::Message;
 use serde::{Deserialize, Serialize};
+use serde_with::{DisplayFromStr, serde_as};
 use std::collections::HashMap;
 use std::net::SocketAddr;
 
 #[derive(Serialize, Deserialize, Debug, Message, Clone)]
 #[rtype(result = "()")]
 pub struct RequestNewStorageUpdates {
+    pub coordinator_id: String,
     pub start_index: u64,
 }
 
+#[serde_as]
 #[derive(Serialize, Deserialize, Debug, Message, Clone)]
 #[rtype(result = "()")]
 pub struct StorageUpdates {
-    pub updates: HashMap<u64, String>,
+    #[serde_as(as = "HashMap<DisplayFromStr, _>")]
+    pub updates: HashMap<u64, StorageLogMessage>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Message, Clone)]

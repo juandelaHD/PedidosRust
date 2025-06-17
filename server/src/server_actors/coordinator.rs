@@ -1,5 +1,6 @@
 use crate::messages::internal_messages::RegisterConnection;
-use crate::messages::internal_messages::*;
+use crate::messages::internal_messages::RegisterConnectionWithCoordinator;
+use crate::messages::internal_messages::SetActorsAddresses;
 use crate::server_actors::coordinator_manager::CoordinatorManager;
 use crate::server_actors::services::nearby_delivery::NearbyDeliveryService;
 use crate::server_actors::services::nearby_restaurants::NearbyRestaurantsService;
@@ -15,6 +16,7 @@ use common::messages::DeliverThisOrder;
 use common::messages::OrderFinalized;
 use common::messages::UpdateOrderStatus;
 use common::messages::coordinator_messages::*;
+use common::messages::internal_messages::*;
 use common::messages::shared_messages::*;
 use common::network::communicator::Communicator;
 use common::network::connections::connect_to_all;
@@ -223,8 +225,6 @@ impl Actor for Coordinator {
             self.logger
                 .info("CoordinatorManager not initialized yet, cannot start running.");
         }
-
-
 
         // Inicializar el servicio de restaurantes cercanos
         let nearby_restaurant_service =
@@ -842,12 +842,22 @@ impl Handler<NetworkMessage> for Coordinator {
             }
 
             // CoordinatorManager messages
-            NetworkMessage::RequestNewStorageUpdates(_msg_data) => {
+            NetworkMessage::RequestNewStorageUpdates(msg_data) => {
                 self.logger
                     .info("Received RequestNewStorageUpdates message");
+                if let Some(coordinator_manager) = &self.coordinator_manager {
+                    coordinator_manager.do_send(msg_data);
+                } else {
+                    self.logger.info("CoordinatorManager not initialized yet.");
+                }
             }
-            NetworkMessage::StorageUpdates(_msg_data) => {
+            NetworkMessage::StorageUpdates(msg_data) => {
                 self.logger.info("Received StorageUpdates message");
+                if let Some(coordinator_manager) = &self.coordinator_manager {
+                    coordinator_manager.do_send(msg_data);
+                } else {
+                    self.logger.info("CoordinatorManager not initialized yet.");
+                }
             }
             NetworkMessage::RequestAllStorage(_msg_data) => {
                 self.logger.info("Received RequestAllStorage message");
@@ -856,13 +866,13 @@ impl Handler<NetworkMessage> for Coordinator {
                 self.logger
                     .info("Received RecoverStorageOperations message");
             }
-            NetworkMessage::LeaderElection(_msg) => {
+            NetworkMessage::LeaderElection(msg) => {
                 self.logger.info(format!(
                     "Received LeaderElection message from {} with candidates {:?}",
-                    _msg.initiator, _msg.candidates
+                    msg.initiator, msg.candidates
                 ));
                 if let Some(coordinator_manager) = &self.coordinator_manager {
-                    coordinator_manager.do_send(_msg);
+                    coordinator_manager.do_send(msg);
                 } else {
                     self.logger.info("CoordinatorManager not initialized yet.");
                 }

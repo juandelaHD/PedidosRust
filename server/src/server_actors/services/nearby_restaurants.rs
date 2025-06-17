@@ -1,4 +1,4 @@
-use crate::messages::internal_messages::GetAllRestaurantsInfo;
+use common::messages::internal_messages::GetAllRestaurantsInfo;
 use crate::server_actors::coordinator::Coordinator;
 use crate::server_actors::storage::Storage;
 use actix::prelude::*;
