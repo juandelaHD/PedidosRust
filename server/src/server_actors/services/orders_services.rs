@@ -42,7 +42,7 @@ pub struct OrderService {
 
 impl OrderService {
     pub async fn new() -> Self {
-        let logger = Logger::new("OrderService");
+        let logger = Logger::new("Order Service");
 
         let payment_gateway_address = format!("{}:{}", SERVER_IP_ADDRESS, PAYMENT_GATEWAY_PORT)
             .parse::<SocketAddr>()
@@ -219,6 +219,11 @@ impl Handler<NetworkMessage> for OrderService {
                 self.send_to_coordinator(OrderFinalized {
                     order: payment.order.clone(),
                 });
+                // Notificar al  Coordinator para que informe al cliente
+                self.send_to_coordinator(NotifyOrderUpdated {
+                    peer_id: payment.order.client_id.clone(),
+                    order: payment.order.clone(),
+                });
             }
             _ => {
                 self.logger.error(format!(
@@ -240,6 +245,10 @@ impl Handler<UpdateOrderStatus> for OrderService {
                     order: msg.order.clone(),
                     restaurant_id: msg.order.restaurant_id.clone(),
                 });
+                ctx.address().do_send(SetOrderStatus {
+                    order: msg.order.clone(),
+                    order_status: OrderStatus::Pending,
+                });
             }
             OrderStatus::Cancelled => {
                 ctx.address().do_send(RemoveOrder {
@@ -251,6 +260,14 @@ impl Handler<UpdateOrderStatus> for OrderService {
                     order: msg.order.clone(),
                     order_status: OrderStatus::Preparing,
                 });
+                ctx.address().do_send(RemovePendingOrderToRestaurant {
+                    order: msg.order.clone(),
+                    restaurant_id: msg.order.restaurant_id.clone(),
+                });
+                ctx.address().do_send(AddAuthorizedOrderToRestaurant {
+                    order: msg.order.clone(),
+                    restaurant_id: msg.order.restaurant_id.clone(),
+                });
             }
             OrderStatus::ReadyForDelivery => {
                 ctx.address().do_send(SetOrderStatus {
@@ -259,17 +276,30 @@ impl Handler<UpdateOrderStatus> for OrderService {
                 });
             }
             OrderStatus::Delivering => {
-                let delivery_id = msg.order.delivery_id.clone();
-                if delivery_id.is_none() {
+                let delivery_id_opt = msg.order.delivery_id.clone();
+                if delivery_id_opt.is_none() {
                     self.logger.error(format!(
                         "Order {} is Delivering but has no delivery_id",
                         msg.order.order_id
                     ));
                     return;
                 }
+                let delivery_id = delivery_id_opt.unwrap();
                 ctx.address().do_send(SetCurrentOrderToDelivery {
-                    delivery_id: delivery_id.unwrap(),
+                    delivery_id: delivery_id.clone(),
                     order: msg.order.clone(),
+                });
+                ctx.address().do_send(SetDeliveryToOrder {
+                    order: msg.order.clone(),
+                    delivery_id,
+                });
+                ctx.address().do_send(SetOrderStatus {
+                    order: msg.order.clone(),
+                    order_status: OrderStatus::Delivering,
+                });
+                ctx.address().do_send(RemoveAuthorizedOrderToRestaurant {
+                    order: msg.order.clone(),
+                    restaurant_id: msg.order.restaurant_id.clone(),
                 });
             }
             OrderStatus::Delivered => {
@@ -398,15 +428,10 @@ impl Handler<RemoveOrder> for OrderService {
 
     fn handle(&mut self, msg: RemoveOrder, _ctx: &mut Self::Context) -> Self::Result {
         self.logger.info(format!(
-            "Reenviando RemoveOrder al Storage: {:?}",
+            "Reenviando Remove Order al Storage: {:?}",
             msg.order
         ));
         self.send_to_storage(msg.clone());
-        // Notificar al Coordinator para que informe al cliente
-        self.send_to_coordinator(NotifyOrderUpdated {
-            peer_id: msg.order.client_id.clone(),
-            order: msg.order.clone(),
-        });
     }
 }
 
@@ -441,11 +466,6 @@ impl Handler<AddPendingOrderToRestaurant> for OrderService {
             msg.restaurant_id
         ));
         self.send_to_storage(msg.clone());
-        // Notificar al Coordinator para que informe al cliente
-        self.send_to_coordinator(NotifyOrderUpdated {
-            peer_id: msg.order.client_id.to_string(),
-            order: msg.order.clone(),
-        });
     }
 }
 
@@ -493,11 +513,6 @@ impl Handler<SetCurrentOrderToDelivery> for OrderService {
             msg.order.order_id.clone()
         ));
         self.send_to_storage(msg.clone());
-        // Notificar al Coordinator para que informe al cliente
-        self.send_to_coordinator(NotifyOrderUpdated {
-            peer_id: msg.order.client_id.clone(),
-            order: msg.order.clone(),
-        });
     }
 }
 
@@ -534,7 +549,5 @@ impl Handler<SetDeliveryToOrder> for OrderService {
         ));
 
         self.send_to_storage(msg);
-
-        // 2. Notificar al Coordinator para que avise al Cliente
     }
 }

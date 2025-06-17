@@ -1,5 +1,6 @@
 use actix::prelude::*;
 use common::constants::{PAYMENT_GATEWAY_PORT, PAYMENT_SUCCESS_PROBABILITY, SERVER_IP_ADDRESS};
+use std::io::{self, Write};
 use std::net::SocketAddr;
 use tokio::signal::ctrl_c;
 mod payment;
@@ -12,6 +13,9 @@ async fn main() {
     let my_addr = format!("{}:{}", SERVER_IP_ADDRESS, PAYMENT_GATEWAY_PORT)
         .parse::<SocketAddr>()
         .expect("Failed to parse server address");
+
+    print!("\x1B[2J\x1B[1;1H");
+    io::stdout().flush().unwrap();
 
     // Iniciar el PaymentGateway
     let payment_gateway = PaymentGateway::new(PAYMENT_SUCCESS_PROBABILITY);

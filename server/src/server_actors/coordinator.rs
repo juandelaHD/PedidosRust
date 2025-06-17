@@ -394,13 +394,8 @@ impl Handler<OrderFinalized> for Coordinator {
     type Result = ();
 
     fn handle(&mut self, msg: OrderFinalized, _ctx: &mut Self::Context) -> Self::Result {
-        self.logger.info(format!(
-            "Received order finalized: {:?} for restaurant: {}",
-            msg.order,
-            msg.order.restaurant_id.clone()
-        ));
         let restaurant_id = msg.order.restaurant_id.clone();
-        self.send_network_message(restaurant_id, NetworkMessage::OrderFinalized(msg));
+        self.send_network_message(restaurant_id, NetworkMessage::OrderFinalized(msg.clone()));
     }
 }
 
@@ -455,7 +450,7 @@ impl Handler<NetworkMessage> for Coordinator {
                                         .as_ref()
                                         .unwrap()
                                         .send(GetClient {
-                                            restaurant_id: client_id_clone.clone(),
+                                            client_id: client_id_clone.clone(),
                                         })
                                         .await
                                     {

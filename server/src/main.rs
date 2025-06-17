@@ -5,6 +5,7 @@ use server::server_acceptor::acceptor::Acceptor;
 use server::server_actors::coordinator::Coordinator;
 use std::env;
 use std::net::SocketAddr;
+use std::io::{self, Write};
 use tokio::signal::ctrl_c;
 
 #[actix::main]
@@ -26,6 +27,10 @@ async fn main() {
         .map(|i| SocketAddr::new(ip, BASE_PORT + i))
         .filter(|addr| *addr != my_addr)
         .collect::<Vec<SocketAddr>>();
+
+    print!("\x1B[2J\x1B[1;1H");
+    io::stdout().flush().unwrap();
+
     // Iniciar el Coordinator
     let coordinator = Coordinator::new(my_addr, ring_nodes.clone()).await;
     let coordinator_addr = coordinator.start();

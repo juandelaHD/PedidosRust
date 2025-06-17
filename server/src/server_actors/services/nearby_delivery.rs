@@ -17,7 +17,7 @@ pub struct NearbyDeliveryService {
 
 impl NearbyDeliveryService {
     pub fn new(storage_address: Addr<Storage>, coordinator_address: Addr<Coordinator>) -> Self {
-        let logger = Logger::new("NearbyDeliveryService");
+        let logger = Logger::new("Nearby Delivery Service");
         NearbyDeliveryService {
             coordinator_address,
             storage_address,

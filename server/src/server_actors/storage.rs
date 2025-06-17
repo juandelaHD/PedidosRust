@@ -47,7 +47,7 @@ impl Storage {
             storage_updates: HashMap::new(),
             accepted_deliveries: HashMap::new(),
             coordinator,
-            logger: Logger::new("Storage".to_string()),
+            logger: Logger::new("Storage"),
         }
     }
 }
@@ -167,10 +167,6 @@ impl Handler<FinishDeliveryAssignment> for Storage {
     type Result = ();
 
     fn handle(&mut self, msg: FinishDeliveryAssignment, _ctx: &mut Self::Context) -> Self::Result {
-        // actualizar el delivery asignado a la orden
-        if let Some(order) = self.orders.get_mut(&msg.order.order_id) {
-            order.delivery_id = msg.order.delivery_id.clone();
-        }
         if let Some(deliveries) = self.accepted_deliveries.remove(&msg.order.order_id) {
             for delivery_id in deliveries {
                 // Notificar a las deliveries que no son necesarias
@@ -200,7 +196,7 @@ impl Handler<GetClient> for Storage {
     type Result = MessageResult<GetClient>;
 
     fn handle(&mut self, msg: GetClient, _ctx: &mut Self::Context) -> Self::Result {
-        MessageResult(self.clients.get(&msg.restaurant_id).cloned())
+        MessageResult(self.clients.get(&msg.client_id).cloned())
     }
 }
 
@@ -280,11 +276,37 @@ impl Handler<RemoveOrder> for Storage {
         self.logger
             .info(format!("Order removed: {}", msg.order.order_id));
         if let Some(order) = self.orders.remove(&msg.order.order_id) {
+            // Limpiar la orden del cliente
             if let Some(client) = self.clients.get_mut(&order.client_id) {
                 client.client_order = None;
             } else {
                 self.logger
-                    .error(format!("Client not found for order: {}", order.client_id));
+                    .warn(format!("Client not found for order: {}", order.client_id));
+            }
+
+            // Limpiar la orden de los pedidos del restaurante
+            if let Some(restaurant) = self.restaurants.get_mut(&order.restaurant_id) {
+                restaurant.pending_orders.remove(&order);
+                restaurant.authorized_orders.remove(&order);
+            } else {
+                self.logger.warn(format!(
+                    "Restaurant not found for order: {}",
+                    order.restaurant_id
+                ));
+            }
+
+            // Limpiar la orden del delivery si corresponde
+            if let Some(delivery_id) = &order.delivery_id {
+                if let Some(delivery) = self.deliverys.get_mut(delivery_id) {
+                    if let Some(current_order) = &delivery.current_order {
+                        if current_order.order_id == order.order_id {
+                            delivery.current_order = None;
+                        }
+                    }
+                } else {
+                    self.logger
+                        .warn(format!("Delivery not found for order: {}", delivery_id));
+                }
             }
         } else {
             self.logger
@@ -486,8 +508,18 @@ impl Handler<SetOrderStatus> for Storage {
     fn handle(&mut self, msg: SetOrderStatus, _ctx: &mut Self::Context) -> Self::Result {
         if let Some(order) = self.orders.get_mut(&msg.order.order_id) {
             order.status = msg.order_status;
-            self.logger
-                .info(format!("Order status updated: {}", msg.order.order_id));
+            if let Some(client) = self.clients.get_mut(&msg.order.client_id) {
+                client.client_order = Some(msg.order.clone());
+                self.logger.info(format!(
+                    "Order status updated for client: {}",
+                    msg.order.client_id
+                ));
+            } else {
+                self.logger.error(format!(
+                    "Client not found for order: {}",
+                    msg.order.client_id
+                ));
+            }
         } else {
             self.logger
                 .error(format!("Order not found: {}", msg.order.order_id));

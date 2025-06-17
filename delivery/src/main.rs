@@ -1,6 +1,6 @@
 use actix::prelude::*;
 use common::constants::{BASE_PORT, NUM_COORDINATORS, SERVER_IP_ADDRESS, SUCCESS_PROBABILITY};
-use common::utils::get_rand_f32_tuple;
+use common::utils::{get_rand_f32_tuple, print_welcome_message};
 use delivery::delivery_actors::delivery::Delivery;
 use std::env;
 use std::net::SocketAddr;
@@ -16,7 +16,6 @@ async fn main() -> std::io::Result<()> {
     }
 
     let id = args[1].clone();
-
     let servers: Vec<SocketAddr> = (0..NUM_COORDINATORS)
         .map(|i| {
             format!("{}:{}", SERVER_IP_ADDRESS, BASE_PORT + i)
@@ -26,6 +25,8 @@ async fn main() -> std::io::Result<()> {
         .collect();
 
     let position = get_rand_f32_tuple();
+
+    print_welcome_message();
 
     let delivery = Delivery::new(servers.clone(), id, position, SUCCESS_PROBABILITY).await;
     delivery.start();

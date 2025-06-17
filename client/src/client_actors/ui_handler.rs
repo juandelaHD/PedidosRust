@@ -23,7 +23,7 @@ impl UIHandler {
         possible_restaurants: Vec<RestaurantInfo>,
     ) -> (String, String) {
         let selected_index = loop {
-            self.logger.info("\nSelect a restaurant by number:");
+            self.logger.info("Select a restaurant by number:");
             for (i, restaurant) in possible_restaurants.iter().enumerate() {
                 self.logger.info(format!("{}: {}", i + 1, restaurant.id));
             }

@@ -132,7 +132,7 @@ pub struct FinishDeliveryAssignment {
 #[derive(Message, Debug, Clone, Serialize, Deserialize)]
 #[rtype(result = "Option<ClientDTO>")]
 pub struct GetClient {
-    pub restaurant_id: String,
+    pub client_id: String,
 }
 
 #[derive(Message, Debug, Clone, Serialize, Deserialize)]

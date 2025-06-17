@@ -398,9 +398,8 @@ impl Handler<DeliverThisOrder> for Delivery {
                     current_order.client_id, msg.order.client_position
                 ));
                 // Actualizar el estado del delivery y la orden
-                self.status = DeliveryStatus::Delivering;
-                let mut order = msg.order.clone();
-                order.status = OrderStatus::Delivering;
+                let mut new_order = msg.order.clone();
+                new_order.status = OrderStatus::Delivering;
 
                 // Simular el tiempo de llegada al restaurante y al cliente
                 let delay_ms = self.calcular_delay_ms(
@@ -414,10 +413,10 @@ impl Handler<DeliverThisOrder> for Delivery {
                     delay_ms as f64 / 1000.0
                 ));
 
-                order.expected_delivery_time = delay_ms;
+                new_order.expected_delivery_time = delay_ms;
 
                 self.send_network_message(NetworkMessage::UpdateOrderStatus(UpdateOrderStatus {
-                    order: order.clone(),
+                    order: new_order.clone(),
                 }));
 
                 let order = msg.order.clone();
@@ -450,7 +449,13 @@ impl Handler<OrderDelivered> for Delivery {
                     "Order ID: {} delivered successfully.",
                     msg.order.order_id
                 ));
-                self.send_network_message(NetworkMessage::OrderDelivered(msg.clone()));
+                let mut new_order = msg.order.clone();
+                new_order.status = OrderStatus::Delivered;
+
+                self.send_network_message(NetworkMessage::OrderDelivered(OrderDelivered {
+                    order: new_order,
+                }));
+
                 self.current_order = None;
                 self.status = DeliveryStatus::Available;
                 let my_delivery_info = DeliveryDTO {

@@ -268,13 +268,13 @@ impl Handler<RecoverProcedure> for Client {
                         match client_dto.status {
                             OrderStatus::Cancelled => {
                                 self.logger.warn(format!(
-                                    "Order cancelled: {}. Try again later.",
+                                    "Your order has been cancelled: {}. Try again later.",
                                     client_dto.dish_name
                                 ));
                             }
                             OrderStatus::Delivered => {
                                 self.logger.info(format!(
-                                    "Order has already been delivered: {}. Enjoy your meal!",
+                                    "Your order has already been delivered: {}. Enjoy your meal!",
                                     client_dto.dish_name
                                 ));
                             }
@@ -430,17 +430,13 @@ impl Handler<NetworkMessage> for Client {
                 self.client_order = Some(msg_data.order.clone());
                 match msg_data.order.status {
                     OrderStatus::Delivered => {
-                        self.logger.info(format!(
-                            "Order {} has been delivered. Thanks for using our service!",
-                            msg_data.order.order_id
-                        ));
+                        self.logger
+                            .info("Your order has been delivered. Thanks for using our service!");
                         ctx.stop();
                     }
                     OrderStatus::Unauthorized => {
-                        self.logger.info(format!(
-                            "Order {} has been unauthorized. Please try again later.",
-                            msg_data.order.order_id
-                        ));
+                        self.logger
+                            .info("Your order has been unauthorized. Please try again later.");
                         ctx.stop();
                     }
                     OrderStatus::Cancelled => {

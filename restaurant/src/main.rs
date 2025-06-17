@@ -1,7 +1,7 @@
 use actix::prelude::*;
 use common::constants::{BASE_PORT, NUM_COORDINATORS, SERVER_IP_ADDRESS, SUCCESS_PROBABILITY};
 use common::types::restaurant_info::RestaurantInfo;
-use common::utils::get_rand_f32_tuple;
+use common::utils::{get_rand_f32_tuple, print_welcome_message};
 use restaurant::restaurant_actors::restaurant::Restaurant;
 use std::env;
 use std::net::SocketAddr;
@@ -15,6 +15,8 @@ async fn main() -> std::io::Result<()> {
         std::process::exit(1);
     }
 
+    let id = args[1].clone();
+
     let servers: Vec<SocketAddr> = (0..NUM_COORDINATORS)
         .map(|i| {
             format!("{}:{}", SERVER_IP_ADDRESS, BASE_PORT + i)
@@ -23,8 +25,9 @@ async fn main() -> std::io::Result<()> {
         })
         .collect();
 
-    let id = args[1].clone();
     let position = get_rand_f32_tuple();
+
+    print_welcome_message();
 
     let restaurant = Restaurant::new(
         RestaurantInfo { id, position },

@@ -61,20 +61,20 @@ impl Handler<NetworkMessage> for PaymentGateway {
             NetworkMessage::RequestAuthorization(msg) => {
                 let mut new_order_dto = msg.order.clone();
                 let order_id = new_order_dto.order_id;
-                self.logger
-                    .info(format!("New order received: {:?}", new_order_dto));
+                self.logger.info(format!(
+                    "New order received: Dish='{}', Client={}, Restaurant={}",
+                    new_order_dto.dish_name, new_order_dto.client_id, new_order_dto.restaurant_id
+                ));
                 // Simulate authorization logic
                 let should_authorize =
                     random_bool_by_given_probability(self.probability_of_success);
                 if should_authorize {
-                    self.logger
-                        .info(format!("✅ Order {} authorized", order_id));
-
+                    self.logger.info("✅ Order authorized");
                     // Store the authorized order
                     self.authorized_orders.insert(order_id);
                     new_order_dto.status = OrderStatus::Authorized;
                 } else {
-                    self.logger.warn(format!("❌ Order {} rejected", order_id));
+                    self.logger.warn("❌ Order rejected");
                     new_order_dto.status = OrderStatus::Unauthorized;
                 }
                 self.send_network_message(
