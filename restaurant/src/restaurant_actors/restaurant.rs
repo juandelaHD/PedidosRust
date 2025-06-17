@@ -7,7 +7,7 @@ use common::messages::{
     RecoverProcedure, RegisterUser, RequestNearbyDelivery, UpdateOrderStatus, WhoIsLeader,
 };
 use common::network::communicator::Communicator;
-use common::network::connections::{connect_some, try_to_connect};
+use common::network::connections::{connect_some, try_to_connect, connect_to_all};
 use common::network::peer_types::PeerType;
 use common::types::dtos::{OrderDTO, UserDTO};
 use common::types::order_status::OrderStatus;
@@ -21,21 +21,41 @@ use crate::restaurant_actors::delivery_assigner::DeliveryAssigner;
 use crate::restaurant_actors::kitchen::Kitchen;
 use colored::Color;
 
+/// The `Restaurant` actor represents a restaurant in the distributed food ordering system.
+///
+/// ## Responsibilities
+/// - Registers itself with the server cluster.
+/// - Receives and processes new orders from clients.
+/// - Forwards orders to the kitchen for preparation.
+/// - Handles delivery assignment and order status updates.
+/// - Manages reconnection and recovery scenarios.
 pub struct Restaurant {
-    /// Información básica del restaurante
+    /// Basic information about the restaurant.
     pub info: RestaurantInfo,
-    /// Probabilidad de aceptar o rechazar un pedido.
+    /// Probability for accepting or rejecting an order.
     pub probability: f32,
-    /// Canal de envío hacia la cocina.
+    /// Address of the kitchen actor.
     pub kitchen_address: Option<Addr<Kitchen>>,
+    /// Address of the delivery assigner actor.
     pub delivery_assigner_address: Option<Addr<DeliveryAssigner>>,
+    /// Network communicator for server interaction.
     pub communicator: Option<Communicator<Restaurant>>,
+    /// Pending TCP stream before the actor starts.
     pub pending_stream: Option<TcpStream>,
+    /// Logger for restaurant events.
     pub logger: Logger,
+    /// List of server socket addresses.
     pub servers: Vec<SocketAddr>,
 }
 
 impl Restaurant {
+    /// Creates a new `Restaurant` actor instance.
+    ///
+    /// # Arguments
+    /// * `info` - Basic information about the restaurant.
+    /// * `probability` - Probability fo accepting or rejecting an order.
+    /// * `servers` - List of server socket addresses.
+    /// * `logger` - Logger for restaurant events.
     pub async fn new(info: RestaurantInfo, probability: f32, servers: Vec<SocketAddr>) -> Self {
         let logger = Logger::new("Restaurant", Color::BrightGreen);
         logger.info(format!("Hello: {}'s restaurant!", info.id));
@@ -89,12 +109,15 @@ impl Restaurant {
 }
 
 pub async fn reconnect(servers: Vec<SocketAddr>) -> Option<TcpStream> {
-    // llamar al connect some para intentar reconectar
-    let servers = servers.clone();
     let new_stream = connect_some(servers, PeerType::RestaurantType).await;
     new_stream
 }
 
+/// Handles [`ConnectionClosed`] messages.
+///
+/// This handler is triggered when the connection to the server is lost.
+/// It attempts to reconnect to one of the known servers. If reconnection is successful,
+/// it reinitializes the communicator and restarts the actor. If not, the actor is stopped.
 impl Handler<ConnectionClosed> for Restaurant {
     type Result = ();
 
@@ -107,19 +130,20 @@ impl Handler<ConnectionClosed> for Restaurant {
         let servers = self.servers.clone();
         let fut = async move { reconnect(servers).await };
 
-        let fut = wrap_future::<_, Self>(fut).map(|new_stream, actor: &mut Self, ctx| {
-            match new_stream {
+        let fut = wrap_future::<_, Self>(fut).map(|result, actor: &mut Self, ctx| {
+            match result {
                 Some(stream) => {
-                    actor.pending_stream = Some(stream);
                     let communicator = Communicator::new(
-                        actor
-                            .pending_stream
-                            .take()
-                            .expect("Pending stream should be set"),
+                        stream,
                         ctx.address(),
                         PeerType::RestaurantType,
                     );
                     actor.communicator = Some(communicator);
+
+                    println!(
+                        "Reconnected to the server at address: {}",
+                        actor.communicator.as_ref().unwrap().peer_address
+                    );
 
                     actor.delivery_assigner_address =
                         Some(DeliveryAssigner::new(actor.info.clone(), ctx.address()).start());
@@ -131,10 +155,14 @@ impl Handler<ConnectionClosed> for Restaurant {
                         )
                         .start(),
                     );
+
+                    // Reinicia el actor para que vuelva a funcionar
+                    actor.logger.info("Reconnected successfully. Restarting actor...");
+                    std::thread::sleep(std::time::Duration::from_secs(3));
                     actor.start_running(ctx);
                 }
                 None => {
-                    actor.logger.error("No se pudo reconectar. Cerrando actor.");
+                    actor.logger.error(format!("No se pudo reconectar. Cerrando actor."));
                     ctx.stop(); // Detiene el actor
                 }
             }
@@ -170,6 +198,11 @@ impl Actor for Restaurant {
     }
 }
 
+/// Handles [`LeaderIs`] messages.
+///
+/// This handler is called when the server notifies the restaurant of the current leader's address.
+/// If already connected to the leader, it registers itself. Otherwise, it attempts to connect to the new leader
+/// and updates its communicator accordingly.
 impl Handler<LeaderIs> for Restaurant {
     type Result = ();
 
@@ -183,7 +216,7 @@ impl Handler<LeaderIs> for Restaurant {
         if Some(leader_addr) == communicator_opt {
             self.logger.info(format!(
                 "Already connected to the leader at address: {}",
-                leader_addr
+                leader_addr.clone()
             ));
             let local_address = self
                 .communicator
@@ -191,7 +224,7 @@ impl Handler<LeaderIs> for Restaurant {
                 .map(|c| c.local_address)
                 .expect("Socket address not set");
             self.send_network_message(NetworkMessage::RegisterUser(RegisterUser {
-                origin_addr: local_address,
+                origin_addr: local_address.clone(),
                 user_id: self.info.id.clone(),
                 position: self.info.position,
             }));
@@ -199,6 +232,10 @@ impl Handler<LeaderIs> for Restaurant {
         }
         // Si no estamos conectados al líder, intentamos conectarnos
         ctx.spawn(wrap_future(async move {
+            logger.info(format!(
+                "Attempting to connect to the new leader at address: {}",
+                leader_addr
+            ));
             if let Some(new_stream) = try_to_connect(leader_addr).await {
                 let new_communicator =
                     Communicator::new(new_stream, self_addr.clone(), PeerType::RestaurantType);
@@ -226,6 +263,10 @@ impl Handler<LeaderIs> for Restaurant {
     }
 }
 
+/// Handles [`RecoverProcedure`] messages.
+///
+/// This handler is used to recover the restaurant's state after a reconnection or failure.
+/// It updates the restaurant's position and replays all pending and authorized orders to the kitchen.
 impl Handler<RecoverProcedure> for Restaurant {
     type Result = ();
 
@@ -271,6 +312,9 @@ impl Handler<RecoverProcedure> for Restaurant {
     }
 }
 
+/// Handles [`UpdateCommunicator`] messages.
+///
+/// Updates the restaurant's network communicator with a new connection to the server leader.
 pub struct UpdateCommunicator(pub Communicator<Restaurant>);
 
 impl Message for UpdateCommunicator {
@@ -289,6 +333,11 @@ impl Handler<UpdateCommunicator> for Restaurant {
     }
 }
 
+/// Handles [`NewOrder`] messages.
+///
+/// Processes a new order received from the server. If the order is pending, it forwards it to the kitchen.
+/// If the order is authorized, it randomly accepts or rejects it based on the restaurant's probability,
+/// then updates the order status accordingly.
 impl Handler<NewOrder> for Restaurant {
     type Result = ();
 
@@ -354,6 +403,9 @@ impl Handler<NewOrder> for Restaurant {
     }
 }
 
+/// Handles [`UpdateOrderStatus`] messages.
+///
+/// Forwards an order status update to the server cluster via the network communicator.
 impl Handler<UpdateOrderStatus> for Restaurant {
     type Result = ();
 
@@ -362,6 +414,9 @@ impl Handler<UpdateOrderStatus> for Restaurant {
     }
 }
 
+/// Handles [`RequestNearbyDelivery`] messages.
+///
+/// Sends a request to the server to find available delivery personnel for a given order.
 impl Handler<RequestNearbyDelivery> for Restaurant {
     type Result = ();
 
@@ -374,6 +429,9 @@ impl Handler<RequestNearbyDelivery> for Restaurant {
     }
 }
 
+/// Handles [`DeliveryAccepted`] messages.
+///
+/// Notifies the server that a delivery person has accepted the delivery for a specific order.
 impl Handler<DeliveryAccepted> for Restaurant {
     type Result = ();
 
@@ -382,6 +440,10 @@ impl Handler<DeliveryAccepted> for Restaurant {
     }
 }
 
+/// Handles [`DeliverThisOrder`] messages.
+///
+/// Forwards the delivery assignment to the server, indicating that the delivery
+/// has to proceed.
 impl Handler<DeliverThisOrder> for Restaurant {
     type Result = ();
 
@@ -390,11 +452,21 @@ impl Handler<DeliverThisOrder> for Restaurant {
     }
 }
 
+/// Handles [`NetworkMessage`] messages.
+///
+/// This is the main entry point for all network messages received by the restaurant actor.
+/// It matches on the message variant and dispatches logic accordingly, such as handling recovered state,
+/// new orders, delivery updates, and order finalization.
 impl Handler<NetworkMessage> for Restaurant {
     type Result = ();
     fn handle(&mut self, msg: NetworkMessage, ctx: &mut Self::Context) -> Self::Result {
         match msg {
             // All Users messages
+            NetworkMessage::RetryLater(_msg_data) => {
+                self.logger.info("Retrying to connect in some seconds");
+                std::thread::sleep(std::time::Duration::from_secs(3));
+                self.start_running(ctx);
+            }
             NetworkMessage::LeaderIs(msg_data) => ctx.address().do_send(msg_data),
             NetworkMessage::RecoveredInfo(user_dto_opt) => {
                 let user_dto = user_dto_opt;

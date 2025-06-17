@@ -11,18 +11,35 @@ use common::types::dtos::OrderDTO;
 use common::types::order_status::OrderStatus;
 use std::collections::VecDeque;
 
+/// The `Kitchen` actor is responsible for managing the queue of orders to be prepared,
+/// assigning them to available chefs, and coordinating with the restaurant and delivery assigner.
+///
+/// ## Responsibilities:
+/// - Maintains a queue of pending orders.
+/// - Manages available chefs for order preparation.
+/// - Assigns orders to chefs as they become available.
+/// - Notifies the restaurant and delivery assigner when orders are ready.
 pub struct Kitchen {
-    // Ordenes pendientes para ser preparadas.
+    /// Queue of orders waiting to be prepared.
     pub pending_orders: VecDeque<OrderDTO>,
-    // Chefs disponibles para preparar pedidos.
+    /// Queue of available chefs.
     pub chefs_available: VecDeque<Addr<Chef>>,
-    // Comunicador asociado al `Server`.
+    /// Address of the parent restaurant actor.
     pub my_restaurant: Addr<Restaurant>,
+    /// Address of the delivery assigner actor.
     pub my_delivery_assigner: Addr<DeliveryAssigner>,
+    /// Logger for kitchen events.
     pub logger: Logger,
 }
 
 impl Kitchen {
+    /// Creates a new `Kitchen` actor with the specified restaurant and delivery assigner addresses.
+    ///
+    /// Initializes the kitchen with empty queues for pending orders and available chefs.
+    ///
+    /// ## Arguments
+    /// * `my_restaurant` - The address of the restaurant actor.
+    /// * `my_delivery_assigner` - The address of the delivery assigner actor.
     pub fn new(
         my_restaurant: Addr<Restaurant>,
         my_delivery_assigner: Addr<DeliveryAssigner>,
@@ -44,6 +61,10 @@ impl Kitchen {
         }
     }
 
+    /// Assigns pending orders to available chefs.
+    ///
+    /// Iterates through the available chefs and pending orders, assigning each order to a chef
+    /// and updating the order status to "Preparing".
     pub fn assign_orders_to_chefs(&mut self, _ctx: &mut Context<Kitchen>) {
         while let Some(chef) = self.chefs_available.pop_front() {
             if let Some(mut order) = self.pending_orders.pop_front() {
@@ -68,6 +89,7 @@ impl Kitchen {
 impl Actor for Kitchen {
     type Context = Context<Self>;
 
+    /// Initializes the kitchen by spawning chefs and assigning any pending orders.
     fn started(&mut self, ctx: &mut Self::Context) {
         // Initialize chefs
         for _ in 0..NUMBER_OF_CHEFS {
@@ -80,6 +102,10 @@ impl Actor for Kitchen {
     }
 }
 
+/// Handles [`SendToKitchen`] messages.
+///
+/// Receives a new order from the restaurant and enqueues it for preparation.
+/// Triggers assignment of orders to available chefs.
 impl Handler<SendToKitchen> for Kitchen {
     type Result = ();
 
@@ -89,6 +115,10 @@ impl Handler<SendToKitchen> for Kitchen {
     }
 }
 
+/// Handles [`IAmAvailable`] messages.
+///
+/// Receives notification from a chef that they are available for a new order.
+/// Adds the chef to the available queue and attempts to assign pending orders.
 impl Handler<IAmAvailable> for Kitchen {
     type Result = ();
 

@@ -393,6 +393,9 @@ impl CoordinatorManager {
                 });
                 self.logger
                     .info(format!("Broadcasting new leader: {}", leader));
+                self.coordinator_addr.do_send(LeaderIdIs {
+                    leader_id: leader_id.to_string(),
+                });
                 self.broadcast_network_message(message);
             } else {
                 self.logger.warn(format!(
@@ -512,7 +515,7 @@ impl CoordinatorManager {
         // Insertar la dirección del socket en el mapa de direcciones de coordinadores
         self.coord_addresses
             .insert(msg.origin_addr, msg.user_id.clone());
-
+        // Si ya tengo un coordinador actual, responder con su ID 
         if let Some(leader) = self.coordinator_actual {
             if let Some(leader_id) = self.coord_addresses.get_by_key(&leader) {
                 let response = NetworkMessage::LeaderIdIs(LeaderIdIs {

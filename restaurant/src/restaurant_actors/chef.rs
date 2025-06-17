@@ -8,18 +8,36 @@ use common::constants::DEFAULT_TIME_TO_COOK;
 use common::{logger::Logger, types::dtos::OrderDTO};
 use std::time::Duration;
 
+/// The `Chef` actor is responsible for preparing orders assigned by the kitchen,
+/// simulating cooking time, and notifying the delivery assigner and kitchen when appropriate.
+///
+/// ## Responsibilities:
+/// - Receives assigned orders from the kitchen.
+/// - Simulates cooking time for each order.
+/// - Notifies the delivery assigner when an order is ready.
+/// - Notifies the kitchen when available for a new order.
 pub struct Chef {
-    /// Tiempo estimado para preparar pedidos.
+    /// Estimated time to cook an order.
     pub time_to_cook: Duration,
-    /// Pedido que está preparando.
+    /// The order currently being prepared.
     pub order: Option<OrderDTO>,
-    /// Canal de envío hacia el actor `DeliveryAssigner`.
+    /// Address of the delivery assigner actor.
     pub delivery_assigner_address: Addr<DeliveryAssigner>,
+    /// Address of the kitchen actor.
     pub kitchen_address: Addr<Kitchen>,
+    /// Logger for chef events.
     pub logger: Logger,
 }
 
 impl Chef {
+    /// Creates a new `Chef` actor with the specified delivery assigner and kitchen addresses.
+    ///
+    /// ## Arguments
+    /// * `delivery_assigner_address` - Address of the delivery assigner actor.
+    /// * `kitchen_address` - Address of the kitchen actor.
+    ///
+    /// ## Returns
+    /// A new instance of `Chef`.
     pub fn new(
         delivery_assigner_address: Addr<DeliveryAssigner>,
         kitchen_address: Addr<Kitchen>,
@@ -39,6 +57,11 @@ impl Actor for Chef {
     type Context = actix::Context<Self>;
 }
 
+/// Handles [`AssignToChef`] messages.
+///
+/// Receives an order assignment from the kitchen, simulates cooking time,
+/// and notifies the delivery assigner when the order is ready.
+/// After finishing, notifies the kitchen that the chef is available for a new order.
 impl Handler<AssignToChef> for Chef {
     type Result = ();
 

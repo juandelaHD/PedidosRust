@@ -385,6 +385,8 @@ impl Handler<WhoIsLeader> for Coordinator {
             // Si no hay coordinador actual, le preguntamos al CoordinatorManager
             self.logger
                 .info("No current coordinator available. Check Server Election implementation.");
+
+            // coordintor no tiene lider asociado ->  enviar WhoIsLeader al CoordinatorManager 
             if let Some(coordinator_manager) = &self.coordinator_manager {
                 coordinator_manager.do_send(msg);
             } else {
@@ -495,6 +497,7 @@ impl Handler<NetworkMessage> for Coordinator {
                     ctx.address().do_send(RetryLater {
                         origin_addr: msg_data.origin_addr,
                     });
+                    return;
                 }
                 // Si el origen es un servidor conocido (8080, 8081, 8082, 8083), se lo paso al CoordinatorManager
                 if msg_data.user_id.starts_with("server_") {
@@ -509,7 +512,6 @@ impl Handler<NetworkMessage> for Coordinator {
                         "WhoIsLeader recibido de un user: {}",
                         msg_data.origin_addr
                     ));
-                    // Aquí podrías responder directamente o ignorar
                     ctx.address().do_send(msg_data)
                 }
             }
@@ -918,10 +920,19 @@ impl Handler<NetworkMessage> for Coordinator {
                 if let Some(communicator) = self.communicators.get(&remote_addr) {
                     self.communicators.remove(&remote_addr);
                     self.user_addresses.remove_by_key(&remote_addr);
+
+                    
                     self.logger
                         .info(format!("Removed communicator for {}", remote_addr));
                 } else {
                     if let Some(coordinator_manager) = &self.coordinator_manager {
+                        // si el servidor que se desconectó era el lider actual, ponemos a nuestro lider como None
+                        if self.current_coordinator == Some(remote_addr) {
+                            self.current_coordinator = None;
+                            self.logger.info("Current coordinator set to None due to disconnection.");
+                        }
+                        // Enviamos el mensaje al CoordinatorManager para que maneje la desconexión
+
                         coordinator_manager.do_send(msg_data);
                     } else {
                         self.logger.info("CoordinatorManager not initialized yet.");

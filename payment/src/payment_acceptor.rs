@@ -10,13 +10,28 @@ use tokio::io::AsyncReadExt;
 use tokio::net::TcpListener;
 use tokio::net::TcpStream;
 
+/// The `PaymentAcceptor` actor listens for incoming TCP connections and registers them
+/// with the [`PaymentGateway`] actor.
+///
+/// # Responsibilities
+/// - Binds to a specified address and listens for incoming connections.
+/// - Determines the peer type and remote address for each connection.
+/// - Wraps each connection in a [`Communicator`] and registers it with the payment gateway.
 pub struct PaymentAcceptor {
+    /// The address to bind and listen for incoming connections.
     addr: SocketAddr,
+    /// Address of the [`PaymentGateway`] actor to register new connections.
     payment_gateway_addr: Addr<PaymentGateway>,
+    /// Logger for payment acceptor events.
     logger: Logger,
 }
 
 impl PaymentAcceptor {
+    /// Creates a new `PaymentAcceptor`.
+    ///
+    /// # Arguments
+    /// * `addr` - The socket address to bind to.
+    /// * `payment_gateway_addr` - The address of the [`PaymentGateway`] actor.
     pub fn new(addr: SocketAddr, payment_gateway_addr: Addr<PaymentGateway>) -> Self {
         Self {
             addr,
@@ -28,7 +43,12 @@ impl PaymentAcceptor {
 
 impl Actor for PaymentAcceptor {
     type Context = Context<Self>;
-
+    
+    /// Called when the actor starts.
+    ///
+    /// Binds to the configured address and enters an asynchronous loop to accept incoming TCP connections.
+    /// For each connection, determines the peer type and remote address, then registers the connection
+    /// with the payment gateway.
     fn started(&mut self, ctx: &mut Self::Context) {
         let addr = self.addr;
 
@@ -101,21 +121,35 @@ impl Actor for PaymentAcceptor {
     }
 }
 
+/// Message sent to the [`PaymentGateway`] to register a new connection.
+///
+/// Contains the remote address and the [`Communicator`] for the connection.
 #[derive(Message, Debug)]
 #[rtype(result = "()")]
 pub struct RegisterConnection {
+    /// The remote address of the connected peer.
     pub client_addr: SocketAddr,
+    /// The communicator for the connection.
     pub communicator: Communicator<PaymentGateway>,
 }
 
+/// Internal message used to handle a new TCP connection.
+///
+/// Contains the TCP stream, remote address, and peer type.
 #[derive(Message)]
 #[rtype(result = "()")]
 struct HandleConnection {
+    /// The TCP stream for the connection.
     stream: TcpStream,
+    /// The remote address of the peer.
     remote_addr: SocketAddr,
+    /// The type of peer that connected.
     peer_type: PeerType,
 }
 
+/// Handles [`HandleConnection`] messages.
+///
+/// Wraps the TCP stream in a [`Communicator`] and registers it with the [`PaymentGateway`] actor.
 impl Handler<HandleConnection> for PaymentAcceptor {
     type Result = ();
 
