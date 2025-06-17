@@ -1,9 +1,11 @@
+use crate::server_actors::services::orders_services::OrderService;
 //use crate::Chef;
-use crate::server_actors::storage::Storage;
-use actix::Message;
 use crate::server_actors::coordinator::Coordinator;
 use crate::server_actors::coordinator_manager::CoordinatorManager;
+use crate::server_actors::storage::Storage;
 use actix::Addr;
+use actix::Message;
+use common::messages::AcceptedOrder;
 use common::network::communicator::Communicator;
 use common::types::delivery_status::DeliveryStatus;
 use common::types::dtos::ClientDTO;
@@ -73,6 +75,8 @@ pub enum StorageLogMessage {
     SetCurrentClientToDelivery(SetCurrentClientToDelivery),
     SetDeliveryStatus(SetDeliveryStatus),
 
+    AcceptedOrder(AcceptedOrder),
+
     /// mensajes con order service
     AddOrder(AddOrder),
     RemoveOrder(RemoveOrder),
@@ -108,6 +112,21 @@ pub struct AddDelivery {
 #[rtype(result = "()")]
 pub struct AddOrder {
     pub order: OrderDTO,
+}
+
+#[derive(Message, Debug, Clone)]
+#[rtype(result = "()")]
+pub struct AddOrderAccepted {
+    pub order: OrderDTO,
+    pub delivery: DeliveryDTO,
+    pub addr: Addr<OrderService>,
+}
+
+#[derive(Message, Debug, Clone)]
+#[rtype(result = "()")]
+pub struct FinishDeliveryAssignment {
+    pub order: OrderDTO,
+    pub addr: Addr<OrderService>,
 }
 
 #[derive(Message, Debug, Clone, Serialize, Deserialize)]
@@ -298,4 +317,3 @@ pub struct SetActorsAddresses {
 /////////////////////////////////////////////////////////////////////
 // Mensajes de servicios internos
 /////////////////////////////////////////////////////////////////////
-

@@ -29,7 +29,7 @@ pub enum NetworkMessage {
 
     // Delivery messages
     IAmAvailable(IAmAvailable),
-    AcceptOrder(AcceptOrder),
+    AcceptedOrder(AcceptedOrder),
     OrderDelivered(OrderDelivered),
     DeliverThisOrder(DeliverThisOrder),
     IAmDelivering(IAmDelivering),
@@ -47,11 +47,11 @@ pub enum NetworkMessage {
     RequestNearbyDelivery(RequestNearbyDelivery),
     DeliveryAccepted(DeliveryAccepted),
     NearbyDeliveries(NearbyDeliveries),
+    DeliveryAvailable(DeliveryAvailable),
 
     // Coordinator messages
     NearbyRestaurants(NearbyRestaurants),
     NotifyOrderUpdated(NotifyOrderUpdated),
-    DeliveryAvailable(DeliveryAvailable),
     NewOfferToDeliver(NewOfferToDeliver),
     DeliveryNoNeeded(DeliveryNoNeeded),
 

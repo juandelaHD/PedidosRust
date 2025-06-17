@@ -1,13 +1,11 @@
-use std::{time::Duration};
-
 use crate::{
     internal_messages::messages::{AssignToChef, IAmAvailable, SendThisOrder},
     restaurant_actors::{delivery_assigner::DeliveryAssigner, kitchen::Kitchen},
 };
 use actix::{Actor, Addr, AsyncContext, Handler};
+use common::constants::DEFAULT_TIME_TO_COOK;
 use common::{logger::Logger, types::dtos::OrderDTO};
-
-const DEFAULT_TIME_TO_COOK: u64 = 5; // Default time in seconds
+use std::time::Duration;
 
 pub struct Chef {
     /// Tiempo estimado para preparar pedidos.
@@ -24,7 +22,6 @@ impl Chef {
     pub fn new(
         delivery_assigner_address: Addr<DeliveryAssigner>,
         kitchen_address: Addr<Kitchen>,
-
     ) -> Self {
         let logger = Logger::new("Chef");
         Chef {
@@ -32,7 +29,7 @@ impl Chef {
             kitchen_address,
             time_to_cook: Duration::from_secs(DEFAULT_TIME_TO_COOK),
             order: None,
-            logger
+            logger,
         }
     }
 }
@@ -46,7 +43,7 @@ impl Handler<AssignToChef> for Chef {
 
     fn handle(&mut self, msg: AssignToChef, ctx: &mut Self::Context) -> Self::Result {
         self.logger
-            .info(format!("Chef received order: {:?}", msg.order));
+            .info(format!("Chef received order: {:?}", msg.order.dish_name));
         self.order = Some(msg.order.clone());
         let delivery_assigner = self.delivery_assigner_address.clone();
         let logger = self.logger.clone();
@@ -61,7 +58,7 @@ impl Handler<AssignToChef> for Chef {
             } else {
                 logger.error("No order assigned to chef when time elapsed.".to_string());
             }
-            kitchen_sender.do_send(IAmAvailable { 
+            kitchen_sender.do_send(IAmAvailable {
                 chef_addr: ctx.address().clone(),
                 order: act.order.clone().unwrap(),
             });

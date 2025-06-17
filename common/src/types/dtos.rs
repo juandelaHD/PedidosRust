@@ -75,6 +75,8 @@ pub struct OrderDTO {
     pub status: OrderStatus,
     /// Posición del cliente que realizó la orden.
     pub client_position: (f32, f32), // Útil para calcular distancias
+    /// Tiempo estimado de preparación de la orden en segundos.
+    pub expected_delivery_time: u64,
     /// Marca de tiempo que registra la última actualización de la orden.
     pub time_stamp: std::time::SystemTime,
 }

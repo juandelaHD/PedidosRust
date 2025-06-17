@@ -33,7 +33,6 @@ async fn main() {
     // Iniciar el Acceptor (le pasamos ambos)
     Acceptor::new(my_addr, coordinator_addr.clone()).start();
 
-
     // Esperar señal de apagado
     tokio::select! {
         _ = ctrl_c() => {

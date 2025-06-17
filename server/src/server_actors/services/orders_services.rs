@@ -1,11 +1,18 @@
 use crate::messages::internal_messages::{
-    AddAuthorizedOrderToRestaurant, AddOrder, AddPendingOrderToRestaurant, RemoveAuthorizedOrderToRestaurant, RemoveOrder, RemovePendingOrderToRestaurant, SetActorsAddresses, SetCurrentOrderToDelivery, SetDeliveryToOrder, SetOrderStatus
+    AddAuthorizedOrderToRestaurant, AddOrder, AddOrderAccepted, AddPendingOrderToRestaurant,
+    FinishDeliveryAssignment, RemoveAuthorizedOrderToRestaurant, RemoveOrder,
+    RemovePendingOrderToRestaurant, SetActorsAddresses, SetCurrentOrderToDelivery,
+    SetDeliveryToOrder, SetOrderStatus,
 };
 use crate::server_actors::coordinator::Coordinator;
 use crate::server_actors::storage::Storage;
 use actix::prelude::*;
 use common::logger::Logger;
-use common::messages::{BillPayment, DeliveryAccepted, NotifyOrderUpdated, OrderFinalized, RequestAuthorization, RequestThisOrder, UpdateOrderStatus};
+use common::messages::{
+    AcceptedOrder, BillPayment, DeliverThisOrder, DeliveryAccepted, DeliveryAvailable,
+    DeliveryNoNeeded, NotifyOrderUpdated, OrderFinalized, RequestAuthorization, RequestThisOrder,
+    UpdateOrderStatus,
+};
 use common::network::connections::connect_some;
 use common::types::dtos::OrderDTO;
 use common::{
@@ -89,35 +96,34 @@ impl OrderService {
             order: order.clone(),
         });
     }
-    
+
     fn send_to_storage<T>(&self, msg: T)
-        where
-            T: Message + Send + 'static,
-            T::Result: Send + 'static,
-            Storage: Handler<T>,
-            <Storage as Handler<T>>::Result: Send,
-        {
+    where
+        T: Message + Send + 'static,
+        T::Result: Send + 'static,
+        Storage: Handler<T>,
+        <Storage as Handler<T>>::Result: Send,
+    {
         if let Some(addr) = self.storage_address.as_ref() {
-                addr.do_send(msg);
-            } else {
-                self.logger.error("Storage address not set");
-            }
+            addr.do_send(msg);
+        } else {
+            self.logger.error("Storage address not set");
         }
+    }
 
-        fn send_to_coordinator<T>(&self, msg: T)
-        where
-            T: Message + Send + 'static,
-            T::Result: Send + 'static,
-            Coordinator: Handler<T>,
-            <Coordinator as Handler<T>>::Result: Send,
-        {
+    fn send_to_coordinator<T>(&self, msg: T)
+    where
+        T: Message + Send + 'static,
+        T::Result: Send + 'static,
+        Coordinator: Handler<T>,
+        <Coordinator as Handler<T>>::Result: Send,
+    {
         if let Some(addr) = self.coordinator_address.as_ref() {
-                addr.do_send(msg);
-            } else {
-                self.logger.error("Storage address not set");
-            }
+            addr.do_send(msg);
+        } else {
+            self.logger.error("Storage address not set");
         }
-
+    }
 }
 
 impl Actor for OrderService {
@@ -230,7 +236,6 @@ impl Handler<UpdateOrderStatus> for OrderService {
     type Result = ();
 
     fn handle(&mut self, msg: UpdateOrderStatus, ctx: &mut Self::Context) -> Self::Result {
-        
         match msg.order.status {
             OrderStatus::Pending => {
                 ctx.address().do_send(AddPendingOrderToRestaurant {
@@ -244,7 +249,7 @@ impl Handler<UpdateOrderStatus> for OrderService {
                 });
             }
             OrderStatus::Preparing => {
-                ctx.address().do_send( SetOrderStatus{
+                ctx.address().do_send(SetOrderStatus {
                     order: msg.order.clone(),
                     order_status: OrderStatus::Preparing,
                 });
@@ -289,8 +294,8 @@ impl Handler<DeliveryAccepted> for OrderService {
 
     fn handle(&mut self, msg: DeliveryAccepted, _ctx: &mut Self::Context) -> Self::Result {
         self.logger.info(format!(
-            "Delivery accepted for order {} by delivery {}",
-            msg.order.order_id, msg.delivery.delivery_id
+            "Delivery {} accepted order {}",
+            msg.delivery.delivery_id, msg.order.order_id
         ));
         // Notificar al Coordinator para que informe al cliente
         if let Some(coordinator) = &self.coordinator_address {
@@ -301,6 +306,48 @@ impl Handler<DeliveryAccepted> for OrderService {
         } else {
             self.logger.error("Coordinator address not set");
         }
+    }
+}
+
+impl Handler<AcceptedOrder> for OrderService {
+    type Result = ();
+
+    fn handle(&mut self, msg: AcceptedOrder, ctx: &mut Self::Context) -> Self::Result {
+        self.logger.info(format!(
+            "Reenviando AcceptOrder al Storage: {:?}",
+            msg.order
+        ));
+        let message = AddOrderAccepted {
+            order: msg.order.clone(),
+            delivery: msg.delivery_info.clone(),
+            addr: ctx.address().clone(),
+        };
+        self.send_to_storage(message);
+    }
+}
+
+impl Handler<DeliveryAvailable> for OrderService {
+    type Result = ();
+
+    fn handle(&mut self, msg: DeliveryAvailable, _ctx: &mut Self::Context) -> Self::Result {
+        self.logger.info(format!(
+            "Delivery {} is available",
+            msg.delivery_info.delivery_id
+        ));
+        self.send_to_coordinator(msg.clone());
+    }
+}
+
+impl Handler<DeliveryNoNeeded> for OrderService {
+    type Result = ();
+
+    fn handle(&mut self, msg: DeliveryNoNeeded, _ctx: &mut Self::Context) -> Self::Result {
+        self.logger.info(format!(
+            "Delivery {} is not needed for order {}",
+            msg.delivery_info.delivery_id, msg.order.order_id
+        ));
+        // Notificar al Coordinator para que informe al cliente
+        self.send_to_coordinator(msg);
     }
 }
 
@@ -331,21 +378,38 @@ impl Handler<OrderFinalized> for OrderService {
     }
 }
 
+impl Handler<DeliverThisOrder> for OrderService {
+    type Result = ();
+
+    fn handle(&mut self, msg: DeliverThisOrder, ctx: &mut Self::Context) -> Self::Result {
+        self.logger.info(format!(
+            "Finishing delivery assignment for order {}",
+            msg.order.order_id
+        ));
+        // Notificar al Coordinator para que informe al cliente
+        self.send_to_storage(FinishDeliveryAssignment {
+            order: msg.order.clone(),
+            addr: ctx.address().clone(),
+        });
+        self.send_to_coordinator(msg.clone());
+    }
+}
+
 impl Handler<RemoveOrder> for OrderService {
     type Result = ();
 
     fn handle(&mut self, msg: RemoveOrder, _ctx: &mut Self::Context) -> Self::Result {
-            self.logger.info(format!(
-                "Reenviando RemoveOrder al Storage: {:?}",
-                msg.order
-            ));
-            self.send_to_storage(msg.clone());
-            // Notificar al Coordinator para que informe al cliente
-            self.send_to_coordinator( NotifyOrderUpdated {
-                peer_id: msg.order.client_id.clone(),
-                order: msg.order.clone(),
-            });
-        }
+        self.logger.info(format!(
+            "Reenviando RemoveOrder al Storage: {:?}",
+            msg.order
+        ));
+        self.send_to_storage(msg.clone());
+        // Notificar al Coordinator para que informe al cliente
+        self.send_to_coordinator(NotifyOrderUpdated {
+            peer_id: msg.order.client_id.clone(),
+            order: msg.order.clone(),
+        });
+    }
 }
 
 //
@@ -375,13 +439,14 @@ impl Handler<AddPendingOrderToRestaurant> for OrderService {
     ) -> Self::Result {
         self.logger.info(format!(
             "Sending AddPendingOrderToRestaurant to Storage: {:?} -> {}",
-            msg.order.order_id.clone(), msg.restaurant_id
+            msg.order.order_id.clone(),
+            msg.restaurant_id
         ));
         self.send_to_storage(msg.clone());
         // Notificar al Coordinator para que informe al cliente
         self.send_to_coordinator(NotifyOrderUpdated {
             peer_id: msg.order.client_id.to_string(),
-            order: msg.order.clone(), 
+            order: msg.order.clone(),
         });
     }
 }
@@ -396,7 +461,8 @@ impl Handler<RemoveAuthorizedOrderToRestaurant> for OrderService {
     ) -> Self::Result {
         self.logger.info(format!(
             "Sending RemoveAuthorizedOrderToRestaurant to Storage: {:?} -> {}",
-            msg.order.order_id.clone(), msg.restaurant_id
+            msg.order.order_id.clone(),
+            msg.restaurant_id
         ));
         self.send_to_storage(msg);
     }
@@ -412,7 +478,8 @@ impl Handler<RemovePendingOrderToRestaurant> for OrderService {
     ) -> Self::Result {
         self.logger.info(format!(
             "Sending RemovePendingOrderToRestaurant to Storage: {:?} -> {}",
-            msg.order.order_id.clone(), msg.restaurant_id
+            msg.order.order_id.clone(),
+            msg.restaurant_id
         ));
         self.send_to_storage(msg);
     }
@@ -424,10 +491,15 @@ impl Handler<SetCurrentOrderToDelivery> for OrderService {
     fn handle(&mut self, msg: SetCurrentOrderToDelivery, _ctx: &mut Self::Context) -> Self::Result {
         self.logger.info(format!(
             "Sending SetCurrentOrderToDelivery to Storage: delivery {} -> order {}",
-            msg.delivery_id, msg.order.order_id.clone()
+            msg.delivery_id,
+            msg.order.order_id.clone()
         ));
-        self.send_to_storage(msg);
-        // Notificar al Coordinator para que informe al Delivery
+        self.send_to_storage(msg.clone());
+        // Notificar al Coordinator para que informe al cliente
+        self.send_to_coordinator(NotifyOrderUpdated {
+            peer_id: msg.order.client_id.clone(),
+            order: msg.order.clone(),
+        });
     }
 }
 
@@ -437,7 +509,8 @@ impl Handler<SetOrderStatus> for OrderService {
     fn handle(&mut self, msg: SetOrderStatus, _ctx: &mut Self::Context) -> Self::Result {
         self.logger.info(format!(
             "Sending SetOrderStatus to Storage: order {} -> status {:?}",
-            msg.order.order_id.clone(), msg.order_status
+            msg.order.order_id.clone(),
+            msg.order_status
         ));
         if let Some(addr) = self.storage_address.as_ref() {
             addr.do_send(msg.clone());
@@ -458,12 +531,12 @@ impl Handler<SetDeliveryToOrder> for OrderService {
     fn handle(&mut self, msg: SetDeliveryToOrder, _ctx: &mut Self::Context) -> Self::Result {
         self.logger.info(format!(
             "Sending SetDeliveryToOrder to Storage: delivery {} -> order {}",
-            msg.delivery_id, msg.order.order_id.clone()
+            msg.delivery_id,
+            msg.order.order_id.clone()
         ));
 
         self.send_to_storage(msg);
 
         // 2. Notificar al Coordinator para que avise al Cliente
-        
     }
 }

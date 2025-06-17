@@ -4,9 +4,9 @@ use actix::fut::wrap_future;
 use actix::prelude::*;
 use common::logger::Logger;
 use common::messages::NearbyRestaurants;
+use common::messages::OrderDelivered;
 use common::messages::client_messages::*;
 use common::messages::shared_messages::*;
-use common::messages::OrderDelivered;
 use common::network::communicator::Communicator;
 use common::network::connections::{connect_some, try_to_connect};
 use common::network::peer_types::PeerType;
@@ -35,6 +35,7 @@ pub struct Client {
     pub communicator: Option<Communicator<Client>>,
     pub pending_stream: Option<TcpStream>, // Guarda el stream hasta que arranque
     pub logger: Logger,
+    delivery_timer: Option<actix::SpawnHandle>,
 }
 
 impl Client {
@@ -44,7 +45,6 @@ impl Client {
         client_position: (f32, f32),
     ) -> Self {
         let logger = Logger::new(format!("Client {}", &client_id));
-        logger.info(format!("Starting client with ID: {}", client_id));
         // Intentamos conectarnos a los servidores
         let pending_stream = connect_some(servers.clone(), PeerType::ClientType).await;
 
@@ -61,6 +61,7 @@ impl Client {
             communicator: None,
             pending_stream, // Guarda el stream hasta que arranque
             logger,
+            delivery_timer: None, // Inicializamos el temporizador de entrega como None
         }
     }
 
@@ -86,6 +87,68 @@ impl Client {
             origin_addr: actual_socket_addr,
             user_id: self.client_id.clone(),
         }));
+    }
+
+    pub fn manage_delivery_time(&mut self, order: &OrderDTO, ctx: &mut actix::Context<Self>) {
+        if order.client_id != self.client_id {
+            self.logger.warn(format!(
+                "Received delivery expected time for a different client ({}), ignoring",
+                order.client_id
+            ));
+            return;
+        }
+
+        if order.status == OrderStatus::Delivering {
+            self.logger.info(format!(
+                "Estimated delivery time for your order: {:.2} seconds.",
+                order.expected_delivery_time as f64
+            ));
+
+            // Cancelar timer anterior si existe
+            if let Some(handle) = self.delivery_timer.take() {
+                ctx.cancel_future(handle);
+            }
+
+            let delivery_time = order.expected_delivery_time;
+            let handle = ctx.run_later(
+                std::time::Duration::from_secs(delivery_time),
+                move |act, _ctx| {
+                    act.logger.info(format!(
+                        "Delivery expected time of {:.2} seconds has elapsed!",
+                        delivery_time as f64 / 1000.0
+                    ));
+                    if let Some(order) = &act.client_order {
+                        if order.status == OrderStatus::Delivered {
+                            act.logger.info(format!(
+                                "Order {} has been delivered successfully.",
+                                order.order_id
+                            ));
+                        } else {
+                            act.logger.warn(
+                                "Expected delivery time elapsed, sending order has been delivered",
+                            );
+                            let mut order = order.clone();
+                            order.status = OrderStatus::Delivered;
+                            act.client_order = Some(order.clone());
+                            act.send_network_message(NetworkMessage::OrderDelivered(
+                                OrderDelivered {
+                                    order: order.clone(),
+                                },
+                            ));
+                        }
+                    } else {
+                        act.logger.warn("No active order found for delivery check.");
+                    }
+                    act.delivery_timer = None;
+                },
+            );
+            self.delivery_timer = Some(handle);
+        } else {
+            // Cancelar timer si el estado ya no es Delivering
+            if let Some(handle) = self.delivery_timer.take() {
+                ctx.cancel_future(handle);
+            }
+        }
     }
 }
 
@@ -203,10 +266,16 @@ impl Handler<RecoverProcedure> for Client {
                         // Imprime los posibles estados del pedido
                         match client_dto.status {
                             OrderStatus::Cancelled => {
-                                panic!("{}", client_dto.status)
+                                self.logger.warn(format!(
+                                    "Order cancelled: {}. Try again later.",
+                                    client_dto.dish_name
+                                ));
                             }
                             OrderStatus::Delivered => {
-                                panic!("Order delivered: {}", client_dto.dish_name);
+                                self.logger.info(format!(
+                                    "Order has already been delivered: {}. Enjoy your meal!",
+                                    client_dto.dish_name
+                                ));
                             }
                             _ => {
                                 self.logger.info(format!("State: {}", client_dto.status));
@@ -268,6 +337,7 @@ impl Handler<SendThisOrder> for Client {
             delivery_id: None,            // No hay delivery asignado aún
             time_stamp: std::time::SystemTime::now(), // Marca de tiempo actual
             client_position: self.client_position, // Posición del cliente
+            expected_delivery_time: 0,    // Tiempo de entrega inicial
         };
 
         // Enviar el pedido al servidor
@@ -280,10 +350,6 @@ impl Handler<NearbyRestaurants> for Client {
     type Result = ();
 
     fn handle(&mut self, msg: NearbyRestaurants, _ctx: &mut Self::Context) -> Self::Result {
-        self.logger.info(format!(
-            "Received NearbyRestaurants with {} restaurants",
-            msg.restaurants.len()
-        ));
         if let Some(ui_handler) = &self.ui_handler {
             ui_handler.do_send(SelectNearbyRestaurants {
                 nearby_restaurants: msg.restaurants,
@@ -298,10 +364,9 @@ impl Handler<NetworkMessage> for Client {
     type Result = ();
     fn handle(&mut self, msg: NetworkMessage, ctx: &mut Self::Context) -> Self::Result {
         match msg {
-            NetworkMessage::RetryLater(msg_data) => {
+            NetworkMessage::RetryLater(_msg_data) => {
                 self.logger.info(format!(
-                    "Received RetryLater message: {:?}",
-                    msg_data.origin_addr
+                    "Sorry, but the server is busy. Please try again later."
                 ));
             }
             // All Users messages
@@ -357,62 +422,22 @@ impl Handler<NetworkMessage> for Client {
                 ));
                 ctx.address().do_send(msg_data);
             }
-            NetworkMessage::AuthorizationResult(_msg_data) => {
-                self.logger
-                    .info("Received AuthorizationResult message, not implemented yet");
-            }
             NetworkMessage::NotifyOrderUpdated(msg_data) => {
                 self.logger.info(format!(
                     "Your order is now: {:?}",
                     msg_data.order.status.to_string().to_uppercase()
                 ));
                 self.client_order = Some(msg_data.order.clone());
-            }
-            NetworkMessage::DeliveryExpectedTime(msg_data) => {
-                if msg_data.order.client_id == self.client_id {
+                if msg_data.order.status == OrderStatus::Delivered {
                     self.logger.info(format!(
-                        "Expected delivery time for my order: {} seconds",
-                        msg_data.expected_time
+                        "Order {} has been delivered. Thanks for using our service!",
+                        msg_data.order.order_id
                     ));
-
-                    // Se quede esperando el tiempo de entrega
-                    let delivery_time = msg_data.expected_time;
-                    ctx.run_later(
-                        std::time::Duration::from_secs(delivery_time),
-                        move |act, _ctx| {
-                            act.logger.info(format!(
-                                "Delivery expected time of {} seconds has elapsed.",
-                                delivery_time
-                            ));
-                            // Chequeamos si la orden que tengo tien el estado de delivered
-                            if let Some(order) = &act.client_order {
-                                if order.status == OrderStatus::Delivered {
-                                    act.logger.info(format!(
-                                        "Order {} has been delivered successfully.",
-                                        order.order_id
-                                    ));
-                                } else {
-                                    act.logger.warn(format!(
-                                        "Expected delivery time elapsed, sending order has been delivered",
-                                    ));
-                                    let mut order = order.clone();
-                                    order.status = OrderStatus::Delivered;
-                                    act.client_order = Some(order.clone());
-                                    act.send_network_message(NetworkMessage::OrderDelivered( OrderDelivered {
-                                        order: order.clone(),
-                                    }));
-                                }
-                            } else {
-                                act.logger.warn("No active order found for delivery check.");
-                            }
-                        },
-                    );
-                } else {
-                    self.logger.warn(format!(
-                        "Received delivery expected time for a different client ({}), ignoring",
-                        msg_data.order.client_id
-                    ));
+                    ctx.stop();
+                    return;
                 }
+
+                self.manage_delivery_time(&msg_data.order, ctx);
             }
             _ => {
                 self.logger.info(format!(

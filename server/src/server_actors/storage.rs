@@ -1,19 +1,22 @@
 use crate::messages::internal_messages::{
-    AddAuthorizedOrderToRestaurant, AddClient, AddDelivery, AddOrder, AddPendingOrderToRestaurant,
-    AddRestaurant, GetAllAvailableDeliveries, GetAllRestaurantsInfo, GetClient, GetDeliveries,
-    GetDelivery, GetOrder, GetRestaurant, GetRestaurants, RemoveAuthorizedOrderToRestaurant,
-    RemoveClient, RemoveDelivery, RemoveOrder, RemovePendingOrderToRestaurant, RemoveRestaurant,
+    AddAuthorizedOrderToRestaurant, AddClient, AddDelivery, AddOrder, AddOrderAccepted,
+    AddPendingOrderToRestaurant, AddRestaurant, FinishDeliveryAssignment,
+    GetAllAvailableDeliveries, GetAllRestaurantsInfo, GetClient, GetDeliveries, GetDelivery,
+    GetOrder, GetRestaurant, GetRestaurants, RemoveAuthorizedOrderToRestaurant, RemoveClient,
+    RemoveDelivery, RemoveOrder, RemovePendingOrderToRestaurant, RemoveRestaurant,
     SetCurrentClientToDelivery, SetCurrentOrderToDelivery, SetDeliveryPosition, SetDeliveryStatus,
     SetDeliveryToOrder, SetOrderStatus, StorageLogMessage,
 };
 use crate::server_actors::coordinator::Coordinator;
 use actix::prelude::*;
 use common::logger::Logger;
+use common::messages::{DeliveryAvailable, DeliveryNoNeeded};
+use common::types::order_status::OrderStatus;
 use common::types::{
     dtos::{ClientDTO, DeliveryDTO, OrderDTO, RestaurantDTO},
     restaurant_info::RestaurantInfo,
 };
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 pub struct Storage {
     /// Diccionario con información sobre clientes.
@@ -24,6 +27,8 @@ pub struct Storage {
     pub deliverys: HashMap<String, DeliveryDTO>,
     /// Diccionario de órdenes.
     pub orders: HashMap<u64, OrderDTO>,
+    /// Deliveries que solicitaron aceptar órdenes.
+    pub accepted_deliveries: HashMap<u64, HashSet<String>>,
     /// Lista de actualizaciones del storage.
     pub storage_updates: HashMap<u64, StorageLogMessage>,
     /// Comunicador asociado al `Coordinator`.
@@ -40,6 +45,7 @@ impl Storage {
             deliverys: HashMap::new(),
             orders: HashMap::new(),
             storage_updates: HashMap::new(),
+            accepted_deliveries: HashMap::new(),
             coordinator,
             logger: Logger::new("Storage".to_string()),
         }
@@ -73,6 +79,7 @@ impl Handler<AddRestaurant> for Storage {
             .insert(msg.restaurant.restaurant_id.clone(), msg.restaurant);
     }
 }
+
 impl Handler<AddDelivery> for Storage {
     type Result = ();
 
@@ -97,6 +104,93 @@ impl Handler<AddOrder> for Storage {
             self.logger.error(format!(
                 "Client not found for order: {}",
                 msg.order.client_id
+            ));
+        }
+    }
+}
+
+impl Handler<AddOrderAccepted> for Storage {
+    type Result = ();
+
+    fn handle(&mut self, msg: AddOrderAccepted, _ctx: &mut Self::Context) -> Self::Result {
+        if let Some(order) = self.orders.get_mut(&msg.order.order_id) {
+            if order.status != OrderStatus::ReadyForDelivery {
+                msg.addr.do_send(DeliveryNoNeeded {
+                    order: msg.order.clone(),
+                    delivery_info: msg.delivery.clone(),
+                });
+            }
+
+            if let Some(deliveries) = self.accepted_deliveries.get_mut(&order.order_id) {
+                // Ya existe una delivery aceptada para esta orden.
+                self.logger.error(format!(
+                    "Delivery already accepted for order: {}",
+                    msg.order.order_id
+                ));
+
+                // Agrego la delivery a accepted_deliveries.
+                deliveries.insert(msg.delivery.delivery_id.clone());
+            } else {
+                // No existe una delivery aceptada para esta orden.
+                self.logger.info(format!(
+                    "Adding accepted delivery for order: {}",
+                    msg.order.order_id
+                ));
+
+                // Agrego la orden y el delivery a accepted_deliveries.
+                self.accepted_deliveries
+                    .entry(msg.order.order_id)
+                    .or_insert_with(HashSet::new)
+                    .insert(msg.delivery.delivery_id.clone());
+
+                // Reenviar el mensaje al address contenida en el mensaje
+                msg.addr.do_send(DeliveryAvailable {
+                    order: msg.order.clone(),
+                    delivery_info: msg.delivery.clone(),
+                });
+            }
+        } else {
+            self.logger.error(format!(
+                "Order not found for accepted delivery: {}",
+                msg.order.order_id
+            ));
+            // Si la orden no está en el storage, no se puede aceptar la delivery.
+            msg.addr.do_send(DeliveryNoNeeded {
+                order: msg.order,
+                delivery_info: msg.delivery,
+            });
+        }
+    }
+}
+
+impl Handler<FinishDeliveryAssignment> for Storage {
+    type Result = ();
+
+    fn handle(&mut self, msg: FinishDeliveryAssignment, _ctx: &mut Self::Context) -> Self::Result {
+        // actualizar el delivery asignado a la orden
+        if let Some(order) = self.orders.get_mut(&msg.order.order_id) {
+            order.delivery_id = msg.order.delivery_id.clone();
+        }
+        if let Some(deliveries) = self.accepted_deliveries.remove(&msg.order.order_id) {
+            for delivery_id in deliveries {
+                // Notificar a las deliveries que no son necesarias
+                if Some(&delivery_id) == msg.order.delivery_id.as_ref() {
+                    continue;
+                }
+                if let Some(delivery) = self.deliverys.get(&delivery_id) {
+                    msg.addr.do_send(DeliveryNoNeeded {
+                        order: msg.order.clone(),
+                        delivery_info: delivery.clone(),
+                    });
+                } else {
+                    self.logger
+                        .warn(format!("Delivery not found for id: {}", delivery_id));
+                }
+            }
+        } else {
+            self.logger.error(format!(
+                "No accepted deliveries found for order: {}",
+                msg.order.order_id
             ));
         }
     }
@@ -183,7 +277,8 @@ impl Handler<RemoveOrder> for Storage {
     type Result = ();
 
     fn handle(&mut self, msg: RemoveOrder, _ctx: &mut Self::Context) -> Self::Result {
-        self.logger.info(format!("Order removed: {}", msg.order.order_id));
+        self.logger
+            .info(format!("Order removed: {}", msg.order.order_id));
         if let Some(order) = self.orders.remove(&msg.order.order_id) {
             if let Some(client) = self.clients.get_mut(&order.client_id) {
                 client.client_order = None;

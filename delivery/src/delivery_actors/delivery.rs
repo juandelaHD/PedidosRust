@@ -2,13 +2,17 @@ use actix::fut::wrap_future;
 use actix::prelude::*;
 use common::constants::BASE_DELAY_MILLIS;
 use common::logger::Logger;
-use common::messages::delivery_messages::{AcceptOrder, IAmAvailable, OrderDelivered};
-use common::messages::{shared_messages::*, DeliverThisOrder, DeliveryNoNeeded, IAmDelivering, NewOfferToDeliver};
+use common::messages::delivery_messages::{IAmAvailable, OrderDelivered};
+use common::messages::{
+    AcceptedOrder, DeliverThisOrder, DeliveryNoNeeded, NewOfferToDeliver, UpdateOrderStatus,
+    shared_messages::*,
+};
 use common::network::communicator::Communicator;
 use common::network::connections::{connect_some, try_to_connect};
 use common::network::peer_types::PeerType;
 use common::types::delivery_status::DeliveryStatus;
 use common::types::dtos::{DeliveryDTO, OrderDTO, UserDTO};
+use common::types::order_status::OrderStatus;
 use common::utils::calculate_distance;
 use std::net::SocketAddr;
 use std::time::Duration;
@@ -87,6 +91,19 @@ impl Delivery {
             origin_addr: actual_socket_addr,
             user_id: self.delivery_id.clone(),
         }));
+    }
+
+    pub fn calcular_delay_ms(
+        &self,
+        restaurant_position: (f32, f32),
+        client_position: (f32, f32),
+        base_delay_millis: u64,
+    ) -> u64 {
+        let distance_from_restaurant = calculate_distance(self.position, restaurant_position);
+        let distance_restaurant_from_client =
+            calculate_distance(restaurant_position, client_position);
+        let total_distance = distance_from_restaurant + distance_restaurant_from_client;
+        base_delay_millis + (total_distance as u64 * 1000)
     }
 }
 
@@ -237,8 +254,9 @@ impl Handler<RecoverProcedure> for Delivery {
                         "Delivery is WaitingConfirmation for order {}",
                         order.order_id
                     ));
-                    self.send_network_message(NetworkMessage::AcceptOrder(AcceptOrder {
+                    self.send_network_message(NetworkMessage::AcceptedOrder(AcceptedOrder {
                         order: order.clone(),
+                        delivery_info: delivery_dto.clone(),
                     }));
                 } else {
                     self.logger
@@ -253,21 +271,31 @@ impl Handler<RecoverProcedure> for Delivery {
                 if let Some(order) = &self.current_order {
                     self.logger
                         .info(format!("Delivery is Delivering order {}", order.order_id));
-                    if order.client_position == self.position {
-                        self.logger.info(
-                            "Delivery position matches order location, sending OrderDelivered",
-                        );
-                        self.status = DeliveryStatus::Available;
-                        ctx.address()
-                            .do_send(NetworkMessage::OrderDelivered(OrderDelivered {
-                                order: order.clone(),
-                            }));
-                    } else {
-                        self.logger.warn(
-                            "Delivery position does not match order location, sending OrderUpdate",
-                        );
-                        // Here you would send an update about the delivery status
-                    }
+
+                    self.logger
+                        .info("Delivery position matches order location, sending OrderDelivered");
+                    self.status = DeliveryStatus::Delivering;
+                    let distance_from_client =
+                        calculate_distance(self.position, order.client_position);
+                    let delay_ms = BASE_DELAY_MILLIS + (distance_from_client as u64 * 1000);
+                    let mut order = order.clone();
+                    order.expected_delivery_time = delay_ms;
+
+                    // Aviso  al servidor que estoy entregando
+                    self.send_network_message(NetworkMessage::UpdateOrderStatus(
+                        UpdateOrderStatus {
+                            order: order.clone(),
+                        },
+                    ));
+
+                    // Simular el tiempo de entrega
+                    let client_position = order.client_position;
+                    ctx.run_later(Duration::from_millis(delay_ms), move |_act, ctx| {
+                        ctx.address().do_send(OrderDelivered {
+                            order: order.clone(),
+                        });
+                    });
+                    self.position = client_position;
                 } else {
                     self.logger
                         .warn("No current order available while in Delivering state.");
@@ -309,8 +337,17 @@ impl Handler<NewOfferToDeliver> for Delivery {
                 }
                 self.current_order = Some(msg.order.clone());
                 self.status = DeliveryStatus::WaitingConfirmation;
-                self.send_network_message(NetworkMessage::AcceptOrder(AcceptOrder {
+                let my_info = DeliveryDTO {
+                    delivery_id: self.delivery_id.clone(),
+                    delivery_position: self.position,
+                    status: self.status.clone(),
+                    current_order: Some(msg.order.clone()),
+                    current_client_id: Some(msg.order.client_id.clone()),
+                    time_stamp: std::time::SystemTime::now(),
+                };
+                self.send_network_message(NetworkMessage::AcceptedOrder(AcceptedOrder {
                     order: msg.order,
+                    delivery_info: my_info.clone(),
                 }));
             }
             // Si estoy ocupado, ignoro el pedido
@@ -357,40 +394,35 @@ impl Handler<DeliverThisOrder> for Delivery {
         if let Some(current_order) = &self.current_order {
             if current_order.order_id == msg.order.order_id {
                 self.logger.info(format!(
-                    "Delivering order ID: {} to position: {:?}",
-                    msg.order.order_id, msg.order.client_position
+                    "Delivering order for client '{}' to destination {:?}",
+                    current_order.client_id, msg.order.client_position
                 ));
+                // Actualizar el estado del delivery y la orden
                 self.status = DeliveryStatus::Delivering;
-                // Simular el tiempo de llegada al restaurante y al cliente
-                let distance_from_restaurant = calculate_distance(
-                    self.position,
-                    msg.restaurant_info.position
-                );
-                let distance_restaurant_from_client = calculate_distance(msg.restaurant_info.position, msg.order.client_position);
-                let total_distance = distance_from_restaurant + distance_restaurant_from_client;
+                let mut order = msg.order.clone();
+                order.status = OrderStatus::Delivering;
 
-                let delay_ms = BASE_DELAY_MILLIS + (total_distance as u64 * 1000);
-                let my_info = DeliveryDTO {
-                    delivery_id: self.delivery_id.clone(),
-                    delivery_position: self.position,
-                    status: self.status.clone(),
-                    current_order: Some(msg.order.clone()),
-                    current_client_id: Some(msg.order.client_id.clone()),
-                    time_stamp: std::time::SystemTime::now(),
-                };
-                self.send_network_message(NetworkMessage::IAmDelivering(IAmDelivering {
-                    delivery_info: my_info.clone(),
-                    expected_delivery_time: delay_ms,
-                    order: msg.order.clone(),
-                    
+                // Simular el tiempo de llegada al restaurante y al cliente
+                let delay_ms = self.calcular_delay_ms(
+                    msg.restaurant_info.position,
+                    msg.order.client_position,
+                    BASE_DELAY_MILLIS,
+                );
+
+                self.logger.info(format!(
+                    "Estimated delivery time: {:.2} seconds",
+                    delay_ms as f64 / 1000.0
+                ));
+
+                order.expected_delivery_time = delay_ms;
+
+                self.send_network_message(NetworkMessage::UpdateOrderStatus(UpdateOrderStatus {
+                    order: order.clone(),
                 }));
 
-                self.position = msg.order.client_position;
-                let addr = ctx.address().clone();
                 let order = msg.order.clone();
-                actix::spawn(async move {
-                    sleep(Duration::from_millis(delay_ms)).await;
-                    addr.do_send(OrderDelivered {
+                ctx.run_later(Duration::from_millis(delay_ms), move |_act, ctx| {
+                    ctx.address().do_send(OrderDelivered {
                         order: order.clone(),
                     });
                 });
@@ -418,6 +450,7 @@ impl Handler<OrderDelivered> for Delivery {
                     "Order ID: {} delivered successfully.",
                     msg.order.order_id
                 ));
+                self.send_network_message(NetworkMessage::OrderDelivered(msg.clone()));
                 self.current_order = None;
                 self.status = DeliveryStatus::Available;
                 let my_delivery_info = DeliveryDTO {

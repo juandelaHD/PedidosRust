@@ -22,7 +22,6 @@ pub struct PaymentCompleted {
     pub order: OrderDTO,
 }
 
-
 #[derive(Message, Debug, Clone, Serialize, Deserialize)]
 #[rtype(result = "()")]
 pub struct BillPayment {

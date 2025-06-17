@@ -14,3 +14,4 @@ pub const PAYMENT_SUCCESS_PROBABILITY: f32 = 0.7;
 pub const INTERVALO_HEARTBEAT: Duration = Duration::from_secs(2);
 pub const TIMEOUT_HEARTBEAT: Duration = Duration::from_secs(3);
 pub const NUMBER_OF_CHEFS: usize = 4;
+pub const DEFAULT_TIME_TO_COOK: u64 = 10; // Default time in seconds

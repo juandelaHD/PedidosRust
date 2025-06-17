@@ -33,9 +33,6 @@ pub struct SetStorageUpdatesLog {
     pub current_msg_log: HashMap<u64, String>,
 }
 
-
-
-
 /////////////////////////////////////////////////////////////////////
 // Mensajes del Coordinator Manager
 /////////////////////////////////////////////////////////////////////
@@ -59,8 +56,6 @@ pub struct LeaderElection {
     pub candidates: Vec<SocketAddr>,
 }
 
-
 #[derive(Message)]
 #[rtype(result = "()")]
 pub struct CheckPongTimeout;
-

@@ -26,12 +26,12 @@ async fn main() -> std::io::Result<()> {
     let id = args[1].clone();
     let position = get_rand_f32_tuple();
 
-    println!(
-        "Creando restaurant con ID: {}, posición: {:?}, éxito?: {}",
-        id, position, SUCCESS_PROBABILITY
-    );
-
-    let restaurant = Restaurant::new(RestaurantInfo { id, position }, SUCCESS_PROBABILITY, servers).await;
+    let restaurant = Restaurant::new(
+        RestaurantInfo { id, position },
+        SUCCESS_PROBABILITY,
+        servers,
+    )
+    .await;
 
     restaurant.start();
 

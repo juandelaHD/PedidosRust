@@ -40,6 +40,7 @@ pub struct NewOfferToDeliver {
 #[rtype(result = "()")]
 pub struct DeliveryNoNeeded {
     pub order: OrderDTO,
+    pub delivery_info: DeliveryDTO,
 }
 
 #[derive(Message, Debug, Clone, Serialize, Deserialize)]

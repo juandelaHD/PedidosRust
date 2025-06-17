@@ -86,9 +86,10 @@ impl Handler<NetworkMessage> for PaymentGateway {
             }
             NetworkMessage::BillPayment(msg) => {
                 let order_id = msg.order.order_id;
-                
+
                 // Simulate payment logic
-                self.logger.info(format!("💸 Payment successful for order {}", order_id));
+                self.logger
+                    .info(format!("💸 Payment successful for order {}", order_id));
                 // Update the order status to completed
                 // extraccion de authorized_orders
                 if self.authorized_orders.contains(&order_id) {
@@ -112,7 +113,6 @@ impl Handler<NetworkMessage> for PaymentGateway {
                         self.logger.error("Sender not initialized in communicator");
                     }
                 }
-                
             }
             _ => {
                 // Handle other message types as needed

@@ -1,8 +1,8 @@
 use crate::messages::shared_messages::NetworkMessage;
 use actix::prelude::*;
+use std::collections::VecDeque;
 use tokio::io::{AsyncWriteExt, BufWriter, WriteHalf};
 use tokio::net::TcpStream;
-use std::collections::VecDeque;
 
 pub struct TCPSender {
     pub writer: Option<BufWriter<WriteHalf<TcpStream>>>,

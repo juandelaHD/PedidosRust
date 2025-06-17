@@ -1,4 +1,7 @@
-use crate::types::{dtos::{DeliveryDTO, OrderDTO}, restaurant_info::RestaurantInfo};
+use crate::types::{
+    dtos::{DeliveryDTO, OrderDTO},
+    restaurant_info::RestaurantInfo,
+};
 use actix::Message;
 use serde::{Deserialize, Serialize};
 

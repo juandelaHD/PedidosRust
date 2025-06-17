@@ -1,14 +1,14 @@
+use crate::payment::PaymentGateway;
 use actix::prelude::*;
 use common::logger::Logger;
 use common::network::communicator::Communicator;
 use common::network::peer_types::PeerType;
 use std::net::SocketAddr;
 use std::sync::Arc;
+use tokio::io::AsyncBufReadExt;
 use tokio::io::AsyncReadExt;
 use tokio::net::TcpListener;
 use tokio::net::TcpStream;
-use tokio::io::AsyncBufReadExt;
-use crate::payment::PaymentGateway;
 
 pub struct PaymentAcceptor {
     addr: SocketAddr,
@@ -17,11 +17,7 @@ pub struct PaymentAcceptor {
 }
 
 impl PaymentAcceptor {
-    pub fn new(
-        addr: SocketAddr,
-        payment_gateway_addr: Addr<PaymentGateway>,
-        
-    ) -> Self {
+    pub fn new(addr: SocketAddr, payment_gateway_addr: Addr<PaymentGateway>) -> Self {
         Self {
             addr,
             payment_gateway_addr,
@@ -29,7 +25,6 @@ impl PaymentAcceptor {
         }
     }
 }
-
 
 impl Actor for PaymentAcceptor {
     type Context = Context<Self>;
@@ -56,21 +51,25 @@ impl Actor for PaymentAcceptor {
                                             if let Some(peer_type) =
                                                 PeerType::from_u8(peer_type_byte[0])
                                             {
-                                            let mut addr_line = String::new();
-                                            let mut reader = tokio::io::BufReader::new(&mut stream);
-                                            reader.read_line(&mut addr_line).await.unwrap_or_else(|_| {
-                                                logger.info(format!(
-                                                    "Error leyendo dirección desde {}",
-                                                    remote_addr
-                                                ));
-                                                0
-                                            });
+                                                let mut addr_line = String::new();
+                                                let mut reader =
+                                                    tokio::io::BufReader::new(&mut stream);
+                                                reader
+                                                    .read_line(&mut addr_line)
+                                                    .await
+                                                    .unwrap_or_else(|_| {
+                                                        logger.info(format!(
+                                                            "Error leyendo dirección desde {}",
+                                                            remote_addr
+                                                        ));
+                                                        0
+                                                    });
 
-                                            payment_acceptor_addr.do_send(HandleConnection {
-                                                stream,
-                                                remote_addr,
-                                                peer_type,
-                                            });
+                                                payment_acceptor_addr.do_send(HandleConnection {
+                                                    stream,
+                                                    remote_addr,
+                                                    peer_type,
+                                                });
                                             } else {
                                                 logger.info(format!(
                                                     "Tipo de peer inválido desde {}",
@@ -102,14 +101,12 @@ impl Actor for PaymentAcceptor {
     }
 }
 
-
 #[derive(Message, Debug)]
 #[rtype(result = "()")]
 pub struct RegisterConnection {
     pub client_addr: SocketAddr,
     pub communicator: Communicator<PaymentGateway>,
 }
-
 
 #[derive(Message)]
 #[rtype(result = "()")]
@@ -135,7 +132,7 @@ impl Handler<HandleConnection> for PaymentAcceptor {
                 let communicator =
                     Communicator::new(stream, self.payment_gateway_addr.clone(), peer_type);
                 self.payment_gateway_addr.do_send(RegisterConnection {
-                    client_addr:  remote_addr,
+                    client_addr: remote_addr,
                     communicator,
                 });
             }
