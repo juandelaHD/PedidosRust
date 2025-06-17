@@ -366,7 +366,7 @@ impl Handler<WhoIsLeader> for Coordinator {
                 "No user ID found for {}. Adding as UNKNOWN_USER.",
                 user_address
             ));
-             println!("EL ORIGEN NOOO ESTA EN USER_ADDRESSES");
+            println!("EL ORIGEN NOOO ESTA EN USER_ADDRESSES");
             // Si no está, lo actualizamos o lo agregamos
             self.user_addresses
                 .insert(user_address, msg.user_id.clone());
@@ -488,7 +488,7 @@ impl Handler<NetworkMessage> for Coordinator {
     type Result = ();
     fn handle(&mut self, msg: NetworkMessage, ctx: &mut Self::Context) -> Self::Result {
         println!("Received NetworkMessage: {:?}", msg);
-        match msg {    
+        match msg {
             // All Users messages
             NetworkMessage::WhoIsLeader(msg_data) => {
                 if self.current_coordinator.is_none() {
@@ -918,11 +918,8 @@ impl Handler<NetworkMessage> for Coordinator {
                 if let Some(communicator) = self.communicators.get(&remote_addr) {
                     self.communicators.remove(&remote_addr);
                     self.user_addresses.remove_by_key(&remote_addr);
-                    self.logger.info(format!(
-                        "Removed communicator for {}",
-                        remote_addr
-                    ));
-
+                    self.logger
+                        .info(format!("Removed communicator for {}", remote_addr));
                 } else {
                     if let Some(coordinator_manager) = &self.coordinator_manager {
                         coordinator_manager.do_send(msg_data);

@@ -111,7 +111,7 @@ impl Actor for UIHandler {
 ///
 /// Extracts the list of nearby restaurants and dishes.
 ///
-/// Prompts the user to select a restaurant and dish, then sending the 
+/// Prompts the user to select a restaurant and dish, then sending the
 /// selection to the `Client` actor.
 impl Handler<SelectNearbyRestaurants> for UIHandler {
     type Result = ();

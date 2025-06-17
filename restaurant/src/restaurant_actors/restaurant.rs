@@ -3,8 +3,8 @@ use actix::fut::wrap_future;
 use actix::prelude::*;
 use common::logger::Logger;
 use common::messages::{
-    DeliverThisOrder, DeliveryAccepted, LeaderIs, NetworkMessage, NewOrder, RecoverProcedure,
-    RegisterUser, RequestNearbyDelivery, UpdateOrderStatus, WhoIsLeader, ConnectionClosed,
+    ConnectionClosed, DeliverThisOrder, DeliveryAccepted, LeaderIs, NetworkMessage, NewOrder,
+    RecoverProcedure, RegisterUser, RequestNearbyDelivery, UpdateOrderStatus, WhoIsLeader,
 };
 use common::network::communicator::Communicator;
 use common::network::connections::{connect_some, try_to_connect};
@@ -95,7 +95,6 @@ pub async fn reconnect(servers: Vec<SocketAddr>) -> Option<TcpStream> {
     new_stream
 }
 
-
 impl Handler<ConnectionClosed> for Restaurant {
     type Result = ();
 
@@ -106,47 +105,43 @@ impl Handler<ConnectionClosed> for Restaurant {
         ));
         // Llama a la función async y usa wrap_future para obtener el resultado
         let servers = self.servers.clone();
-        let fut = async move {
-            reconnect(servers).await
-        };
+        let fut = async move { reconnect(servers).await };
 
-        let fut = wrap_future::<_, Self>(fut)
-            .map(|new_stream, actor: &mut Self, ctx| {
-                match new_stream {
-                    Some(stream) => {
-                        actor.pending_stream = Some(stream);
-                        let communicator = Communicator::new(
-                            actor.pending_stream
-                                .take()
-                                .expect("Pending stream should be set"),
+        let fut = wrap_future::<_, Self>(fut).map(|new_stream, actor: &mut Self, ctx| {
+            match new_stream {
+                Some(stream) => {
+                    actor.pending_stream = Some(stream);
+                    let communicator = Communicator::new(
+                        actor
+                            .pending_stream
+                            .take()
+                            .expect("Pending stream should be set"),
+                        ctx.address(),
+                        PeerType::RestaurantType,
+                    );
+                    actor.communicator = Some(communicator);
+
+                    actor.delivery_assigner_address =
+                        Some(DeliveryAssigner::new(actor.info.clone(), ctx.address()).start());
+
+                    actor.kitchen_address = Some(
+                        Kitchen::new(
                             ctx.address(),
-                            PeerType::RestaurantType,
-                        );
-                        actor.communicator = Some(communicator);
-
-                        actor.delivery_assigner_address =
-                            Some(DeliveryAssigner::new(actor.info.clone(), ctx.address()).start());
-
-                        actor.kitchen_address = Some(
-                            Kitchen::new(
-                                ctx.address(),
-                                actor.delivery_assigner_address.clone().unwrap(),
-                            )
-                            .start(),
-                        );
-                        actor.start_running(ctx);
-                    }
-                    None => {
-                        actor.logger.error("No se pudo reconectar. Cerrando actor.");
-                        ctx.stop(); // Detiene el actor
-                    }
+                            actor.delivery_assigner_address.clone().unwrap(),
+                        )
+                        .start(),
+                    );
+                    actor.start_running(ctx);
                 }
-            });
+                None => {
+                    actor.logger.error("No se pudo reconectar. Cerrando actor.");
+                    ctx.stop(); // Detiene el actor
+                }
+            }
+        });
         ctx.spawn(fut);
-
     }
 }
-
 
 impl Actor for Restaurant {
     type Context = Context<Self>;
@@ -395,8 +390,6 @@ impl Handler<DeliverThisOrder> for Restaurant {
     }
 }
 
-
-
 impl Handler<NetworkMessage> for Restaurant {
     type Result = ();
     fn handle(&mut self, msg: NetworkMessage, ctx: &mut Self::Context) -> Self::Result {
@@ -481,9 +474,9 @@ impl Handler<NetworkMessage> for Restaurant {
                         std::thread::sleep(std::time::Duration::from_secs(3));
                         ctx.address().do_send(msg_data.clone());
                     }
-                    
                 } else {
-                    self.logger.error("Communicator not found, cannot handle closed connection.");
+                    self.logger
+                        .error("Communicator not found, cannot handle closed connection.");
                 }
             }
 

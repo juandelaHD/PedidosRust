@@ -102,7 +102,7 @@ impl Client {
         }
     }
 
-    /// Starts the client logic by requesting the current leader from the server 
+    /// Starts the client logic by requesting the current leader from the server
     /// (Sends a WhoIsLeader message).
     ///
     /// ## Arguments

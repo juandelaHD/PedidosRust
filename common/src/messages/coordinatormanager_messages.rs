@@ -1,10 +1,10 @@
 use crate::messages::StorageLogMessage;
+use crate::types::dtos::Snapshot;
 use actix::Message;
 use serde::{Deserialize, Serialize};
 use serde_with::{DisplayFromStr, serde_as};
 use std::collections::HashMap;
 use std::net::SocketAddr;
-use crate::types::dtos::Snapshot;
 
 #[derive(Serialize, Deserialize, Debug, Message, Clone)]
 #[rtype(result = "()")]

@@ -105,12 +105,13 @@ impl Actor for TCPSender {
             if !act.queue.is_empty() && act.writer.is_some() {
                 ctx.notify(ProcessQueue);
             } else {
-                println!("[TCPSender] No messages to process or writer is None, skipping processing.");
+                println!(
+                    "[TCPSender] No messages to process or writer is None, skipping processing."
+                );
             }
         });
     }
 }
-
 
 struct ProcessQueue;
 
@@ -123,7 +124,10 @@ impl Handler<NetworkMessage> for TCPSender {
 
     fn handle(&mut self, msg: NetworkMessage, ctx: &mut Self::Context) {
         self.queue.push_back(msg);
-        println!("[TCPSender] Message added to queue, queue size: {}", self.queue.len());
+        println!(
+            "[TCPSender] Message added to queue, queue size: {}",
+            self.queue.len()
+        );
         println!("[TCPSender] Current queue: {:?}", self.queue);
         if self.queue.len() == 1 {
             ctx.notify(ProcessQueue);

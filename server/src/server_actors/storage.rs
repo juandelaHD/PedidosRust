@@ -1,10 +1,11 @@
 use crate::messages::internal_messages::{
-    AddOrderAccepted, FinishDeliveryAssignment, GetLogsFromIndex, GetMinLogIndex, GetAllStorage,
+    AddOrderAccepted, FinishDeliveryAssignment, GetAllStorage, GetLogsFromIndex, GetMinLogIndex,
 };
 use crate::server_actors::coordinator::Coordinator;
 use actix::prelude::*;
 use colored::Color;
 use common::logger::Logger;
+use common::messages::coordinatormanager_messages::StorageSnapshot;
 use common::messages::internal_messages::{
     AddAuthorizedOrderToRestaurant, AddClient, AddDelivery, AddOrder, AddPendingOrderToRestaurant,
     AddRestaurant, ApplyStorageUpdates, GetAllAvailableDeliveries, GetAllRestaurantsInfo,
@@ -12,9 +13,8 @@ use common::messages::internal_messages::{
     InsertAcceptedDelivery, RemoveAcceptedDeliveries, RemoveAuthorizedOrderToRestaurant,
     RemoveClient, RemoveDelivery, RemoveOrder, RemovePendingOrderToRestaurant, RemoveRestaurant,
     SetCurrentClientToDelivery, SetCurrentOrderToDelivery, SetDeliveryPosition, SetDeliveryStatus,
-    SetDeliveryToOrder, SetOrderStatus, StorageLogMessage
+    SetDeliveryToOrder, SetOrderStatus, StorageLogMessage,
 };
-use common::messages::coordinatormanager_messages::{StorageSnapshot};
 use common::messages::{DeliveryAvailable, DeliveryNoNeeded};
 use common::types::order_status::OrderStatus;
 use common::types::{
@@ -208,7 +208,6 @@ impl Handler<StorageLogMessage> for Storage {
     }
 }
 
-
 impl Handler<GetAllStorage> for Storage {
     type Result = MessageResult<GetAllStorage>;
 
@@ -253,7 +252,8 @@ impl Handler<StorageSnapshot> for Storage {
         }
         self.next_log_id = snapshot.next_log_id;
         self.min_persistent_log_index = snapshot.min_persistent_log_index;
-        self.logger.info("Storage snapshot updated from coordinator.");
+        self.logger
+            .info("Storage snapshot updated from coordinator.");
     }
 }
 

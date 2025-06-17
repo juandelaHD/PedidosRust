@@ -68,7 +68,6 @@ pub enum NetworkMessage {
 
     RetryLater(RetryLater),
 
-
     // TCP Connection
     ConnectionClosed(ConnectionClosed),
 }

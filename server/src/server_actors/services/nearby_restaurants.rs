@@ -1,4 +1,3 @@
-use common::messages::internal_messages::GetAllRestaurantsInfo;
 use crate::server_actors::coordinator::Coordinator;
 use crate::server_actors::storage::Storage;
 use actix::prelude::*;
@@ -8,6 +7,7 @@ use common::logger::Logger;
 use common::messages::CancelOrder;
 use common::messages::NearbyRestaurants;
 use common::messages::RequestNearbyRestaurants;
+use common::messages::internal_messages::GetAllRestaurantsInfo;
 use common::types::dtos::OrderDTO;
 use common::types::order_status::OrderStatus;
 use common::types::restaurant_info::RestaurantInfo;

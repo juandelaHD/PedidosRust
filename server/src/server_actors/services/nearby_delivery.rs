@@ -1,4 +1,3 @@
-use common::messages::internal_messages::{GetDeliveries, RemoveOrder};
 use crate::server_actors::coordinator::Coordinator;
 use crate::server_actors::storage::Storage;
 use actix::prelude::*;
@@ -7,6 +6,7 @@ use common::constants::NEARBY_RADIUS;
 use common::logger::Logger;
 use common::messages::CancelOrder;
 use common::messages::coordinator_messages::NearbyDeliveries;
+use common::messages::internal_messages::{GetDeliveries, RemoveOrder};
 use common::messages::restaurant_messages::RequestNearbyDelivery;
 use common::types::dtos::DeliveryDTO;
 use common::utils::calculate_distance;

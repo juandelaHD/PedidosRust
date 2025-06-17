@@ -1,5 +1,5 @@
-use colored::*;
 use chrono::Local;
+use colored::*;
 
 #[derive(Debug, Clone)]
 pub struct Logger {
