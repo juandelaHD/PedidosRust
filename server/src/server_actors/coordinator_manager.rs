@@ -126,7 +126,8 @@ impl CoordinatorManager {
             })
             .collect::<Vec<_>>();
 
-        if nodes.is_empty() {
+        if nodes.len() < 2 {
+            // si soy el unico nodo o no hay nodos, no hay siguiente
             return None;
         }
 
