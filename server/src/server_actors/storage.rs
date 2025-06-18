@@ -24,30 +24,43 @@ use common::types::{
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
 
+/// The `Storage` actor is responsible for maintaining and updating all persistent state in the system,
+/// including clients, restaurants, deliveries, orders, and the storage log.
+///
+/// # Responsibilities
+/// - Stores and manages all entities (clients, restaurants, deliveries, orders).
+/// - Handles log-based persistence and synchronization for distributed recovery.
+/// - Applies and logs all state-changing operations.
+/// - Provides snapshots and log segments for recovery and replication.
+/// - Coordinates with the `Coordinator` actor for system-wide updates.
 pub struct Storage {
-    /// Diccionario con información sobre clientes.
+    /// Dictionary with information about clients.
     pub clients: HashMap<String, ClientDTO>,
-    /// Diccionario con información sobre restaurantes.
+    /// Dictionary with information about restaurants.
     pub restaurants: HashMap<String, RestaurantDTO>,
-    /// Diccionario con información sobre deliverys.
+    /// Dictionary with information about deliveries.
     pub deliverys: HashMap<String, DeliveryDTO>,
-    /// Diccionario de órdenes.
+    /// Dictionary of orders.
     pub orders: HashMap<u64, OrderDTO>,
-    /// Deliveries que solicitaron aceptar órdenes.
+    /// Deliveries that have accepted orders.
     pub accepted_deliveries: HashMap<u64, HashSet<String>>,
-    /// Lista de actualizaciones del storage.
+    /// List of storage log updates.
     pub storage_updates: HashMap<u64, StorageLogMessage>,
-    /// Índice del próximo log.
+    /// Index of the next log entry.
     pub next_log_id: u64,
-    /// Índice de la mínima operación persistente en el log.
+    /// Index of the minimum persistent operation in the log.
     pub min_persistent_log_index: u64,
-    /// Comunicador asociado al `Coordinator`.
+    /// Address of the associated `Coordinator`.
     pub coordinator: Addr<Coordinator>,
-    /// Logger para registrar eventos en el storage.
+    /// Logger for storage events.
     pub logger: Logger,
 }
 
 impl Storage {
+    /// Creates a new `Storage` actor instance.
+    ///
+    /// # Arguments
+    /// * `coordinator` - The address of the `Coordinator` actor.
     pub fn new(coordinator: Addr<Coordinator>) -> Self {
         Self {
             clients: HashMap::new(),
@@ -62,6 +75,10 @@ impl Storage {
             logger: Logger::new("Storage", Color::White),
         }
     }
+    /// Adds a new log entry to the storage log and increments the log index.
+    ///
+    /// # Arguments
+    /// * `log_message` - The [`StorageLogMessage`] to add.
     fn add_to_log(&mut self, log_message: StorageLogMessage) {
         self.storage_updates.insert(self.next_log_id, log_message);
         self.next_log_id += 1;
@@ -72,6 +89,7 @@ impl Actor for Storage {
     type Context = Context<Self>;
 }
 
+/// Handles requests for the minimum log index currently stored.
 impl Handler<GetMinLogIndex> for Storage {
     type Result = u64;
 
@@ -80,6 +98,7 @@ impl Handler<GetMinLogIndex> for Storage {
     }
 }
 
+/// Handles requests for all log entries from a given index.
 impl Handler<GetLogsFromIndex> for Storage {
     type Result = MessageResult<GetLogsFromIndex>;
 
@@ -94,6 +113,7 @@ impl Handler<GetLogsFromIndex> for Storage {
     }
 }
 
+/// Applies a batch of storage updates, updating the log and state accordingly.
 impl Handler<ApplyStorageUpdates> for Storage {
     type Result = ();
 
@@ -139,6 +159,7 @@ impl Handler<ApplyStorageUpdates> for Storage {
     }
 }
 
+/// Applies a single storage log message by dispatching it to the appropriate handler.
 impl Handler<StorageLogMessage> for Storage {
     type Result = ();
 
@@ -208,6 +229,7 @@ impl Handler<StorageLogMessage> for Storage {
     }
 }
 
+/// Handles requests for a full snapshot of the storage state.
 impl Handler<GetAllStorage> for Storage {
     type Result = MessageResult<GetAllStorage>;
 
@@ -227,6 +249,7 @@ impl Handler<GetAllStorage> for Storage {
     }
 }
 
+/// Updates the storage state from a received snapshot.
 impl Handler<StorageSnapshot> for Storage {
     type Result = ();
 
@@ -259,6 +282,7 @@ impl Handler<StorageSnapshot> for Storage {
 
 // --------------- ADD ------------------ //
 
+/// Handles adding a new client to storage and logs the operation.
 impl Handler<AddClient> for Storage {
     type Result = ();
 
@@ -271,6 +295,7 @@ impl Handler<AddClient> for Storage {
     }
 }
 
+/// Handles adding a new restaurant to storage and logs the operation.
 impl Handler<AddRestaurant> for Storage {
     type Result = ();
 
@@ -285,6 +310,7 @@ impl Handler<AddRestaurant> for Storage {
     }
 }
 
+/// Handles adding a new delivery agent to storage and logs the operation.
 impl Handler<AddDelivery> for Storage {
     type Result = ();
 
@@ -297,6 +323,7 @@ impl Handler<AddDelivery> for Storage {
     }
 }
 
+/// Handles adding a new order to storage and logs the operation.
 impl Handler<AddOrder> for Storage {
     type Result = ();
 
@@ -316,6 +343,7 @@ impl Handler<AddOrder> for Storage {
     }
 }
 
+/// Handles adding an accepted delivery for an order.
 impl Handler<AddOrderAccepted> for Storage {
     type Result = ();
 
@@ -373,6 +401,7 @@ impl Handler<AddOrderAccepted> for Storage {
     }
 }
 
+/// Handles inserting an accepted delivery for an order.
 impl Handler<InsertAcceptedDelivery> for Storage {
     type Result = ();
 
@@ -385,6 +414,7 @@ impl Handler<InsertAcceptedDelivery> for Storage {
     }
 }
 
+/// Handles adding an authorized order to a restaurant.
 impl Handler<AddAuthorizedOrderToRestaurant> for Storage {
     type Result = ();
 
@@ -412,6 +442,7 @@ impl Handler<AddAuthorizedOrderToRestaurant> for Storage {
     }
 }
 
+/// Handles adding a pending order to a restaurant.
 impl Handler<AddPendingOrderToRestaurant> for Storage {
     type Result = ();
 
@@ -439,6 +470,7 @@ impl Handler<AddPendingOrderToRestaurant> for Storage {
     }
 }
 
+/// Handles the completion of a delivery assignment, removing accepted deliveries and notifying the address.
 impl Handler<FinishDeliveryAssignment> for Storage {
     type Result = ();
 
@@ -490,6 +522,7 @@ impl Handler<FinishDeliveryAssignment> for Storage {
     }
 }
 
+/// Handles the removal of accepted deliveries for a specific order.
 impl Handler<RemoveAcceptedDeliveries> for Storage {
     type Result = Option<HashSet<String>>;
 
@@ -499,6 +532,7 @@ impl Handler<RemoveAcceptedDeliveries> for Storage {
     }
 }
 
+/// Handles requests to get a client by ID.
 impl Handler<GetClient> for Storage {
     type Result = MessageResult<GetClient>;
 
@@ -507,6 +541,7 @@ impl Handler<GetClient> for Storage {
     }
 }
 
+/// Handles requests to get a restaurant by ID.
 impl Handler<GetRestaurant> for Storage {
     type Result = MessageResult<GetRestaurant>;
 
@@ -515,6 +550,7 @@ impl Handler<GetRestaurant> for Storage {
     }
 }
 
+/// Handles requests to get a delivery by ID.
 impl Handler<GetDelivery> for Storage {
     type Result = MessageResult<GetDelivery>;
 
@@ -523,6 +559,7 @@ impl Handler<GetDelivery> for Storage {
     }
 }
 
+/// Handles requests to get an order by ID.
 impl Handler<GetOrder> for Storage {
     type Result = MessageResult<GetOrder>;
 
@@ -533,6 +570,7 @@ impl Handler<GetOrder> for Storage {
 
 // --------------- REMOVES ------------------ //
 
+/// Handles removing a client from storage and logs the operation.
 impl Handler<RemoveClient> for Storage {
     type Result = ();
 
@@ -557,6 +595,7 @@ impl Handler<RemoveClient> for Storage {
     }
 }
 
+/// Handles removing a restaurant from storage and logs the operation.
 impl Handler<RemoveRestaurant> for Storage {
     type Result = ();
 
@@ -569,6 +608,7 @@ impl Handler<RemoveRestaurant> for Storage {
     }
 }
 
+/// Handles removing a delivery agent from storage and logs the operation.
 impl Handler<RemoveDelivery> for Storage {
     type Result = ();
 
@@ -580,6 +620,7 @@ impl Handler<RemoveDelivery> for Storage {
     }
 }
 
+/// Handles removing an authorized order from a restaurant.
 impl Handler<RemoveAuthorizedOrderToRestaurant> for Storage {
     type Result = ();
 
@@ -607,6 +648,7 @@ impl Handler<RemoveAuthorizedOrderToRestaurant> for Storage {
     }
 }
 
+/// Handles removing a pending order from a restaurant.
 impl Handler<RemovePendingOrderToRestaurant> for Storage {
     type Result = ();
 
@@ -634,6 +676,7 @@ impl Handler<RemovePendingOrderToRestaurant> for Storage {
     }
 }
 
+/// Handles removing an order from storage and logs the operation.
 impl Handler<RemoveOrder> for Storage {
     type Result = ();
 
@@ -683,6 +726,7 @@ impl Handler<RemoveOrder> for Storage {
 
 // --------------- SETTERS ------------------ //
 
+/// Handles setting the delivery position for a specific delivery.
 impl Handler<SetDeliveryPosition> for Storage {
     type Result = ();
 
@@ -699,6 +743,7 @@ impl Handler<SetDeliveryPosition> for Storage {
     }
 }
 
+/// Handles setting the current client for a specific delivery.
 impl Handler<SetCurrentClientToDelivery> for Storage {
     type Result = ();
 
@@ -721,6 +766,7 @@ impl Handler<SetCurrentClientToDelivery> for Storage {
     }
 }
 
+/// Handles setting the current order for a specific delivery.
 impl Handler<SetCurrentOrderToDelivery> for Storage {
     type Result = ();
 
@@ -745,6 +791,7 @@ impl Handler<SetCurrentOrderToDelivery> for Storage {
     }
 }
 
+/// Handles setting the delivery status for a specific delivery.
 impl Handler<SetDeliveryStatus> for Storage {
     type Result = ();
 
@@ -761,6 +808,7 @@ impl Handler<SetDeliveryStatus> for Storage {
     }
 }
 
+/// Handles setting a delivery to an order, updating the order's delivery ID.
 impl Handler<SetDeliveryToOrder> for Storage {
     type Result = ();
 
@@ -777,6 +825,7 @@ impl Handler<SetDeliveryToOrder> for Storage {
     }
 }
 
+/// Handles updating the status of an order.
 impl Handler<SetOrderStatus> for Storage {
     type Result = ();
 
@@ -803,6 +852,7 @@ impl Handler<SetOrderStatus> for Storage {
     }
 }
 
+/// Handles requests to get all restaurants in storage
 impl Handler<GetRestaurants> for Storage {
     type Result = MessageResult<GetRestaurants>;
 
@@ -812,6 +862,7 @@ impl Handler<GetRestaurants> for Storage {
     }
 }
 
+/// Handles requests to get all restaurant information (ID and position).
 impl Handler<GetAllRestaurantsInfo> for Storage {
     type Result = MessageResult<GetAllRestaurantsInfo>;
 
@@ -828,6 +879,7 @@ impl Handler<GetAllRestaurantsInfo> for Storage {
     }
 }
 
+/// Handles requests to get all deliveries in storage
 impl Handler<GetDeliveries> for Storage {
     type Result = MessageResult<GetDeliveries>;
 
@@ -837,6 +889,7 @@ impl Handler<GetDeliveries> for Storage {
     }
 }
 
+/// Handles requests to get all available deliveries in storage.
 impl Handler<GetAllAvailableDeliveries> for Storage {
     type Result = MessageResult<GetAllAvailableDeliveries>;
 

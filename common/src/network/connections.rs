@@ -118,7 +118,7 @@ pub async fn connect_one(addr: SocketAddr, peer_type: PeerType) -> Option<TcpStr
 ///
 /// ## Returns
 /// An `Option<TcpStream>` if the connection succeeds, or `None` if it fails.
-pub async fn try_to_connect(server_addr: SocketAddr) -> Option<TcpStream> {
+async fn try_to_connect(server_addr: SocketAddr) -> Option<TcpStream> {
     match TcpStream::connect(server_addr).await {
         Ok(stream) => Some(stream),
         Err(_) => None,

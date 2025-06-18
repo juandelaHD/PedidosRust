@@ -33,40 +33,55 @@ use std::time::Duration;
 use std::{collections::HashMap, net::SocketAddr};
 use tokio::net::TcpStream;
 
+/// The `Coordinator` actor orchestrates the main logic of the distributed system,
+/// managing user connections, order processing, communication with other coordinators,
+/// and coordination with services such as storage, order management, and nearby services.
+///
+/// ## Responsibilities
+/// - Registers and manages user and peer connections.
+/// - Handles incoming and outgoing network messages.
+/// - Coordinates order assignment, delivery, and cancellation.
+/// - Manages communication with the `CoordinatorManager` for leader election and storage updates.
+/// - Interfaces with the `OrderService`, `NearbyRestaurantsService`, and `NearbyDeliveryService`.
 #[derive(Debug)]
 pub struct Coordinator {
+    /// Unique identifier for this coordinator.
     pub id: String,
-    /// Direcciones de todos los nodos en el anillo.
+    /// Addresses of all nodes in the ring.
     pub ring_nodes: HashMap<String, SocketAddr>,
-    /// Dirección de este coordinator.
+    /// Socket address of this coordinator.
     pub my_addr: SocketAddr,
-    /// Coordinador actual.
+    /// Current coordinator's address (leader).
     pub current_coordinator: Option<SocketAddr>,
-    /// Estado de los pedidos en curso.
-    //   pub active_orders: HashSet<u64>, // TODO: Ver si se puede sacar
-    /// Comunicador con el PaymentGateway
-    // pub payment_communicator: Communicator,
-    /// Diccionario de direcciones de usuarios con sus correspondientes IDs.
-    pub user_addresses: BiMap<SocketAddr, String>, // ID -> REMOTA
-    /// Mapa de comunicadores de clientes conectados.
-    pub communicators: HashMap<SocketAddr, Communicator<Coordinator>>, // REMOTA -> Comunicador
-    /// Canal de envío hacia el actor `Storage`.
+    /// Bi-directional map of user addresses and user IDs.
+    pub user_addresses: BiMap<SocketAddr, String>,
+    /// Map of remote addresses to their communicators.
+    pub communicators: HashMap<SocketAddr, Communicator<Coordinator>>,
+    /// Address of the storage actor.
     pub storage: Option<Addr<Storage>>,
-    /// Canal de envío hacia el actor `Reaper`.
-    // pub reaper: Addr<Reaper>,
-    /// Servicio de órdenes.
+    /// Address of the order service actor.
     pub order_service: Option<Addr<OrderService>>,
-    /// Servicio de restaurantes cercanos.
+    /// Address of the nearby restaurants service actor.
     pub nearby_restaurant_service: Option<Addr<NearbyRestaurantsService>>,
-    // Servicio de deliverys cercanos.
+    /// Address of the nearby delivery service actor.
     pub nearby_delivery_service: Option<Addr<NearbyDeliveryService>>,
+    /// Logger for coordinator events.
     pub logger: Logger,
+    /// Address of the coordinator manager actor.
     pub coordinator_manager: Option<Addr<CoordinatorManager>>,
+    /// Pending TCP streams for ring connections.
     pub pending_streams: HashMap<SocketAddr, TcpStream>,
+    /// Timers for order assignment timeouts.
     pub order_timers: HashMap<u64, SpawnHandle>,
 }
 
 impl Coordinator {
+    /// Asynchronously creates a new `Coordinator` instance, connects to ring nodes,
+    /// and initializes the logger and services.
+    ///
+    /// ## Arguments
+    /// * `srv_addr` - The socket address of this coordinator.
+    /// * `ring_nodes` - Map of all ring node IDs to their addresses.
     pub async fn new(srv_addr: SocketAddr, ring_nodes: HashMap<String, SocketAddr>) -> Self {
         // Inicializar el coordinador con la dirección del servidor y los nodos del anillo
         // y un logger compartido.
@@ -96,6 +111,11 @@ impl Coordinator {
         }
     }
 
+    /// Sends a [`NetworkMessage`] to a user by their user ID.
+    ///
+    /// ## Arguments
+    /// * `user_id` - The user ID to send the message to.
+    /// * `message` - The [`NetworkMessage`] to send.
     pub fn send_network_message(&self, user_id: String, message: NetworkMessage) {
         if let Some(user_addr) = self.user_addresses.get_by_value(&user_id).cloned() {
             if let Some(communicator) = self.communicators.get(&user_addr) {
@@ -112,7 +132,14 @@ impl Coordinator {
             self.logger.info(format!("User ID {} not found", user_id));
         }
     }
-    // Cuando haces el broadcast:
+
+    /// Broadcasts delivery offers to all available delivery agents for a given order,
+    /// and starts a timer to cancel the order if not accepted in time.
+    ///
+    /// ## Arguments
+    /// * `order` - The [`OrderDTO`] to be delivered.
+    /// * `deliveries` - List of [`DeliveryDTO`]s representing available delivery agents.
+    /// * `ctx` - The actor context.
     pub fn broadcast_deliveries(
         &mut self,
         order: OrderDTO,
@@ -174,7 +201,11 @@ impl Coordinator {
         self.order_timers.insert(order_id, handle);
     }
 
-    // Cuando recibes OrderAccepted:
+    /// Handles the acceptance of an order by a delivery agent, cancelling the assignment timer.
+    ///
+    /// ## Arguments
+    /// * `order_id` - The ID of the accepted order.
+    /// * `ctx` - The actor context.
     fn handle_order_accepted(&mut self, order_id: u64, ctx: &mut Context<Self>) {
         if let Some(handle) = self.order_timers.remove(&order_id) {
             ctx.cancel_future(handle);
@@ -187,6 +218,7 @@ impl Coordinator {
 impl Actor for Coordinator {
     type Context = Context<Self>;
 
+    /// Initializes storage, services, and coordinator manager when the actor starts.
     fn started(&mut self, ctx: &mut Self::Context) {
         // Inicializar el servicio de almacenamiento
         let storage = Storage::new(ctx.address());
@@ -246,6 +278,7 @@ impl Actor for Coordinator {
     }
 }
 
+/// Handles registration of a new coordinator connection.
 impl Handler<RegisterConnectionWithCoordinator> for Coordinator {
     type Result = ();
 
@@ -261,6 +294,7 @@ impl Handler<RegisterConnectionWithCoordinator> for Coordinator {
     }
 }
 
+/// Handles registration of a new client/peer connection.
 impl Handler<RegisterConnection> for Coordinator {
     type Result = ();
     fn handle(&mut self, msg: RegisterConnection, _ctx: &mut Self::Context) -> Self::Result {
@@ -275,6 +309,7 @@ impl Handler<RegisterConnection> for Coordinator {
     }
 }
 
+/// Handles sending a list of nearby restaurants to a client.
 impl Handler<NearbyRestaurants> for Coordinator {
     type Result = ();
 
@@ -285,6 +320,7 @@ impl Handler<NearbyRestaurants> for Coordinator {
     }
 }
 
+/// Handles broadcasting available deliveries to delivery agents.
 impl Handler<NearbyDeliveries> for Coordinator {
     type Result = ();
 
@@ -294,6 +330,7 @@ impl Handler<NearbyDeliveries> for Coordinator {
     }
 }
 
+/// Handles notifications of order updates to peers.
 impl Handler<NotifyOrderUpdated> for Coordinator {
     type Result = ();
 
@@ -303,6 +340,7 @@ impl Handler<NotifyOrderUpdated> for Coordinator {
     }
 }
 
+/// Handles notification that a delivery agent is available for an order.
 impl Handler<DeliveryAvailable> for Coordinator {
     type Result = ();
 
@@ -313,6 +351,7 @@ impl Handler<DeliveryAvailable> for Coordinator {
     }
 }
 
+/// Handles notification that a delivery agent is no longer needed for an order.
 impl Handler<DeliveryNoNeeded> for Coordinator {
     type Result = ();
 
@@ -322,6 +361,7 @@ impl Handler<DeliveryNoNeeded> for Coordinator {
     }
 }
 
+/// Handles instructions to deliver a specific order.
 impl Handler<DeliverThisOrder> for Coordinator {
     type Result = ();
 
@@ -340,6 +380,7 @@ impl Handler<DeliverThisOrder> for Coordinator {
     }
 }
 
+/// Handles queries about the current leader in the system.
 impl Handler<WhoIsLeader> for Coordinator {
     type Result = ();
     fn handle(&mut self, msg: WhoIsLeader, _ctx: &mut Self::Context) -> Self::Result {
@@ -397,6 +438,7 @@ impl Handler<WhoIsLeader> for Coordinator {
     }
 }
 
+/// Handles updates about the current leader's ID.
 impl Handler<LeaderIdIs> for Coordinator {
     type Result = ();
 
@@ -416,6 +458,7 @@ impl Handler<LeaderIdIs> for Coordinator {
     }
 }
 
+/// Handles requests to retry an operation later.
 impl Handler<RetryLater> for Coordinator {
     type Result = ();
 
@@ -431,6 +474,7 @@ impl Handler<RetryLater> for Coordinator {
     }
 }
 
+/// Handles new order notifications for restaurants.
 impl Handler<NewOrder> for Coordinator {
     type Result = ();
 
@@ -445,6 +489,7 @@ impl Handler<NewOrder> for Coordinator {
     }
 }
 
+/// Handles notifications that an order has been finalized.
 impl Handler<OrderFinalized> for Coordinator {
     type Result = ();
 
@@ -454,6 +499,7 @@ impl Handler<OrderFinalized> for Coordinator {
     }
 }
 
+/// Handles order cancellation requests.
 impl Handler<CancelOrder> for Coordinator {
     type Result = ();
 
@@ -486,6 +532,7 @@ impl Handler<CancelOrder> for Coordinator {
     }
 }
 
+/// Handles all incoming [`NetworkMessage`]s, dispatching them to the appropriate service or handler.
 impl Handler<NetworkMessage> for Coordinator {
     type Result = ();
     fn handle(&mut self, msg: NetworkMessage, ctx: &mut Self::Context) -> Self::Result {

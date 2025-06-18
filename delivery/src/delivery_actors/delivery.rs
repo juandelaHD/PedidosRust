@@ -1,17 +1,15 @@
 use actix::fut::wrap_future;
 use actix::prelude::*;
 use colored::Color;
-use common::constants::{
-    BASE_DELAY_MILLIS, DELAY_SECONDS_TO_RETRY, DELAY_SECONDS_TO_START_RECONNECT,
-};
+use common::constants::{BASE_DELAY_MILLIS, DELAY_SECONDS_TO_START_RECONNECT};
 use common::logger::Logger;
 use common::messages::delivery_messages::{IAmAvailable, OrderDelivered};
 use common::messages::{
-    AcceptedOrder, DeliverThisOrder, DeliveryNoNeeded, NewOfferToDeliver, UpdateOrderStatus,
-    shared_messages::*,
+    AcceptedOrder, ConnectionClosed, DeliverThisOrder, DeliveryNoNeeded, LeaderIs, NetworkMessage,
+    NewOfferToDeliver, RecoverProcedure, RegisterUser, UpdateOrderStatus, WhoIsLeader,
 };
 use common::network::communicator::Communicator;
-use common::network::connections::{connect_some, reconnect, try_to_connect};
+use common::network::connections::{connect_one, connect_some, reconnect};
 use common::network::peer_types::PeerType;
 use common::types::delivery_status::DeliveryStatus;
 use common::types::dtos::{DeliveryDTO, OrderDTO, UserDTO};
@@ -48,6 +46,7 @@ pub struct Delivery {
     pub pending_stream: Option<TcpStream>,
     /// Logger for delivery events.
     pub logger: Logger,
+    waiting_reconnection_timer: Option<actix::SpawnHandle>,
 }
 
 impl Delivery {
@@ -75,7 +74,10 @@ impl Delivery {
         let pending_stream = connect_some(servers.clone(), PeerType::DeliveryType).await;
 
         if pending_stream.is_none() {
-            logger.error("Failed to connect to any server. Exiting delivery actor.");
+            logger.error(format!(
+                "Failed to connect to any server from the list: {:?}",
+                servers
+            ));
             std::process::exit(1);
         }
 
@@ -89,6 +91,7 @@ impl Delivery {
             communicator: None,
             pending_stream,
             logger,
+            waiting_reconnection_timer: None,
         }
     }
 
@@ -162,30 +165,43 @@ impl Handler<ConnectionClosed> for Delivery {
     type Result = ();
 
     fn handle(&mut self, _msg: ConnectionClosed, ctx: &mut Self::Context) -> Self::Result {
+        println!(
+            "{}: Connection closed, attempting to reconnect!!!!",
+            self.logger.name
+        );
         // Llama a la función async y usa wrap_future para obtener el resultado
+        // Antes de reconectar o crear communicator:
+        if self.communicator.is_some() {
+            self.logger
+                .info("Already connected, skipping reconnection.");
+            return;
+        }
+
         let servers = self.servers.clone();
         let fut = async move { reconnect(servers, PeerType::DeliveryType).await };
 
-        let fut = wrap_future::<_, Self>(fut).map(|result, actor: &mut Self, ctx| {
-            match result {
-                Some(stream) => {
-                    let communicator =
-                        Communicator::new(stream, ctx.address(), PeerType::DeliveryType);
-                    actor.communicator = Some(communicator);
+        let fut = wrap_future::<_, Self>(fut).map(|result, actor: &mut Self, ctx| match result {
+            Some(stream) => {
+                let communicator = Communicator::new(stream, ctx.address(), PeerType::DeliveryType);
+                actor.communicator = Some(communicator);
 
-                    // Reinicia el actor para que vuelva a funcionar
-                    actor
-                        .logger
-                        .info("Reconnected successfully. Restarting actor...");
-                    std::thread::sleep(DELAY_SECONDS_TO_START_RECONNECT);
-                    actor.start_running(ctx);
+                actor
+                    .logger
+                    .info("Reconnected successfully. Restarting actor...");
+
+                if let Some(handler) = actor.waiting_reconnection_timer.take() {
+                    ctx.cancel_future(handler);
+                    actor.waiting_reconnection_timer = None;
+                    println!("CANCELANDO TIMER DE RECONEXIÓN");
                 }
-                None => {
-                    actor.logger.error(format!(
-                        "Failed to reconnect to any server after closed connection"
-                    ));
-                    ctx.stop(); // Detiene el actor
-                }
+
+                actor.start_running(ctx);
+            }
+            None => {
+                actor.logger.error(format!(
+                    "Failed to reconnect to any server after closed connection"
+                ));
+                ctx.stop();
             }
         });
         ctx.spawn(fut);
@@ -215,109 +231,93 @@ impl Actor for Delivery {
     }
 }
 
-/// Message used to update the network communicator for the delivery actor.
-pub struct UpdateCommunicator(pub Communicator<Delivery>);
-
-impl Message for UpdateCommunicator {
-    type Result = ();
-}
-
-/// Handler for the `UpdateCommunicator` message.
+/// Handles [`LeaderIs`] messages.
 ///
-/// Updates the delivery's communicator with a new instance, typically after reconnecting to a new leader.
-impl Handler<UpdateCommunicator> for Delivery {
-    type Result = ();
-
-    fn handle(&mut self, msg: UpdateCommunicator, _ctx: &mut Self::Context) -> Self::Result {
-        self.communicator = Some(msg.0);
-    }
-}
-
-/// Message used to trigger registration with the server.
-pub struct SendRegistration();
-
-impl Message for SendRegistration {
-    type Result = ();
-}
-
-/// Handler for the `SendRegistration` message.
-///
-/// Registers the delivery actor with the server by sending a `RegisterUser` message.
-impl Handler<SendRegistration> for Delivery {
-    type Result = ();
-
-    fn handle(&mut self, _msg: SendRegistration, _ctx: &mut Self::Context) -> Self::Result {
-        let local_address = self
-            .communicator
-            .as_ref()
-            .map(|c| c.local_address)
-            .expect("Socket address not set");
-        self.send_network_message(NetworkMessage::RegisterUser(RegisterUser {
-            origin_addr: local_address,
-            user_id: self.delivery_id.clone(),
-            position: self.position,
-        }));
-    }
-}
-
-/// Handler for the `LeaderIs` message.
-///
-/// Handles notification of the current leader's address. If not already connected to the leader,
-/// attempts to establish a new connection and updates the communicator.
+/// This handler is called when the server notifies the restaurant of the current leader's address.
+/// If already connected to the leader, it registers itself. Otherwise, it attempts to connect to the new leader
+/// and updates its communicator accordingly.
 impl Handler<LeaderIs> for Delivery {
     type Result = ();
 
     fn handle(&mut self, msg: LeaderIs, ctx: &mut Self::Context) -> Self::Result {
+        self.logger
+            .info(format!("Received new leader address: {}", msg.coord_addr));
         let leader_addr = msg.coord_addr;
         let self_addr = ctx.address();
         let logger = self.logger.clone();
+
+        if let Some(handler) = self.waiting_reconnection_timer.take() {
+            ctx.cancel_future(handler);
+            self.waiting_reconnection_timer = None;
+            println!("CANCELANDO TIMER DE RECONEXIÓN");
+        }
+
         let communicator_opt = self.communicator.as_ref().map(|c| c.peer_address);
 
-        // Si ya estamos conectados al líder, enviamos que nos registre
+        // Si ya estamos conectados al líder, no hacemos nada
         if Some(leader_addr) == communicator_opt {
             self.logger.info(format!(
                 "Already connected to the leader at address: {}",
-                leader_addr
+                leader_addr.clone()
             ));
+
             let local_address = self
                 .communicator
                 .as_ref()
                 .map(|c| c.local_address)
                 .expect("Socket address not set");
             self.send_network_message(NetworkMessage::RegisterUser(RegisterUser {
-                origin_addr: local_address,
+                origin_addr: local_address.clone(),
                 user_id: self.delivery_id.clone(),
                 position: self.position,
             }));
             return;
         }
-        // Si no estamos conectados al líder, intentamos conectarnos
-        // Clone the necessary fields to move into the async block
-        ctx.spawn(wrap_future(async move {
-            if let Some(new_stream) = try_to_connect(leader_addr).await {
-                let new_communicator =
-                    Communicator::new(new_stream, self_addr.clone(), PeerType::DeliveryType);
-                self_addr.do_send(UpdateCommunicator(new_communicator));
+
+        // Si no estoy conectado al líder, cierro el communicator anterior y conecto al nuevo líder
+        if let Some(comm) = self.communicator.as_mut() {
+            comm.shutdown();
+        }
+        self.communicator = None;
+
+        ctx.spawn(
+            wrap_future(async move {
                 logger.info(format!(
-                    "Communicator updated with new peer address: {}",
+                    "Attempting to connect to the new leader at address: {}",
                     leader_addr
                 ));
-            } else {
-                logger.error(format!(
-                    "Failed to connect to the new leader at {}",
-                    leader_addr
-                ));
-            }
-        }));
-        let actual_socket_addr = self
-            .communicator
-            .as_ref()
-            .map(|c| c.local_address)
-            .expect("Socket address not set");
-        self.send_network_message(NetworkMessage::WhoIsLeader(WhoIsLeader {
-            origin_addr: actual_socket_addr,
-            user_id: self.delivery_id.clone(),
-        }));
+                if let Some(new_stream) = connect_one(leader_addr, PeerType::DeliveryType).await {
+                    let new_communicator =
+                        Communicator::new(new_stream, self_addr.clone(), PeerType::DeliveryType);
+                    Some(new_communicator)
+                } else {
+                    logger.error(format!(
+                        "Failed to connect to the new leader at {}",
+                        leader_addr
+                    ));
+                    None
+                }
+            })
+            .map(|maybe_communicator, actor: &mut Self, _ctx| {
+                if let Some(new_communicator) = maybe_communicator {
+                    actor.logger.info(format!(
+                        "Communicator updated with new peer address: {}",
+                        new_communicator.peer_address
+                    ));
+                    actor.communicator = Some(new_communicator);
+
+                    let actual_socket_addr = actor
+                        .communicator
+                        .as_ref()
+                        .map(|c| c.local_address)
+                        .expect("Socket address not set");
+                    actor.send_network_message(NetworkMessage::WhoIsLeader(WhoIsLeader {
+                        origin_addr: actual_socket_addr,
+                        user_id: actor.delivery_id.clone(),
+                    }));
+                }
+            }),
+        );
     }
 }
 
@@ -611,8 +611,13 @@ impl Handler<NetworkMessage> for Delivery {
             // Users messages
             NetworkMessage::RetryLater(_msg_data) => {
                 self.logger.info("Retrying to connect in some seconds");
-                std::thread::sleep(DELAY_SECONDS_TO_RETRY);
-                self.start_running(ctx);
+                // let ctx_addr = ctx.address();
+                // let handle = ctx.spawn(
+                //     actix::clock::sleep(std::time::Duration::from_secs(3)).into_actor(self).map(move |_, _, ctx| {
+                //         // aca hay que llamar a start_running
+                //     })
+                // );
+                // self.waiting_reconnection_timer= Some(handle);
             }
             NetworkMessage::LeaderIs(msg_data) => ctx.address().do_send(msg_data),
             NetworkMessage::RecoveredInfo(user_dto_opt) => {
@@ -671,7 +676,6 @@ impl Handler<NetworkMessage> for Delivery {
                     "Connection closed with address: {}",
                     msg_data.remote_addr
                 ));
-                // Aquí podrías manejar la reconexión o el cierre de la aplicación
                 // Si el comunicador actual posee una peer_address que coincide con la dirección cerrada,
                 // se elimina el comunicador actual. Si no, se ignora.
                 if let Some(communicator) = &self.communicator {
@@ -680,12 +684,35 @@ impl Handler<NetworkMessage> for Delivery {
                             "Removing communicator for address: {}",
                             msg_data.remote_addr
                         ));
+                        if let Some(comm) = self.communicator.as_mut() {
+                            comm.shutdown();
+                        }
                         self.communicator = None;
-                        self.logger
-                            .warn("Retrying to reconnect to the server in 5 seconds...");
-                        // hacer un sleep para evitar reconexiones rápidas
-                        std::thread::sleep(DELAY_SECONDS_TO_START_RECONNECT);
-                        ctx.address().do_send(msg_data.clone());
+                        self.logger.warn("Retrying to reconnect to the server ...");
+
+                        let msg_data_cloned = msg_data.clone();
+
+                        // Inicia un temporizador para reconectar después de un tiempo
+                        // ctx.address().do_send(msg_data_cloned.clone());
+                        let handle =
+                            ctx.run_later(DELAY_SECONDS_TO_START_RECONNECT, move |_, ctx| {
+                                println!("Attempting to reconnect after delay...");
+                                ctx.address().do_send(msg_data_cloned.clone());
+                                //ctx.address().do_send(ConnectionClosed { remote_addr: msg_data_cloned.remote_addr });
+                                println!("Reconnection attempt sent.");
+                            });
+                        self.waiting_reconnection_timer = Some(handle);
+
+                        // let msg_clone = msg_data.clone();
+                        // let handle = ctx.spawn(
+                        //     actix::clock::sleep(std::time::Duration::from_secs(3))
+                        //         .into_actor(self)
+                        //         .map(move |_, _, ctx| {
+                        //             ctx.address().do_send(msg_clone.clone());
+                        //         }),
+                        // );
+                        // self.waiting_reconnection_timer = Some(handle);
+                        println!("HOLA!")
                     }
                 } else {
                     self.logger

@@ -28,19 +28,36 @@ use std::{collections::HashMap, net::SocketAddr};
 use tokio::net::TcpStream;
 
 /// The `OrderService` actor is responsible for managing orders in the system.
+///
+/// ## Responsibilities
+/// - Receives and processes order requests from clients.
+/// - Coordinates payment authorization with the PaymentGateway.
+/// - Updates order status and notifies the Coordinator and Storage actors.
+/// - Handles delivery assignments and order finalization.
+/// - Maintains mappings between clients, restaurants, and their orders.
 pub struct OrderService {
+    /// Tracks the status of each order by order ID.
     pub orders: HashMap<u64, OrderStatus>,
+    /// Maps client IDs to their associated order IDs.
     pub clients_orders: HashMap<String, Vec<u64>>,
+    /// Maps restaurant IDs to their associated order IDs.
     pub restaurants_orders: HashMap<String, Vec<u64>>,
+    /// List of pending order IDs.
     pub pending_orders: Vec<u64>,
+    /// Address of the Coordinator actor.
     pub coordinator_address: Option<Addr<Coordinator>>,
+    /// Address of the Storage actor.
     pub storage_address: Option<Addr<Storage>>,
+    /// Logger for order service events.
     pub logger: Logger,
+    /// Communicator for interacting with the PaymentGateway.
     pub payment_gateway_address: Option<Communicator<OrderService>>,
+    /// Pending TCP stream for PaymentGateway connection.
     pub pending_stream: Option<TcpStream>,
 }
 
 impl OrderService {
+    /// Asynchronously creates a new `OrderService` instance and attempts to connect to the PaymentGateway.
     pub async fn new() -> Self {
         let logger = Logger::new("Order Service", Color::Green);
 
@@ -64,6 +81,11 @@ impl OrderService {
         }
     }
 
+    /// Handles an unauthorized order by notifying the Coordinator.
+    ///
+    /// ## Arguments
+    /// * `order` - The unauthorized [`OrderDTO`].
+    /// * `coordinator` - The address of the Coordinator actor.
     fn handle_unauthorized_order(&mut self, order: &OrderDTO, coordinator: Addr<Coordinator>) {
         self.logger.warn(format!(
             "Order {} unauthorized, notifying Coordinator",
@@ -75,6 +97,11 @@ impl OrderService {
         });
     }
 
+    /// Handles an authorized order by storing it and notifying the Coordinator.
+    ///
+    /// ## Arguments
+    /// * `order` - The authorized [`OrderDTO`].
+    /// * `coordinator` - The address of the Coordinator actor.
     fn handle_authorized_order(&mut self, order: &OrderDTO, coordinator: Addr<Coordinator>) {
         self.logger.info(format!(
             "Order {} authorized, notifying Coordinator",
@@ -96,6 +123,7 @@ impl OrderService {
         });
     }
 
+    /// Sends a message to the Storage actor if its address is set.
     fn send_to_storage<T>(&self, msg: T)
     where
         T: Message + Send + 'static,
@@ -110,6 +138,7 @@ impl OrderService {
         }
     }
 
+    /// Sends a message to the Coordinator actor if its address is set.
     fn send_to_coordinator<T>(&self, msg: T)
     where
         T: Message + Send + 'static,
@@ -128,6 +157,7 @@ impl OrderService {
 impl Actor for OrderService {
     type Context = Context<Self>;
 
+    /// Initializes the PaymentGateway communicator when the actor starts.
     fn started(&mut self, ctx: &mut Self::Context) {
         if let Some(stream) = self.pending_stream.take() {
             let communicator = Communicator::new(stream, ctx.address(), PeerType::CoordinatorType);
@@ -138,6 +168,7 @@ impl Actor for OrderService {
     }
 }
 
+/// Handles setting the addresses of the Coordinator and Storage actors.
 impl Handler<SetActorsAddresses> for OrderService {
     type Result = ();
 
@@ -147,6 +178,7 @@ impl Handler<SetActorsAddresses> for OrderService {
     }
 }
 
+/// Handles order requests from clients by forwarding them to the PaymentGateway for authorization.
 impl Handler<RequestThisOrder> for OrderService {
     type Result = ();
 
@@ -171,6 +203,7 @@ impl Handler<RequestThisOrder> for OrderService {
     }
 }
 
+/// Handles payment authorization results and updates the order accordingly.
 impl Handler<AuthorizationResult> for OrderService {
     type Result = ();
 
@@ -197,6 +230,7 @@ impl Handler<AuthorizationResult> for OrderService {
     }
 }
 
+/// Handles incoming network messages, such as payment completion and authorization results.
 impl Handler<NetworkMessage> for OrderService {
     type Result = ();
 
@@ -234,6 +268,7 @@ impl Handler<NetworkMessage> for OrderService {
     }
 }
 
+/// Handles updates to the status of an order and coordinates changes with Storage and Coordinator.
 impl Handler<UpdateOrderStatus> for OrderService {
     type Result = ();
 
@@ -316,6 +351,7 @@ impl Handler<UpdateOrderStatus> for OrderService {
     }
 }
 
+/// Handles notifications that a delivery agent has accepted an order.
 impl Handler<DeliveryAccepted> for OrderService {
     type Result = ();
 
@@ -336,6 +372,7 @@ impl Handler<DeliveryAccepted> for OrderService {
     }
 }
 
+/// Handles notifications that an order has been accepted by a delivery agent and stores the assignment.
 impl Handler<AcceptedOrder> for OrderService {
     type Result = ();
 
@@ -353,6 +390,7 @@ impl Handler<AcceptedOrder> for OrderService {
     }
 }
 
+/// Handles notifications that a delivery agent is available for an order.
 impl Handler<DeliveryAvailable> for OrderService {
     type Result = ();
 
@@ -365,6 +403,7 @@ impl Handler<DeliveryAvailable> for OrderService {
     }
 }
 
+/// Handles notifications that a delivery agent is no longer needed for an order.
 impl Handler<DeliveryNoNeeded> for OrderService {
     type Result = ();
 
@@ -378,6 +417,7 @@ impl Handler<DeliveryNoNeeded> for OrderService {
     }
 }
 
+/// Handles notifications that an order has been finalized (delivered or cancelled).
 impl Handler<OrderFinalized> for OrderService {
     type Result = ();
 
@@ -405,6 +445,7 @@ impl Handler<OrderFinalized> for OrderService {
     }
 }
 
+/// Handles instructions to finish a delivery assignment for an order.
 impl Handler<DeliverThisOrder> for OrderService {
     type Result = ();
 
@@ -422,6 +463,7 @@ impl Handler<DeliverThisOrder> for OrderService {
     }
 }
 
+/// Handles requests to remove an order from the system.
 impl Handler<RemoveOrder> for OrderService {
     type Result = ();
 
@@ -434,7 +476,7 @@ impl Handler<RemoveOrder> for OrderService {
     }
 }
 
-//
+/// Handles requests to add an authorized order to a restaurant.
 impl Handler<AddAuthorizedOrderToRestaurant> for OrderService {
     type Result = ();
 
@@ -451,6 +493,7 @@ impl Handler<AddAuthorizedOrderToRestaurant> for OrderService {
     }
 }
 
+/// Handles requests to add a pending order to a restaurant.
 impl Handler<AddPendingOrderToRestaurant> for OrderService {
     type Result = ();
 
@@ -468,6 +511,7 @@ impl Handler<AddPendingOrderToRestaurant> for OrderService {
     }
 }
 
+/// Handles requests to remove an authorized order from a restaurant.
 impl Handler<RemoveAuthorizedOrderToRestaurant> for OrderService {
     type Result = ();
 
@@ -485,6 +529,7 @@ impl Handler<RemoveAuthorizedOrderToRestaurant> for OrderService {
     }
 }
 
+/// Handles requests to remove a pending order from a restaurant.
 impl Handler<RemovePendingOrderToRestaurant> for OrderService {
     type Result = ();
 
@@ -502,6 +547,7 @@ impl Handler<RemovePendingOrderToRestaurant> for OrderService {
     }
 }
 
+/// Handles requests to set the current order for a delivery agent.
 impl Handler<SetCurrentOrderToDelivery> for OrderService {
     type Result = ();
 
@@ -515,6 +561,7 @@ impl Handler<SetCurrentOrderToDelivery> for OrderService {
     }
 }
 
+/// Handles requests to update the status of an order.
 impl Handler<SetOrderStatus> for OrderService {
     type Result = ();
 
@@ -537,6 +584,7 @@ impl Handler<SetOrderStatus> for OrderService {
     }
 }
 
+/// Handles requests to assign a delivery agent to an order.
 impl Handler<SetDeliveryToOrder> for OrderService {
     type Result = ();
 

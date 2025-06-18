@@ -17,37 +17,46 @@ use common::messages::coordinatormanager_messages::{
 use common::messages::shared_messages::{ConnectionClosed, NetworkMessage};
 use common::messages::{ApplyStorageUpdates, LeaderIdIs, StartRunning, WhoIsLeader};
 use common::network::communicator::Communicator;
-use common::types::dtos::Snapshot;
 use std::{collections::HashMap, net::SocketAddr};
 
+/// The `CoordinatorManager` actor is responsible for leader election, heartbeat monitoring,
+/// and distributed storage synchronization among coordinator nodes in the system.
+///
+/// # Responsibilities
+/// - Manages the ring of coordinator nodes and their communicators.
+/// - Orchestrates leader election and maintains the current leader state.
+/// - Handles heartbeat checks and failure detection.
+/// - Coordinates distributed storage updates and snapshot synchronization.
+/// - Relays and processes network messages related to cluster management.
 #[derive(Debug)]
 pub struct CoordinatorManager {
-    /// ID del CoordinatorManager.
+    /// Unique ID of this CoordinatorManager.
     pub id: String,
-    /// Direcciones de todos los nodos en el anillo.
+    /// Addresses of all nodes in the ring.
     pub ring_nodes: HashMap<String, SocketAddr>,
-    /// Nodo coordinador actual.
+    /// Current coordinator node (leader).
     pub coordinator_actual: Option<SocketAddr>,
-    /// Mapa de direcciones de nodos coordinadores y sus comunicadores.
+    /// Map of coordinator node addresses to their communicators.
     pub coord_communicators: HashMap<SocketAddr, Communicator<Coordinator>>,
-    /// Mapa bidireccional de direcciones de coordinadores y sus IDs
+    /// Bi-directional map of coordinator addresses and their IDs.
     pub coord_addresses: BiMap<SocketAddr, String>,
-    /// Dirección de este servidor.
+    /// Socket address of this server.
     pub my_socket_addr: SocketAddr,
-    /// Logger.
-    /// Timestamps de los últimos heartbeats recibidos por nodo.
-    // pub heartbeat_timestamps: HashMap<SocketAddr, Instant>,
+    /// Logger for coordinator manager events
     pub logger: Logger,
-    /// Dirección del actor `Coordinator` local.
+    /// Address of the local `Coordinator` actor.
     pub coordinator_addr: Addr<Coordinator>,
-    /// Indica si hay un Pong pendiente del líder.
+    /// Indicates if a Pong is pending from the leader.
     pong_pending: bool,
-    /// Indica si hay una elección de líder en progreso.
+    /// Indicates if a leader election is in progress.
     election_in_progress: bool,
-    /// Dirección del Storage
+    /// Address of the `Storage` actor.
     pub storage: Addr<Storage>,
+    /// Address of the node from which a Pong is expected.
     pong_leader_addr: Option<SocketAddr>,
+    /// Timer handle for waiting for Pong responses.
     waiting_pong_timer: Option<actix::SpawnHandle>,
+    /// Timer handle for periodic storage updates.
     get_storage_updates_timer: Option<actix::SpawnHandle>,
 }
 
@@ -56,6 +65,14 @@ impl Actor for CoordinatorManager {
 }
 
 impl CoordinatorManager {
+    /// Creates a new `CoordinatorManager` instance.
+    ///
+    /// ## Arguments
+    /// * `id` - The unique ID for this node.
+    /// * `my_coordinator_addr` - The socket address of this node.
+    /// * `ring_nodes` - Map of all ring node IDs to their addresses.
+    /// * `coordinator_addr` - Address of the local `Coordinator` actor.
+    /// * `storage` - Address of the `Storage` actor.
     pub fn new(
         id: String,
         my_coordinator_addr: SocketAddr,
@@ -87,6 +104,7 @@ impl CoordinatorManager {
         }
     }
 
+    /// Starts a new leader election process among the ring nodes.
     pub fn start_leader_election(&mut self) {
         self.election_in_progress = true;
         let election = NetworkMessage::LeaderElection(LeaderElection {
@@ -114,6 +132,7 @@ impl CoordinatorManager {
         }
     }
 
+    /// Starts the periodic checker for distributed storage updates.
     pub fn start_storage_updates_checker(&mut self, ctx: &mut Context<Self>) {
         if self.get_storage_updates_timer.is_some() {
             return; // Ya está corriendo
@@ -178,6 +197,7 @@ impl CoordinatorManager {
         self.get_storage_updates_timer = Some(handler);
     }
 
+    /// Finds the next node in the ring for message passing.
     fn find_next_in_ring(&self) -> Option<SocketAddr> {
         // Obtener claves de comunicadores conectados (sin incluirme)
         let mut nodes_ids = self.ring_nodes.keys().cloned().collect::<Vec<_>>();
@@ -214,6 +234,7 @@ impl CoordinatorManager {
         Some(*next)
     }
 
+    /// Finds the previous node in the ring for storage updates.
     fn find_previous_in_ring(&self) -> Option<SocketAddr> {
         // Paso 1: Obtener y ordenar los IDs del anillo
         let mut ordered_ids: Vec<_> = self.ring_nodes.keys().cloned().collect();
@@ -243,6 +264,7 @@ impl CoordinatorManager {
         None
     }
 
+    /// Starts the periodic heartbeat checker for leader liveness.
     fn start_heartbeat_checker(&mut self, ctx: &mut Context<Self>) {
         ctx.run_interval(INTERVAL_HEARTBEAT, |act, ctx| {
             if act.election_in_progress {
@@ -263,15 +285,11 @@ impl CoordinatorManager {
                     act.coordinator_actual = None;
                     act.election_in_progress = true;
 
-                    // 👉 Remover el nodo que no responde
                     act.coord_communicators.remove(&leader);
                     act.coord_addresses.remove_by_key(&leader);
-                    //act.heartbeat_timestamps.remove(&leader);
 
                     act.start_leader_election();
                 } else {
-                    //act.logger.info("Enviando Ping al líder...");
-
                     let local_addr = act
                         .coord_communicators
                         .get(&leader)
@@ -321,6 +339,7 @@ impl CoordinatorManager {
         });
     }
 
+    /// Sends a [`NetworkMessage`] to a specific coordinator node.
     fn send_network_message(
         &mut self,
         target: SocketAddr,
@@ -331,49 +350,37 @@ impl CoordinatorManager {
                 self.logger
                     .info(format!("Sending message to {}: {:?}", target, message));
                 match sender.try_send(message) {
-                    Ok(_) => {
-                        //self.logger.info(format!("✅ Sent successfully to {}", target));
-                        Ok(())
-                    }
+                    Ok(_) => Ok(()),
                     Err(e) => {
-                        let err_msg = format!("❌ Failed to send to {}: {:?}", target, e);
-                        //self.logger.error(&err_msg);
+                        let err_msg = format!("Failed to send to {}: {:?}", target, e);
 
                         // Eliminar nodo por fallo de envío
                         self.coord_communicators.remove(&target);
                         self.coord_addresses.remove_by_key(&target);
-
-                        //self.logger.warn(format!("🧹 Removed unreachable node {}", target));
-
                         Err(err_msg)
                     }
                 }
             } else {
-                let err_msg = format!("⚠️ Sender not initialized in communicator for {}", target);
+                let err_msg = format!("Sender not initialized in communicator for {}", target);
                 self.logger.error(&err_msg);
 
                 // También lo removemos, por estar mal configurado
                 self.coord_communicators.remove(&target);
                 self.coord_addresses.remove_by_key(&target);
 
-                //self.logger.warn(format!("🧹 Removed node with uninitialized sender {}", target));
-
                 Err(err_msg)
             }
         } else {
-            let err_msg = format!("❌ No communicator found for {}", target);
-            //self.logger.error(&err_msg);
+            let err_msg = format!("No communicator found for {}", target);
 
             // El nodo ya está desconectado, aseguramos limpieza por las dudas
             self.coord_addresses.remove_by_key(&target);
-
-            //self.logger.warn(format!("🧹 Removed node with no communicator {}", target));
 
             Err(err_msg)
         }
     }
 
-    /// Envía un `NetworkMessage` a todos los nodos remotos conectados
+    /// Broadcasts a [`NetworkMessage`] to all connected coordinator nodes.
     fn broadcast_network_message(&mut self, message: NetworkMessage) {
         for addr in self.coord_communicators.keys().copied().collect::<Vec<_>>() {
             if addr != self.my_socket_addr {
@@ -385,6 +392,7 @@ impl CoordinatorManager {
         }
     }
 
+    /// Broadcasts the current leader's identity to all nodes.
     fn broadcast_leader_is(&mut self) {
         if let Some(leader) = self.coordinator_actual {
             if let Some(leader_id) = self.coord_addresses.get_by_key(&leader) {
@@ -406,6 +414,7 @@ impl CoordinatorManager {
         }
     }
 
+    /// Broadcasts a `WhoIsLeader` query to all nodes.
     fn broadcast_who_is_leader(&mut self) -> Result<(), String> {
         if self.coord_communicators.is_empty() {
             return Err("No coordinators available to contact.".to_string());
@@ -450,7 +459,7 @@ impl CoordinatorManager {
         }
     }
 
-    /// Preguntar a todos los nodos conocidos si hay un líder ya elegido
+    /// Asks all nodes for the current leader and waits for a response.
     fn ask_for_leader(&mut self, ctx: &mut Context<Self>) {
         let id = self.id.clone();
         match self.broadcast_who_is_leader() {
@@ -507,6 +516,7 @@ impl CoordinatorManager {
         }
     }
 
+    /// Handles an incoming `WhoIsLeader` message.
     fn handle_who_is_leader(&mut self, msg: WhoIsLeader, _ctx: &mut Context<Self>) {
         self.logger.info(format!(
             "Received WhoIsLeader from {} with ID={}, coordinator is: {:?}",
@@ -552,6 +562,7 @@ impl CoordinatorManager {
         }
     }
 
+    /// Handles an incoming `LeaderIdIs` message.
     fn handle_leader_is(&mut self, msg: LeaderIdIs, _ctx: &mut Context<Self>) {
         self.election_in_progress = false;
         if self.coordinator_actual.is_none() {
@@ -587,6 +598,7 @@ impl CoordinatorManager {
     }
 }
 
+/// Handles registration of a new coordinator connection.
 impl Handler<RegisterConnectionWithCoordinator> for CoordinatorManager {
     type Result = ();
 
@@ -597,6 +609,7 @@ impl Handler<RegisterConnectionWithCoordinator> for CoordinatorManager {
     }
 }
 
+/// Handles the start of the CoordinatorManager actor, including leader query and heartbeat.
 impl Handler<StartRunning> for CoordinatorManager {
     type Result = ();
 
@@ -612,6 +625,7 @@ impl Handler<StartRunning> for CoordinatorManager {
     }
 }
 
+/// Handles requests for a full storage snapshot from another node.
 impl Handler<RequestAllStorage> for CoordinatorManager {
     type Result = ();
 
@@ -671,6 +685,7 @@ impl Handler<RequestAllStorage> for CoordinatorManager {
     }
 }
 
+/// Handles incoming `WhoIsLeader` queries from other nodes.
 impl Handler<WhoIsLeader> for CoordinatorManager {
     type Result = ();
 
@@ -680,6 +695,7 @@ impl Handler<WhoIsLeader> for CoordinatorManager {
     }
 }
 
+/// Handles incoming `LeaderIdIs` messages from other nodes.
 impl Handler<LeaderIdIs> for CoordinatorManager {
     type Result = ();
 
@@ -690,6 +706,7 @@ impl Handler<LeaderIdIs> for CoordinatorManager {
     }
 }
 
+/// Handles timeout for waiting for Pong responses from the leader.
 impl Handler<CheckPongTimeout> for CoordinatorManager {
     type Result = ();
 
@@ -713,6 +730,7 @@ impl Handler<CheckPongTimeout> for CoordinatorManager {
     }
 }
 
+/// Handles incoming `Ping` messages from other nodes.
 impl Handler<Ping> for CoordinatorManager {
     type Result = ();
 
@@ -731,6 +749,7 @@ impl Handler<Ping> for CoordinatorManager {
     }
 }
 
+/// Handles incoming `Pong` messages from other nodes.
 impl Handler<Pong> for CoordinatorManager {
     type Result = ();
 
@@ -741,6 +760,7 @@ impl Handler<Pong> for CoordinatorManager {
     }
 }
 
+/// Handles leader election messages from other nodes.
 impl Handler<LeaderElection> for CoordinatorManager {
     type Result = ();
 
@@ -786,6 +806,7 @@ impl Handler<LeaderElection> for CoordinatorManager {
     }
 }
 
+/// Handles incoming storage updates from other nodes.
 impl Handler<StorageUpdates> for CoordinatorManager {
     type Result = ();
 
@@ -805,6 +826,7 @@ impl Handler<StorageUpdates> for CoordinatorManager {
     }
 }
 
+/// Handles incoming storage snapshots from other nodes.
 impl Handler<StorageSnapshot> for CoordinatorManager {
     type Result = ();
 
@@ -813,6 +835,7 @@ impl Handler<StorageSnapshot> for CoordinatorManager {
     }
 }
 
+/// Handles requests for new storage updates from other nodes.
 impl Handler<RequestNewStorageUpdates> for CoordinatorManager {
     type Result = ();
 
@@ -879,6 +902,7 @@ impl Handler<RequestNewStorageUpdates> for CoordinatorManager {
     }
 }
 
+/// Handles notification that a TCP connection has been closed.
 impl Handler<ConnectionClosed> for CoordinatorManager {
     type Result = ();
 

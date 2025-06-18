@@ -1,14 +1,14 @@
 use crate::internal_messages::messages::SendToKitchen;
 use actix::fut::wrap_future;
 use actix::prelude::*;
-use common::constants::{DELAY_SECONDS_TO_RETRY, DELAY_SECONDS_TO_START_RECONNECT};
+use common::constants::DELAY_SECONDS_TO_START_RECONNECT;
 use common::logger::Logger;
 use common::messages::{
     ConnectionClosed, DeliverThisOrder, DeliveryAccepted, LeaderIs, NetworkMessage, NewOrder,
     RecoverProcedure, RegisterUser, RequestNearbyDelivery, UpdateOrderStatus, WhoIsLeader,
 };
 use common::network::communicator::Communicator;
-use common::network::connections::{connect_one, connect_some, reconnect, try_to_connect};
+use common::network::connections::{connect_one, connect_some, reconnect};
 use common::network::peer_types::PeerType;
 use common::types::dtos::{OrderDTO, UserDTO};
 use common::types::order_status::OrderStatus;
@@ -88,7 +88,6 @@ impl Restaurant {
     pub fn send_network_message(&self, message: NetworkMessage) {
         if let Some(communicator) = &self.communicator {
             if let Some(sender) = &communicator.sender {
-                println!("SENDING WHO IS LEADER TO {}", communicator.peer_address);
                 sender.do_send(message);
             } else {
                 self.logger.error("Sender not initialized in communicator");
@@ -170,70 +169,6 @@ impl Handler<ConnectionClosed> for Restaurant {
     }
 }
 
-/*
-
-impl Handler<ConnectionClosed> for Restaurant {
-    type Result = ();
-
-    fn handle(&mut self, msg: ConnectionClosed, ctx: &mut Self::Context) -> Self::Result {
-        self.logger.info(format!(
-            "Connection closed with address: {}",
-            msg.remote_addr
-        ));
-        // Llama a la función async y usa wrap_future para obtener el resultado
-        let servers = self.servers.clone();
-        let fut = async move { reconnect(servers).await };
-
-        let fut = wrap_future::<_, Self>(fut).map(|result, actor: &mut Self, ctx| {
-            match result {
-                Some(stream) => {
-                    let communicator = Communicator::new(
-                        stream,
-                        ctx.address(),
-                        PeerType::RestaurantType,
-                    );
-                    actor.communicator = Some(communicator);
-
-                    println!(
-                        "Reconnected to the server at address: {}",
-                        actor.communicator.as_ref().unwrap().peer_address
-                    );
-
-                    actor.delivery_assigner_address =
-                        Some(DeliveryAssigner::new(actor.info.clone(), ctx.address()).start());
-
-                    actor.kitchen_address = Some(
-                        Kitchen::new(
-                            ctx.address(),
-                            actor.delivery_assigner_address.clone().unwrap(),
-                        )
-                        .start(),
-                    );
-
-                    // Reinicia el actor para que vuelva a funcionar
-                    actor.logger.info("Reconnected successfully. Restarting actor...");
-                    let ctx_addr = ctx.address();
-                    let handle = ctx.spawn(
-                        actix::clock::sleep(std::time::Duration::from_secs(3)).into_actor(actor).map(move |_, _, ctx| {
-                            ctx_addr.do_send(RestartRunning);
-                        })
-                    );
-                    actor.reconnect_timer = Some(handle);
-
-                }
-                None => {
-                    actor.logger.error(format!("No se pudo reconectar. Cerrando actor."));
-                    ctx.stop(); // Detiene el actor
-                }
-            }
-        });
-        ctx.spawn(fut);
-    }
-}
-
-
-*/
-
 impl Actor for Restaurant {
     type Context = Context<Self>;
 
@@ -303,11 +238,11 @@ impl Handler<LeaderIs> for Restaurant {
             return;
         }
 
-        // // Si no estoy conectado al líder, cierro el communicator anterior y conecto al nuevo líder
-        // if let Some(comm) = self.communicator.as_mut() {
-        //     comm.shutdown();
-        // }
-        // self.communicator = None;
+        // Si no estoy conectado al líder, cierro el communicator anterior y conecto al nuevo líder
+        if let Some(comm) = self.communicator.as_mut() {
+            comm.shutdown();
+        }
+        self.communicator = None;
 
         ctx.spawn(
             wrap_future(async move {
@@ -396,27 +331,6 @@ impl Handler<RecoverProcedure> for Restaurant {
                 ));
             }
         }
-    }
-}
-
-/// Handles [`UpdateCommunicator`] messages.
-///
-/// Updates the restaurant's network communicator with a new connection to the server leader.
-pub struct UpdateCommunicator(pub Communicator<Restaurant>);
-
-impl Message for UpdateCommunicator {
-    type Result = ();
-}
-
-impl Handler<UpdateCommunicator> for Restaurant {
-    type Result = ();
-
-    fn handle(&mut self, msg: UpdateCommunicator, _ctx: &mut Self::Context) -> Self::Result {
-        self.logger.info(format!(
-            "Updating communicator with new peer address: {}",
-            msg.0.peer_address
-        ));
-        self.communicator = Some(msg.0);
     }
 }
 
@@ -624,7 +538,6 @@ impl Handler<NetworkMessage> for Restaurant {
                     "Connection closed with address: {}",
                     msg_data.remote_addr
                 ));
-                // Aquí podrías manejar la reconexión o el cierre de la aplicación
                 // Si el comunicador actual posee una peer_address que coincide con la dirección cerrada,
                 // se elimina el comunicador actual. Si no, se ignora.
                 if let Some(communicator) = &self.communicator {
@@ -644,6 +557,7 @@ impl Handler<NetworkMessage> for Restaurant {
                                 ctx.address().do_send(msg_data_cloned.clone());
                             });
 
+                        self.waiting_reconnection_timer = Some(handle);
                         // let msg_clone = msg_data.clone();
                         // let handle = ctx.spawn(
                         //     actix::clock::sleep(std::time::Duration::from_secs(3))
@@ -652,7 +566,6 @@ impl Handler<NetworkMessage> for Restaurant {
                         //             ctx.address().do_send(msg_clone.clone());
                         //         }),
                         // );
-                        self.waiting_reconnection_timer = Some(handle);
                     }
                 } else {
                     self.logger
