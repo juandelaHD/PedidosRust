@@ -17,3 +17,5 @@ pub const TIMEOUT_HEARTBEAT: Duration = Duration::from_secs(4);
 pub const TIMEOUT_LEADER_RESPONSE: Duration = Duration::from_secs(5);
 pub const NUMBER_OF_CHEFS: usize = 4;
 pub const DEFAULT_TIME_TO_COOK: u64 = 10; // Default time in seconds
+pub const DELAY_SECONDS_TO_RETRY: Duration = Duration::from_secs(5);
+pub const DELAY_SECONDS_TO_START_RECONNECT: Duration = Duration::from_secs(3);

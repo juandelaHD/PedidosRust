@@ -3,6 +3,7 @@
 // use std::collections::VecDeque;
 // use tokio::io::{AsyncWriteExt, BufWriter, WriteHalf};
 // use tokio::net::TcpStream;
+// use crate::messages::socket_messages::Stop;
 
 // pub struct TCPSender {
 //     pub writer: Option<BufWriter<WriteHalf<TcpStream>>>,
@@ -17,6 +18,10 @@
 //         }
 //     }
 // }
+
+// #[derive(Message)]
+// #[rtype(result = "()")]
+// pub struct SendError(pub String);
 
 // impl Actor for TCPSender {
 //     type Context = Context<Self>;
@@ -47,22 +52,34 @@
 //             let fut = async move {
 //                 let serialized = match serde_json::to_string(&msg) {
 //                     Ok(s) => s,
-//                     Err(e) => panic!("Error serializing message: {:?}", e),
+//                     Err(e) => return Err(format!("Error serializing message: {:?}", e)),
 //                 };
 //                 let to_send = format!("{}\n", serialized);
+
 //                 if let Err(e) = writer.write_all(to_send.as_bytes()).await {
-//                     panic!("Error writing to socket: {:?}", e);
+//                     return Err(format!("Error writing to socket: {:?}", e));
 //                 }
 //                 if let Err(e) = writer.flush().await {
-//                     panic!("Error flushing socket: {:?}", e);
+//                     return Err(format!("Error flushing socket: {:?}", e));
 //                 }
-//                 writer
+
+//                 Ok(writer)
 //             };
-//             Box::pin(fut.into_actor(self).map(|writer, act, ctx| {
-//                 act.writer = Some(writer);
-//                 act.queue.pop_front();
-//                 if !act.queue.is_empty() {
-//                     ctx.notify(ProcessQueue);
+
+//             Box::pin(fut.into_actor(self).map(|res, act, ctx| {
+//                 match res {
+//                     Ok(writer) => {
+//                         act.writer = Some(writer);
+//                         act.queue.pop_front();
+//                         if !act.queue.is_empty() {
+//                             ctx.notify(ProcessQueue);
+//                         }
+//                     }
+//                     Err(err_msg) => {
+//                         act.writer = None;
+//                         act.queue.clear();
+//                         println!("[TCPSender] {}", err_msg);
+//                     }
 //                 }
 //             }))
 //         } else {
@@ -71,7 +88,18 @@
 //     }
 // }
 
+// impl Handler<Stop> for TCPSender {
+//     type Result = ();
+
+//     fn handle(&mut self, _msg: Stop, ctx: &mut Self::Context) {
+//         ctx.stop();
+//         self.queue.clear();
+//         self.writer = None;
+//     }
+// }
+
 use crate::messages::shared_messages::NetworkMessage;
+use crate::messages::shared_messages::Shutdown;
 use actix::prelude::*;
 use std::collections::VecDeque;
 use tokio::io::{AsyncWriteExt, BufWriter, WriteHalf};
@@ -179,5 +207,16 @@ impl Handler<ProcessQueue> for TCPSender {
         } else {
             Box::pin(async {}.into_actor(self))
         }
+    }
+}
+
+impl Handler<Shutdown> for TCPSender {
+    type Result = ();
+
+    fn handle(&mut self, _msg: Shutdown, ctx: &mut Self::Context) {
+        println!("[TCPSender] Received Shutdown signal.");
+        self.writer = None;
+        self.queue.clear();
+        ctx.stop();
     }
 }

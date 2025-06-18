@@ -43,7 +43,7 @@ impl PaymentAcceptor {
 
 impl Actor for PaymentAcceptor {
     type Context = Context<Self>;
-    
+
     /// Called when the actor starts.
     ///
     /// Binds to the configured address and enters an asynchronous loop to accept incoming TCP connections.

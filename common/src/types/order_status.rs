@@ -1,17 +1,27 @@
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
+/// Enum representing the status of an order
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum OrderStatus {
-    Requested,        // Se ha solicitado el pedido por el cliente
-    Authorized,       // El pedido ha sido autorizado por el PaymentGateway
-    Unauthorized,     // El pedido no ha sido autorizado por el PaymentGateway
-    Pending,          // El pedido está aceptado, esperando por entrar a la kitchen
-    Preparing,        // El restaurante ha aceptado el pedido y está en proceso de preparación
-    ReadyForDelivery, // El pedido está listo para ser entregado
-    Delivering,       // El pedido está siendo entregado
-    Delivered,        // El pedido ha sido entregado al cliente
-    Cancelled,        // El pedido ha sido cancelado
+    /// The order has been requested by a customer
+    Requested,
+    /// The order has been authorized by the PaymentGateway
+    Authorized,
+    /// The order has not been authorized by the PaymentGateway
+    Unauthorized,
+    /// The order has been accepted by the restaurant and is pending preparation by the kitchen
+    Pending,
+    /// The restaurant has accepted the order and is in the process of preparing it
+    Preparing,
+    /// The order is ready to be delivered to the customer
+    ReadyForDelivery,
+    /// The order is currently being delivered to the customer
+    Delivering,
+    /// The order has been delivered to the customer
+    Delivered,
+    /// The order has been cancelled
+    Cancelled,
 }
 
 impl fmt::Display for OrderStatus {

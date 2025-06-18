@@ -11,13 +11,28 @@ use tokio::io::AsyncReadExt;
 use tokio::net::TcpListener;
 use tokio::net::TcpStream;
 
+/// The `Acceptor` actor listens for incoming TCP connections and registers them
+/// with the appropriate coordinator actor based on the peer type.
+///
+/// ## Responsibilities
+/// - Binds to a specified address and listens for incoming connections.
+/// - Reads the peer type and remote address from each connection.
+/// - Wraps each connection in a [`Communicator`] and registers it with the coordinator.
 pub struct Acceptor {
+    /// The address to bind and listen for incoming connections.
     addr: SocketAddr,
+    /// The address of the coordinator actor to register connections with.
     coordinator_address: Addr<Coordinator>,
+    /// Logger for acceptor events.
     logger: Logger,
 }
 
 impl Acceptor {
+    /// Creates a new `Acceptor` instance.
+    ///
+    /// ## Arguments
+    /// * `addr` - The socket address to bind to.
+    /// * `coordinator_address` - The Actix address of the coordinator actor.
     pub fn new(addr: SocketAddr, coordinator_address: Addr<Coordinator>) -> Self {
         Self {
             addr,
@@ -30,6 +45,8 @@ impl Acceptor {
 impl Actor for Acceptor {
     type Context = Context<Self>;
 
+    /// Starts the acceptor, binding to the configured address and spawning a loop
+    /// to accept and process incoming TCP connections.
     fn started(&mut self, ctx: &mut Self::Context) {
         let addr = self.addr;
 
@@ -102,6 +119,10 @@ impl Actor for Acceptor {
     }
 }
 
+/// Internal message used to handle a new TCP connection.
+///
+/// ## Purpose
+/// Contains the TCP stream, remote address, and peer type for the new connection.
 #[derive(Message)]
 #[rtype(result = "()")]
 struct HandleConnection {
@@ -113,6 +134,12 @@ struct HandleConnection {
 impl Handler<HandleConnection> for Acceptor {
     type Result = ();
 
+    /// Handles a new incoming TCP connection by wrapping it in a [`Communicator`]
+    /// and registering it with the coordinator actor.
+    ///
+    /// - For `CoordinatorType` peers, registers with `RegisterConnectionWithCoordinator`.
+    /// - For `ClientType`, `RestaurantType`, and `DeliveryType` peers, registers with `RegisterConnection`.
+    /// - Logs unsupported peer types.
     fn handle(&mut self, msg: HandleConnection, _: &mut Context<Self>) {
         let HandleConnection {
             stream,

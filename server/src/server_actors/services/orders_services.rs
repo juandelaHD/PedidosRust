@@ -27,10 +27,7 @@ use common::{
 use std::{collections::HashMap, net::SocketAddr};
 use tokio::net::TcpStream;
 
-/// OrderService es responsable de:  
-/// 1. Reenviar mensajes al Storage.  
-/// 2. Notificar al Coordinator para que este informe a los actores externos.
-/// 3. Reenviar nuevas órdenes al PaymentGateway.
+/// The `OrderService` actor is responsible for managing orders in the system.
 pub struct OrderService {
     pub orders: HashMap<u64, OrderStatus>,
     pub clients_orders: HashMap<String, Vec<u64>>,

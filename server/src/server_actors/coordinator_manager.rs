@@ -10,12 +10,12 @@ use common::constants::{
     INTERVAL_HEARTBEAT, INTERVAL_STORAGE, TIMEOUT_HEARTBEAT, TIMEOUT_LEADER_RESPONSE,
 };
 use common::logger::Logger;
-use common::messages::coordinatormanager_messages::{CheckPongTimeout, LeaderElection, Ping, Pong};
-use common::messages::shared_messages::{ConnectionClosed, NetworkMessage};
-use common::messages::{
-    ApplyStorageUpdates, LeaderIdIs, RequestAllStorage, RequestNewStorageUpdates, StartRunning,
-    StorageSnapshot, StorageUpdates, WhoIsLeader,
+use common::messages::coordinatormanager_messages::{
+    CheckPongTimeout, LeaderElection, Ping, Pong, RequestAllStorage, RequestNewStorageUpdates,
+    StorageSnapshot, StorageUpdates,
 };
+use common::messages::shared_messages::{ConnectionClosed, NetworkMessage};
+use common::messages::{ApplyStorageUpdates, LeaderIdIs, StartRunning, WhoIsLeader};
 use common::network::communicator::Communicator;
 use common::types::dtos::Snapshot;
 use std::{collections::HashMap, net::SocketAddr};
@@ -515,7 +515,7 @@ impl CoordinatorManager {
         // Insertar la dirección del socket en el mapa de direcciones de coordinadores
         self.coord_addresses
             .insert(msg.origin_addr, msg.user_id.clone());
-        // Si ya tengo un coordinador actual, responder con su ID 
+        // Si ya tengo un coordinador actual, responder con su ID
         if let Some(leader) = self.coordinator_actual {
             if let Some(leader_id) = self.coord_addresses.get_by_key(&leader) {
                 let response = NetworkMessage::LeaderIdIs(LeaderIdIs {

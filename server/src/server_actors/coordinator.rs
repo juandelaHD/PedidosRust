@@ -386,7 +386,7 @@ impl Handler<WhoIsLeader> for Coordinator {
             self.logger
                 .info("No current coordinator available. Check Server Election implementation.");
 
-            // coordintor no tiene lider asociado ->  enviar WhoIsLeader al CoordinatorManager 
+            // coordintor no tiene lider asociado ->  enviar WhoIsLeader al CoordinatorManager
             if let Some(coordinator_manager) = &self.coordinator_manager {
                 coordinator_manager.do_send(msg);
             } else {
@@ -921,7 +921,6 @@ impl Handler<NetworkMessage> for Coordinator {
                     self.communicators.remove(&remote_addr);
                     self.user_addresses.remove_by_key(&remote_addr);
 
-                    
                     self.logger
                         .info(format!("Removed communicator for {}", remote_addr));
                 } else {
@@ -929,7 +928,8 @@ impl Handler<NetworkMessage> for Coordinator {
                         // si el servidor que se desconectó era el lider actual, ponemos a nuestro lider como None
                         if self.current_coordinator == Some(remote_addr) {
                             self.current_coordinator = None;
-                            self.logger.info("Current coordinator set to None due to disconnection.");
+                            self.logger
+                                .info("Current coordinator set to None due to disconnection.");
                         }
                         // Enviamos el mensaje al CoordinatorManager para que maneje la desconexión
 

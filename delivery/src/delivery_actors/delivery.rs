@@ -1,7 +1,9 @@
 use actix::fut::wrap_future;
 use actix::prelude::*;
 use colored::Color;
-use common::constants::BASE_DELAY_MILLIS;
+use common::constants::{
+    BASE_DELAY_MILLIS, DELAY_SECONDS_TO_RETRY, DELAY_SECONDS_TO_START_RECONNECT,
+};
 use common::logger::Logger;
 use common::messages::delivery_messages::{IAmAvailable, OrderDelivered};
 use common::messages::{
@@ -9,7 +11,7 @@ use common::messages::{
     shared_messages::*,
 };
 use common::network::communicator::Communicator;
-use common::network::connections::{connect_some, try_to_connect};
+use common::network::connections::{connect_some, reconnect, try_to_connect};
 use common::network::peer_types::PeerType;
 use common::types::delivery_status::DeliveryStatus;
 use common::types::dtos::{DeliveryDTO, OrderDTO, UserDTO};
@@ -148,6 +150,45 @@ impl Delivery {
             calculate_distance(restaurant_position, client_position);
         let total_distance = distance_from_restaurant + distance_restaurant_from_client;
         base_delay_millis + (total_distance as u64 * 1000)
+    }
+}
+
+/// Handles [`ConnectionClosed`] messages.
+///
+/// This handler is triggered when the connection to the server is lost.
+/// It attempts to reconnect to one of the known servers. If reconnection is successful,
+/// it reinitializes the communicator and restarts the actor. If not, the actor is stopped.
+impl Handler<ConnectionClosed> for Delivery {
+    type Result = ();
+
+    fn handle(&mut self, _msg: ConnectionClosed, ctx: &mut Self::Context) -> Self::Result {
+        // Llama a la función async y usa wrap_future para obtener el resultado
+        let servers = self.servers.clone();
+        let fut = async move { reconnect(servers, PeerType::DeliveryType).await };
+
+        let fut = wrap_future::<_, Self>(fut).map(|result, actor: &mut Self, ctx| {
+            match result {
+                Some(stream) => {
+                    let communicator =
+                        Communicator::new(stream, ctx.address(), PeerType::DeliveryType);
+                    actor.communicator = Some(communicator);
+
+                    // Reinicia el actor para que vuelva a funcionar
+                    actor
+                        .logger
+                        .info("Reconnected successfully. Restarting actor...");
+                    std::thread::sleep(DELAY_SECONDS_TO_START_RECONNECT);
+                    actor.start_running(ctx);
+                }
+                None => {
+                    actor.logger.error(format!(
+                        "Failed to reconnect to any server after closed connection"
+                    ));
+                    ctx.stop(); // Detiene el actor
+                }
+            }
+        });
+        ctx.spawn(fut);
     }
 }
 
@@ -568,6 +609,11 @@ impl Handler<NetworkMessage> for Delivery {
     fn handle(&mut self, msg: NetworkMessage, ctx: &mut Self::Context) -> Self::Result {
         match msg {
             // Users messages
+            NetworkMessage::RetryLater(_msg_data) => {
+                self.logger.info("Retrying to connect in some seconds");
+                std::thread::sleep(DELAY_SECONDS_TO_RETRY);
+                self.start_running(ctx);
+            }
             NetworkMessage::LeaderIs(msg_data) => ctx.address().do_send(msg_data),
             NetworkMessage::RecoveredInfo(user_dto_opt) => {
                 let user_dto = user_dto_opt;
@@ -620,11 +666,36 @@ impl Handler<NetworkMessage> for Delivery {
                 ctx.address().do_send(msg_data);
             }
 
-            _ => {
+            NetworkMessage::ConnectionClosed(msg_data) => {
                 self.logger.info(format!(
-                    "NetworkMessage descartado/no implementado: {:?}",
-                    msg
+                    "Connection closed with address: {}",
+                    msg_data.remote_addr
                 ));
+                // Aquí podrías manejar la reconexión o el cierre de la aplicación
+                // Si el comunicador actual posee una peer_address que coincide con la dirección cerrada,
+                // se elimina el comunicador actual. Si no, se ignora.
+                if let Some(communicator) = &self.communicator {
+                    if communicator.peer_address == msg_data.remote_addr {
+                        self.logger.info(format!(
+                            "Removing communicator for address: {}",
+                            msg_data.remote_addr
+                        ));
+                        self.communicator = None;
+                        self.logger
+                            .warn("Retrying to reconnect to the server in 5 seconds...");
+                        // hacer un sleep para evitar reconexiones rápidas
+                        std::thread::sleep(DELAY_SECONDS_TO_START_RECONNECT);
+                        ctx.address().do_send(msg_data.clone());
+                    }
+                } else {
+                    self.logger
+                        .error("Communicator not found, cannot handle closed connection.");
+                }
+            }
+
+            _ => {
+                self.logger
+                    .info(format!("NetworkMessage ignored: {:?}", msg));
             }
         }
     }

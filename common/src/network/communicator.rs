@@ -1,8 +1,10 @@
 use crate::messages::shared_messages::NetworkMessage;
+use crate::messages::shared_messages::Shutdown;
 use crate::network::peer_types::PeerType;
 use crate::network::tcp_receiver::TCPReceiver;
 use crate::network::tcp_sender::TCPSender;
 use actix::prelude::*;
+
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::io::split;
@@ -39,5 +41,25 @@ where
             )),
             peer_type,
         }
+    }
+}
+
+impl<A> Communicator<A>
+where
+    A: Actor<Context = Context<A>> + Handler<NetworkMessage>,
+{
+    pub fn shutdown(&mut self) {
+        if let Some(sender) = self.sender.take() {
+            sender.do_send(Shutdown);
+        }
+
+        if let Some(receiver) = self.receiver.take() {
+            receiver.do_send(Shutdown);
+        }
+
+        println!(
+            "[Communicator] Shutdown initiated for peer {}",
+            self.peer_address
+        );
     }
 }

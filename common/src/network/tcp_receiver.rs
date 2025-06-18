@@ -1,6 +1,7 @@
 use actix::dev::ToEnvelope;
 use actix::prelude::*;
 // Update the path below if 'common' is a sibling module or crate; adjust as needed:
+use crate::messages::shared_messages::Shutdown;
 use crate::messages::shared_messages::{ConnectionClosed, NetworkMessage};
 use std::net::SocketAddr;
 use tokio::io::{AsyncBufReadExt, BufReader, ReadHalf};
@@ -59,5 +60,18 @@ where
             }
             .into_actor(self),
         );
+    }
+}
+
+impl<A> Handler<Shutdown> for TCPReceiver<A>
+where
+    A: Actor + Handler<NetworkMessage> + 'static,
+    A::Context: ToEnvelope<A, NetworkMessage>,
+{
+    type Result = ();
+
+    fn handle(&mut self, _msg: Shutdown, ctx: &mut Self::Context) {
+        println!("[TCPReceiver] Received Shutdown signal.");
+        ctx.stop();
     }
 }
