@@ -306,6 +306,23 @@ impl Handler<RegisterConnection> for Coordinator {
             .insert(msg.client_addr, "UNKNOWN_USER".to_string());
         self.logger
             .info(format!("Registered connection from {} ", msg.client_addr));
+
+        // --- NUEVO: Notificar quién es el líder si soy el líder ---
+        if let Some(current_leader) = self.current_coordinator {
+            if current_leader == self.my_addr {
+                if let Some(communicator) = self.communicators.get(&msg.client_addr) {
+                    if let Some(sender) = &communicator.sender {
+                        sender.do_send(NetworkMessage::LeaderIs(LeaderIs {
+                            coord_addr: self.my_addr,
+                        }));
+                        self.logger.info(format!(
+                            "Sent LeaderIs to {} after reconnection",
+                            msg.client_addr
+                        ));
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -784,6 +801,15 @@ impl Handler<NetworkMessage> for Coordinator {
                             ));
                         }
                     }
+
+
+                // Actualiza el user_id asociado a la dirección de origen
+                self.user_addresses.insert(msg_data.origin_addr, msg_data.user_id.clone());
+                self.logger.info(format!(
+                    "User address mapping actualizado: {} -> {}",
+                    msg_data.origin_addr, msg_data.user_id
+                ));
+
                 } else {
                     self.logger.info(format!(
                         "Communicator not found for {}",

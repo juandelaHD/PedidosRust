@@ -233,8 +233,11 @@ impl Handler<ConnectionClosed> for Client {
                     ctx.cancel_future(handler);
                     actor.waiting_reconnection_timer = None;
                 }
-
-                actor.start_running(ctx);
+                // Esperar 100ms antes de enviar WhoIsLeader tras reconexión
+                let addr = ctx.address();
+                ctx.run_later(std::time::Duration::from_millis(100), move |_, _| {
+                    addr.do_send(StartRunningMsg);
+                });
             }
             None => {
                 actor.logger.error(format!(
@@ -271,9 +274,24 @@ impl Actor for Client {
         let ui_handler = UIHandler::new(ctx.address(), self.logger.clone());
         self.ui_handler = Some(ui_handler.start());
 
+            // Esperar 100ms antes de enviar WhoIsLeader
+        let addr = ctx.address();
+        ctx.run_later(std::time::Duration::from_millis(100), move |_, _| {
+            addr.do_send(StartRunningMsg);
+        });
+        }
+}
+
+
+
+
+impl Handler<StartRunningMsg> for Client {
+    type Result = ();
+    fn handle(&mut self, _msg: StartRunningMsg, ctx: &mut Self::Context) -> Self::Result {
         self.start_running(ctx);
     }
 }
+
 
 /// Handler for the `LeaderIs` message.
 ///
@@ -340,7 +358,7 @@ impl Handler<LeaderIs> for Client {
                     None
                 }
             })
-            .map(|maybe_communicator, actor: &mut Self, _ctx| {
+            .map(move |maybe_communicator, actor: &mut Self, ctx| {
                 if let Some(new_communicator) = maybe_communicator {
                     actor.logger.info(format!(
                         "Communicator updated with new peer address: {}",
@@ -348,15 +366,10 @@ impl Handler<LeaderIs> for Client {
                     ));
                     actor.communicator = Some(new_communicator);
 
-                    let actual_socket_addr = actor
-                        .communicator
-                        .as_ref()
-                        .map(|c| c.local_address)
-                        .expect("Socket address not set");
-                    actor.send_network_message(NetworkMessage::WhoIsLeader(WhoIsLeader {
-                        origin_addr: actual_socket_addr,
-                        user_id: actor.client_id.clone(),
-                    }));
+                    // Usar ctx.address() directamente
+                    ctx.run_later(std::time::Duration::from_millis(100), move |_, ctx| {
+                        ctx.address().do_send(StartRunningMsg);
+                    });
                 }
             }),
         );
@@ -661,5 +674,11 @@ impl Handler<NetworkMessage> for Client {
                     .info(format!("NetworkMessage ignored: {:?}", msg));
             }
         }
+    }
+}
+
+impl Drop for Client {
+    fn drop(&mut self) {
+        println!("[Client] ACTOR DROPPED");
     }
 }

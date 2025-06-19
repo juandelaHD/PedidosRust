@@ -246,3 +246,12 @@ pub struct ConnectionClosed {
 #[derive(Message)]
 #[rtype(result = "()")]
 pub struct Shutdown;
+
+
+/// Mensaje compartido entre usuarios
+/// Mensaje interno para iniciar el flujo después del delay
+pub struct StartRunningMsg;
+
+impl Message for StartRunningMsg {
+    type Result = ();
+}

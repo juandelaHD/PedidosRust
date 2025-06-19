@@ -885,6 +885,7 @@ impl Handler<GetDeliveries> for Storage {
 
     fn handle(&mut self, _msg: GetDeliveries, _ctx: &mut Self::Context) -> Self::Result {
         let deliveries: Vec<DeliveryDTO> = self.deliverys.values().cloned().collect();
+        println!("[STORAGEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE][DEBUG] Deliveries en storage: {:?}", deliveries);
         MessageResult(deliveries)
     }
 }
