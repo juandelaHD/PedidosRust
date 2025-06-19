@@ -94,8 +94,6 @@ impl Coordinator {
             println!("No connections established.");
         }
 
-
-
         Self {
             id: format!("server_{}", srv_addr.port() - BASE_PORT),
             ring_nodes,
@@ -270,8 +268,6 @@ impl Actor for Coordinator {
         let nearby_delivery_service =
             NearbyDeliveryService::new(storage_address.clone(), ctx.address());
         self.nearby_delivery_service = Some(nearby_delivery_service.start());
-
-
 
         if let Some(order_service) = &self.order_service {
             order_service.do_send(SetActorsAddresses {
@@ -913,8 +909,6 @@ impl Handler<NetworkMessage> for Coordinator {
                 }
             }
             NetworkMessage::DeliveryAccepted(msg_data) => {
-                self.logger
-                    .info("Received DeliveryAccepted message, not implemented yet");
                 if let Some(order_service) = &self.order_service {
                     order_service.do_send(msg_data);
                 } else {
@@ -995,26 +989,23 @@ impl Handler<NetworkMessage> for Coordinator {
                     .info(format!("Connection closed for {}", msg_data.remote_addr));
                 let remote_addr = msg_data.remote_addr;
                 // Si el remote_addr está en self.communicators, lo eliminamos
-                if let Some(communicator) = self.communicators.get(&remote_addr) {
+                if let Some(_communicator) = self.communicators.get(&remote_addr) {
                     self.communicators.remove(&remote_addr);
                     self.user_addresses.remove_by_key(&remote_addr);
 
                     self.logger
                         .info(format!("Removed communicator for {}", remote_addr));
-                } else {
-                    if let Some(coordinator_manager) = &self.coordinator_manager {
-                        // si el servidor que se desconectó era el lider actual, ponemos a nuestro lider como None
-                        if self.current_coordinator == Some(remote_addr) {
-                            self.current_coordinator = None;
-                            self.logger
-                                .info("Current coordinator set to None due to disconnection.");
-                        }
-                        // Enviamos el mensaje al CoordinatorManager para que maneje la desconexión
-
-                        coordinator_manager.do_send(msg_data);
-                    } else {
-                        self.logger.info("CoordinatorManager not initialized yet.");
+                } else if let Some(coordinator_manager) = &self.coordinator_manager {
+                    // si el servidor que se desconectó era el lider actual, ponemos a nuestro lider como None
+                    if self.current_coordinator == Some(remote_addr) {
+                        self.current_coordinator = None;
+                        self.logger
+                            .info("Current coordinator set to None due to disconnection.");
                     }
+                    // Enviamos el mensaje al CoordinatorManager para que maneje la desconexión
+                    coordinator_manager.do_send(msg_data);
+                } else {
+                    self.logger.info("CoordinatorManager not initialized yet.");
                 }
             }
 

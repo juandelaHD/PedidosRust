@@ -797,14 +797,14 @@ impl Handler<SetDeliveryStatus> for Storage {
 
     fn handle(&mut self, msg: SetDeliveryStatus, _ctx: &mut Self::Context) -> Self::Result {
         if let Some(delivery) = self.deliverys.get_mut(&msg.delivery_id) {
-            delivery.status = msg.delivery_status.clone();
+            delivery.status = msg.delivery_status;
             self.logger
                 .info(format!("Delivery status updated: {}", msg.delivery_id));
         } else {
             self.logger
                 .error(format!("Delivery not found: {}", msg.delivery_id));
         }
-        self.add_to_log(StorageLogMessage::SetDeliveryStatus(msg.clone()));
+        self.add_to_log(StorageLogMessage::SetDeliveryStatus(msg));
     }
 }
 

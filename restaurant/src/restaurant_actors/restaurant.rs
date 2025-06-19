@@ -164,9 +164,9 @@ impl Handler<ConnectionClosed> for Restaurant {
                 actor.waiting_reconnection_timer = Some(handler);
             }
             None => {
-                actor.logger.error(format!(
-                    "Failed to reconnect to any server after closed connection"
-                ));
+                actor
+                    .logger
+                    .error("Failed to reconnect to any server after closed connection");
                 ctx.stop();
             }
         });
@@ -243,7 +243,7 @@ impl Handler<LeaderIs> for Restaurant {
                 .map(|c| c.local_address)
                 .expect("Socket address not set");
             self.send_network_message(NetworkMessage::RegisterUser(RegisterUser {
-                origin_addr: local_address.clone(),
+                origin_addr: local_address,
                 user_id: self.info.id.clone(),
                 position: self.info.position,
             }));
@@ -283,9 +283,10 @@ impl Handler<LeaderIs> for Restaurant {
                     actor.communicator = Some(new_communicator);
 
                     // Usar ctx.address() directamente
-                    let handler = ctx.run_later(std::time::Duration::from_millis(100), move |_, ctx| {
-                        ctx.address().do_send(StartRunning);
-                    });
+                    let handler =
+                        ctx.run_later(std::time::Duration::from_millis(100), move |_, ctx| {
+                            ctx.address().do_send(StartRunning);
+                        });
                     actor.waiting_reconnection_timer = Some(handler);
                 }
             }),
@@ -473,8 +474,6 @@ impl Handler<NetworkMessage> for Restaurant {
             // All Users messages
             NetworkMessage::RetryLater(_msg_data) => {
                 self.logger.info("Retrying to connect in some seconds");
-
-
             }
             NetworkMessage::LeaderIs(msg_data) => ctx.address().do_send(msg_data),
             NetworkMessage::RecoveredInfo(user_dto_opt) => {
@@ -560,7 +559,6 @@ impl Handler<NetworkMessage> for Restaurant {
                             });
 
                         self.waiting_reconnection_timer = Some(handle);
-
                     }
                 } else {
                     self.logger

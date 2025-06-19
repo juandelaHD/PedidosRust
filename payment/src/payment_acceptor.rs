@@ -5,7 +5,6 @@ use common::logger::Logger;
 use common::network::communicator::Communicator;
 use common::network::peer_types::PeerType;
 use std::net::SocketAddr;
-use tokio::io::AsyncBufReadExt;
 use tokio::io::AsyncReadExt;
 use tokio::net::TcpListener;
 use tokio::net::TcpStream;

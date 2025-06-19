@@ -60,7 +60,6 @@ pub struct CoordinatorManager {
     get_storage_updates_timer: Option<actix::SpawnHandle>,
     /// waiting for leader response
     waiting_for_leader: Option<actix::SpawnHandle>,
-    
 }
 
 impl Actor for CoordinatorManager {
@@ -85,7 +84,7 @@ impl CoordinatorManager {
     ) -> Self {
         let mut coord_addresses = BiMap::new();
         for (id, addr) in ring_nodes.iter() {
-            coord_addresses.insert(addr.clone(), id.clone());
+            coord_addresses.insert(*addr, id.clone());
         }
 
         Self {
@@ -156,11 +155,9 @@ impl CoordinatorManager {
                 return;
             }
 
-
             // ¡Calcular el nodo anterior en cada tick!
             let previous_node_addr_opt = act.find_previous_in_ring();
             if previous_node_addr_opt.is_none() {
-                act.logger.warn("No previous node found for storage updates.");
                 return;
             }
             let previous_node_addr = previous_node_addr_opt.unwrap();
@@ -173,24 +170,25 @@ impl CoordinatorManager {
                     match res {
                         Ok(min_log_index) => {
                             act.logger.info(format!(
-                                "Recibido minLogIndex: {:?}, enviando RequestNewStorageUpdates al siguiente nodo.",
+                                "Received minLogIndex from storage: {}",
                                 min_log_index
                             ));
-                            if let Err(e) = act.send_network_message(previous_node_addr, NetworkMessage::RequestNewStorageUpdates(RequestNewStorageUpdates {
-                                coordinator_id: act.id.clone(),
-                                start_index: min_log_index,
-                            })) {
-                                act.logger.warn(format!(
-                                    "Error al enviar RequestNewStorageUpdates: {}",
-                                    e
-                                ));
+                            if let Err(e) = act.send_network_message(
+                                previous_node_addr,
+                                NetworkMessage::RequestNewStorageUpdates(
+                                    RequestNewStorageUpdates {
+                                        coordinator_id: act.id.clone(),
+                                        start_index: min_log_index,
+                                    },
+                                ),
+                            ) {
+                                act.logger
+                                    .warn(format!("Error sending RequestNewStorageUpdates: {}", e));
                             }
                         }
                         Err(e) => {
-                            act.logger.warn(format!(
-                                "Error al obtener minLogIndex de storage: {:?}",
-                                e
-                            ));
+                            act.logger
+                                .warn(format!("Error obtaining minLogIndex from storage: {:?}", e));
                         }
                     }
                     fut::ready(())
@@ -252,15 +250,20 @@ impl CoordinatorManager {
             let idx = (my_index + ordered_ids.len() - offset) % ordered_ids.len();
             let prev_id = &ordered_ids[idx];
 
-            print!("       prev_id: {}, ", prev_id);
-
             // Obtener su SocketAddr
             if let Some(addr) = self.coord_addresses.get_by_value(prev_id) {
                 // Confirmar que está vivo
                 if self.coord_communicators.contains_key(addr) {
                     return Some(*addr);
-                } else {
                 }
+                /*
+                else {
+                    self.logger.warn(format!(
+                        "Previous node {} ({}) is not connected, skipping...",
+                        prev_id, addr
+                    ));
+                }
+                */
             }
         }
 
@@ -469,43 +472,45 @@ impl CoordinatorManager {
         match self.broadcast_who_is_leader() {
             Ok(_) => {
                 // Esperamos X segundos para ver si alguien responde
-                let handler = ctx.run_later(TIMEOUT_LEADER_RESPONSE, |actor: &mut Self, _ctx| {
-                    if actor.coordinator_actual.is_none() {
-                        actor
-                            .logger
-                            .info("Asked all nodes for leader. No responses. Becoming leader...");
-                        actor.coordinator_actual = Some(actor.my_socket_addr);
-                        actor.coordinator_addr.do_send(LeaderIdIs { leader_id: id });
-                        actor.broadcast_leader_is();
-                    } else {
-                        actor.logger.info(format!(
-                            "Leader response received before timeout: {:?}",
-                            actor.coordinator_actual
-                        ));
-                        // Nos conectamos por primera vez al lider y solicitamos todo el Storage
-                        if let Some(addr) = actor.coordinator_actual {
-                            // logea que enviaste
-                            actor
-                                .logger
-                                .info(format!("Requesting all storage from leader at {}", addr));
-                            if let Err(e) = actor.send_network_message(
-                                addr,
-                                NetworkMessage::RequestAllStorage(RequestAllStorage {
-                                    coordinator_id: id.clone(),
-                                }),
-                            ) {
-                                actor.logger.warn(format!(
-                                    "Error al enviar RequestAllStorage al líder: {}",
-                                    e
-                                ));
-                            }
+                let handler =
+                    ctx.run_later(TIMEOUT_LEADER_RESPONSE, move |actor: &mut Self, _ctx| {
+                        if actor.coordinator_actual.is_none() {
+                            actor.logger.info(
+                                "Asked all nodes for leader. No responses. Becoming leader...",
+                            );
+                            actor.coordinator_actual = Some(actor.my_socket_addr);
+                            //actor.coordinator_addr.do_send(LeaderIdIs { leader_id: id });
+                            actor.broadcast_leader_is();
                         } else {
-                            actor
-                                .logger
-                                .warn("No coordinator address found to request storage.");
+                            actor.logger.info(format!(
+                                "Leader response received before timeout: {:?}",
+                                actor.coordinator_actual
+                            ));
+                            // Nos conectamos por primera vez al lider y solicitamos todo el Storage
+                            if let Some(addr) = actor.coordinator_actual {
+                                // logea que enviaste
+                                actor.logger.info(format!(
+                                    "Requesting all storage from leader at {}",
+                                    addr
+                                ));
+                                if let Err(e) = actor.send_network_message(
+                                    addr,
+                                    NetworkMessage::RequestAllStorage(RequestAllStorage {
+                                        coordinator_id: id.clone(),
+                                    }),
+                                ) {
+                                    actor.logger.warn(format!(
+                                        "Error al enviar RequestAllStorage al líder: {}",
+                                        e
+                                    ));
+                                }
+                            } else {
+                                actor
+                                    .logger
+                                    .warn("No coordinator address found to request storage.");
+                            }
                         }
-                    }
-                });
+                    });
                 self.waiting_for_leader = Some(handler);
             }
             Err(reason) => {
@@ -515,7 +520,7 @@ impl CoordinatorManager {
                 ));
                 // Nos autoproclamamos líder directamente
                 self.coordinator_actual = Some(self.my_socket_addr);
-                self.coordinator_addr.do_send(LeaderIdIs { leader_id: id });
+                //self.coordinator_addr.do_send(LeaderIdIs { leader_id: id });
                 self.broadcast_leader_is();
             }
         }
@@ -759,7 +764,7 @@ impl Handler<Ping> for CoordinatorManager {
 impl Handler<Pong> for CoordinatorManager {
     type Result = ();
 
-    fn handle(&mut self, tokio_stream: Pong, _ctx: &mut Self::Context) {
+    fn handle(&mut self, _tokio_stream: Pong, _ctx: &mut Self::Context) {
         //self.logger.info(format!("Recibido Pong de {}", msg.from));
         // Pong recibido, ya no hay ping pendiente
         self.pong_pending = false;
@@ -778,16 +783,14 @@ impl Handler<LeaderElection> for CoordinatorManager {
             self.election_in_progress = false;
             let new_leader = candidates.iter().min().unwrap().clone();
             self.logger
-                .info(format!("Elección terminada. Nuevo líder: {}", new_leader));
+                .info(format!("Election completed. New leader: {}", new_leader));
 
             if let Some(leader_addr) = self.coord_addresses.get_by_value(&new_leader) {
                 self.coordinator_actual = Some(*leader_addr);
                 self.broadcast_leader_is();
             } else {
-                self.logger.warn(format!(
-                    "No se encontró dirección para el nuevo líder: {}",
-                    new_leader
-                ));
+                self.logger
+                    .warn(format!("No address found for new leader: {}", new_leader));
             }
         } else {
             // Sumarme como candidato
@@ -806,7 +809,7 @@ impl Handler<LeaderElection> for CoordinatorManager {
                     ));
                 }
 
-                self.logger.info(format!("Pasando elección a {}", next));
+                self.logger.info(format!("Passing election to {}", next));
             }
         }
     }
@@ -818,7 +821,7 @@ impl Handler<StorageUpdates> for CoordinatorManager {
 
     fn handle(&mut self, msg: StorageUpdates, _ctx: &mut Context<Self>) {
         self.logger.info(format!(
-            "Recibidas {} actualizaciones de Storage, reenviando a storage...",
+            "Received {} storage updates, forwarding to storage...",
             msg.updates.len()
         ));
         // HashMap -> Vector en orden en base a los keys (indices)
@@ -852,21 +855,19 @@ impl Handler<RequestNewStorageUpdates> for CoordinatorManager {
         if let Some(remote_addr) = self.coord_addresses.get_by_value(&id) {
             if !self.coord_communicators.contains_key(remote_addr) {
                 self.logger.warn(format!(
-                    "Coordinador {} no está conectado, no puedo enviarle actualizaciones de Storage",
+                    "Coordinator {} is not connected, cannot send Storage updates",
                     id
                 ));
                 return;
             }
         } else {
-            self.logger.warn(format!(
-                "No se encontró dirección para el coordinador: {}",
-                id
-            ));
+            self.logger
+                .warn(format!("No address found for coordinator: {}", id));
             return;
         }
 
         self.logger.info(format!(
-            "Recibida solicitud de actualizaciones de Storage desde el nodo {}",
+            "Received request for Storage updates from node {}",
             msg.start_index
         ));
 
@@ -894,12 +895,12 @@ impl Handler<RequestNewStorageUpdates> for CoordinatorManager {
                         )
                         .unwrap_or_else(|e| {
                             act.logger
-                                .error(format!("Error al enviar StorageUpdates: {}", e))
+                                .error(format!("Error sending StorageUpdates: {}", e))
                         });
                     }
                     Err(e) => {
                         act.logger
-                            .warn(format!("Error al obtener minLogIndex de storage: {:?}", e));
+                            .warn(format!("Error obtaining minLogIndex from storage: {:?}", e));
                     }
                 }
                 fut::ready(())
@@ -928,7 +929,7 @@ impl Handler<ConnectionClosed> for CoordinatorManager {
                 self.coord_addresses
                     .insert(*acceptor_addr, closed_id.clone());
                 self.logger.info(format!(
-                    "Actualizado address de {} a {}",
+                    "Updated address of {} to {}",
                     closed_id, *acceptor_addr
                 ));
             } else {
@@ -945,7 +946,7 @@ impl Handler<ConnectionClosed> for CoordinatorManager {
         // Si el nodo cerrado era el líder actual, iniciamos una elección
         if self.coordinator_actual == Some(msg.remote_addr) {
             self.logger.warn(format!(
-                "Líder caído: {}. Iniciando elección...",
+                "Leader down: {}. Starting election...",
                 msg.remote_addr
             ));
             self.coordinator_actual = None;

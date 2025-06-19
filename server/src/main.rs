@@ -28,7 +28,7 @@ async fn main() {
     let ring_nodes: HashMap<String, SocketAddr> = (0..NUM_COORDINATORS)
         .map(|i| {
             let name = format!("server_{}", i);
-            let addr = SocketAddr::new(ip, BASE_PORT + i as u16);
+            let addr = SocketAddr::new(ip, BASE_PORT + i);
             (name, addr)
         })
         .collect();

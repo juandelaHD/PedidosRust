@@ -441,7 +441,7 @@ pub struct InsertAcceptedDelivery {
 ///
 /// ## Contents
 /// - `order_id`: The ID of the order.
-/// Returns: An optional set of delivery IDs that were removed.
+///   Returns: An optional set of delivery IDs that were removed.
 #[derive(Message, Debug, Clone, Serialize, Deserialize)]
 #[rtype(result = "Option<HashSet<String>>")]
 pub struct RemoveAcceptedDeliveries {

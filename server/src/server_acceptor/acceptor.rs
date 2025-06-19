@@ -6,7 +6,6 @@ use common::logger::Logger;
 use common::network::communicator::Communicator;
 use common::network::peer_types::PeerType;
 use std::net::SocketAddr;
-use tokio::io::AsyncBufReadExt;
 use tokio::io::AsyncReadExt;
 use tokio::net::TcpListener;
 use tokio::net::TcpStream;
@@ -135,7 +134,7 @@ impl Handler<HandleConnection> for Acceptor {
 
         match peer_type {
             PeerType::CoordinatorType => {
-                print!("{}", "Received connection from Coordinator. Registering...");
+                print!("Received connection from Coordinator. Registering...");
                 let communicator =
                     Communicator::new(stream, self.coordinator_address.clone(), peer_type);
                 self.coordinator_address
@@ -145,10 +144,7 @@ impl Handler<HandleConnection> for Acceptor {
                     });
             }
             PeerType::ClientType | PeerType::RestaurantType | PeerType::DeliveryType => {
-                print!(
-                    "{}",
-                    "Received connection from Client/Restaurant/Delivery. Registering..."
-                );
+                print!("Received connection from Client/Restaurant/Delivery. Registering...");
                 let communicator =
                     Communicator::new(stream, self.coordinator_address.clone(), peer_type);
                 self.coordinator_address.do_send(RegisterConnection {

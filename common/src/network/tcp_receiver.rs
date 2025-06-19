@@ -50,7 +50,7 @@ where
     fn started(&mut self, ctx: &mut Self::Context) {
         let addr = self.destination.clone();
         let reader = self.reader.take().unwrap();
-        let remote_addr = self.remote_addr.clone();
+        let remote_addr = self.remote_addr;
 
         ctx.spawn(
             async move {

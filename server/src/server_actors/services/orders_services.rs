@@ -65,7 +65,10 @@ impl OrderService {
             .parse::<SocketAddr>()
             .expect("Failed to parse server address");
 
-        println!("TRATANDO DE CONECTAR AL PAYMENT GATEWAY: {}", payment_gateway_address);
+        println!(
+            "TRATANDO DE CONECTAR AL PAYMENT GATEWAY: {}",
+            payment_gateway_address
+        );
 
         let pending_stream =
             connect_some(vec![payment_gateway_address], PeerType::CoordinatorType).await;

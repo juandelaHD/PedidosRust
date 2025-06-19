@@ -165,7 +165,6 @@ impl Delivery {
 /// This handler is triggered when the connection to the server is lost.
 /// It attempts to reconnect to one of the known servers. If reconnection is successful,
 /// it reinitializes the communicator and restarts the actor. If not, the actor is stopped.
-
 impl Handler<ConnectionClosed> for Delivery {
     type Result = ();
 
@@ -204,21 +203,22 @@ impl Handler<ConnectionClosed> for Delivery {
                     }
 
                     let addr = ctx.address();
-                    let handler = ctx.run_later(std::time::Duration::from_millis(100), move |_, _| {
-                        println!(
-                            "[Delivery][ConnectionClosed] Enviando StartRunning tras reconexión"
-                        );
-                        addr.do_send(StartRunning);
-                    });
+                    let handler =
+                        ctx.run_later(std::time::Duration::from_millis(100), move |_, _| {
+                            println!(
+                                "[Delivery][ConnectionClosed] Enviando StartRunning tras reconexión"
+                            );
+                            addr.do_send(StartRunning);
+                        });
                     actor.waiting_reconnection_timer = Some(handler);
                 }
                 None => {
                     println!(
                         "[Delivery][ConnectionClosed] No se pudo reconectar, deteniendo actor"
                     );
-                    actor.logger.error(format!(
-                        "Failed to reconnect to any server after closed connection"
-                    ));
+                    actor
+                        .logger
+                        .error("Failed to reconnect to any server after closed connection");
                     ctx.stop();
                 }
             }
@@ -286,7 +286,7 @@ impl Handler<LeaderIs> for Delivery {
                 .map(|c| c.local_address)
                 .expect("Socket address not set");
             self.send_network_message(NetworkMessage::RegisterUser(RegisterUser {
-                origin_addr: local_address.clone(),
+                origin_addr: local_address,
                 user_id: self.delivery_id.clone(),
                 position: self.position,
             }));
@@ -331,19 +331,20 @@ impl Handler<LeaderIs> for Delivery {
                     }
 
                     let addr = ctx.address();
-                    let handler = ctx.run_later(std::time::Duration::from_millis(100), move |_, _| {
-                        println!("[Delivery][LeaderIs] Enviando StartRunning tras reconexión");
-                        addr.do_send(StartRunning);
-                    });
+                    let handler =
+                        ctx.run_later(std::time::Duration::from_millis(100), move |_, _| {
+                            println!("[Delivery][LeaderIs] Enviando StartRunning tras reconexión");
+                            addr.do_send(StartRunning);
+                        });
                     actor.waiting_reconnection_timer = Some(handler);
                 }
                 None => {
                     println!(
                         "[Delivery][LeaderIs] No se pudo reconectar al líder, deteniendo actor"
                     );
-                    actor.logger.error(format!(
-                        "Failed to reconnect to any server after closed connection"
-                    ));
+                    actor
+                        .logger
+                        .error("Failed to reconnect to any server after closed connection");
                     ctx.stop();
                 }
             }
@@ -667,7 +668,6 @@ impl Handler<NetworkMessage> for Delivery {
             // Users messages
             NetworkMessage::RetryLater(_msg_data) => {
                 self.logger.info("Retrying to connect in some seconds");
-
             }
             NetworkMessage::LeaderIs(msg_data) => ctx.address().do_send(msg_data),
             NetworkMessage::RecoveredInfo(user_dto_opt) => {
