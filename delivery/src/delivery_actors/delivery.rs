@@ -3,16 +3,12 @@ use actix::prelude::*;
 use colored::Color;
 use common::constants::{BASE_DELAY_MILLIS, DELAY_SECONDS_TO_START_RECONNECT};
 use common::logger::Logger;
-use common::messages::delivery_messages::{IAmAvailable, OrderDelivered};
-use common::messages::{
-    AcceptedOrder, DeliverThisOrder, DeliveryNoNeeded, LeaderIs, NetworkMessage,
-    NewOfferToDeliver, RecoverProcedure, UpdateOrderStatus, WhoIsLeader,
-};
-
-
-use common::messages::shared_messages::*;
-
 use common::messages::delivery_messages::*;
+use common::messages::shared_messages::*;
+use common::messages::{
+    AcceptedOrder, DeliverThisOrder, DeliveryNoNeeded, LeaderIs, NetworkMessage, NewOfferToDeliver,
+    RecoverProcedure, UpdateOrderStatus, WhoIsLeader,
+};
 
 use common::network::communicator::Communicator;
 use common::network::connections::{connect_one, connect_some, reconnect};
@@ -24,19 +20,6 @@ use common::utils::calculate_distance;
 use std::net::SocketAddr;
 use std::time::Duration;
 use tokio::net::TcpStream;
-
-
-
-
-
-use common::types::dtos::ClientDTO;
-
-
-
-
-
-
-
 
 /// The `Delivery` actor represents a delivery person in the distributed restaurant ordering system.
 ///
@@ -183,27 +166,36 @@ impl Delivery {
 /// It attempts to reconnect to one of the known servers. If reconnection is successful,
 /// it reinitializes the communicator and restarts the actor. If not, the actor is stopped.
 
-
-
 impl Handler<ConnectionClosed> for Delivery {
     type Result = ();
 
     fn handle(&mut self, _msg: ConnectionClosed, ctx: &mut Self::Context) -> Self::Result {
         println!("[Delivery][ConnectionClosed] Handler llamado");
-        println!("[Delivery][ConnectionClosed] Estado communicator: {:?}", self.communicator.is_some());
+        println!(
+            "[Delivery][ConnectionClosed] Estado communicator: {:?}",
+            self.communicator.is_some()
+        );
         let servers = self.servers.clone();
-        println!("[Delivery][ConnectionClosed] Llamando a reconnect con: {:?}", servers);
+        println!(
+            "[Delivery][ConnectionClosed] Llamando a reconnect con: {:?}",
+            servers
+        );
         let fut = async move { reconnect(servers, PeerType::DeliveryType).await };
 
         let fut = wrap_future::<_, Self>(fut).map(|result, actor: &mut Self, ctx| {
             println!("[Delivery][ConnectionClosed] Futuro de reconexión terminado");
             match result {
                 Some(stream) => {
-                    println!("[Delivery][ConnectionClosed] Reconexión exitosa, creando communicator");
-                    let communicator = Communicator::new(stream, ctx.address(), PeerType::DeliveryType);
+                    println!(
+                        "[Delivery][ConnectionClosed] Reconexión exitosa, creando communicator"
+                    );
+                    let communicator =
+                        Communicator::new(stream, ctx.address(), PeerType::DeliveryType);
                     actor.communicator = Some(communicator);
 
-                    actor.logger.info("Reconnected successfully. Restarting actor...");
+                    actor
+                        .logger
+                        .info("Reconnected successfully. Restarting actor...");
 
                     if let Some(handler) = actor.waiting_reconnection_timer.take() {
                         ctx.cancel_future(handler);
@@ -213,12 +205,16 @@ impl Handler<ConnectionClosed> for Delivery {
 
                     let addr = ctx.address();
                     ctx.run_later(std::time::Duration::from_millis(100), move |_, _| {
-                        println!("[Delivery][ConnectionClosed] Enviando StartRunningMsg tras reconexión");
-                        addr.do_send(StartRunningMsg);
+                        println!(
+                            "[Delivery][ConnectionClosed] Enviando StartRunning tras reconexión"
+                        );
+                        addr.do_send(StartRunning);
                     });
                 }
                 None => {
-                    println!("[Delivery][ConnectionClosed] No se pudo reconectar, deteniendo actor");
+                    println!(
+                        "[Delivery][ConnectionClosed] No se pudo reconectar, deteniendo actor"
+                    );
                     actor.logger.error(format!(
                         "Failed to reconnect to any server after closed connection"
                     ));
@@ -229,16 +225,6 @@ impl Handler<ConnectionClosed> for Delivery {
         ctx.spawn(fut);
     }
 }
-
-
-
-
-
-
-
-
-
-
 
 impl Actor for Delivery {
     type Context = Context<Self>;
@@ -262,7 +248,7 @@ impl Actor for Delivery {
         // Esperar 100ms antes de enviar WhoIsLeader
         let addr = ctx.address();
         ctx.run_later(std::time::Duration::from_millis(100), move |_, _| {
-            addr.do_send(StartRunningMsg);
+            addr.do_send(StartRunning);
         });
     }
 }
@@ -271,7 +257,10 @@ impl Handler<LeaderIs> for Delivery {
     type Result = ();
 
     fn handle(&mut self, msg: LeaderIs, ctx: &mut Self::Context) -> Self::Result {
-        println!("[Delivery][LeaderIs] Recibido LeaderIs: {:?}", msg.coord_addr);
+        println!(
+            "[Delivery][LeaderIs] Recibido LeaderIs: {:?}",
+            msg.coord_addr
+        );
         let leader_addr = msg.coord_addr;
 
         let communicator_opt = self.communicator.as_ref().map(|c| c.peer_address);
@@ -288,6 +277,17 @@ impl Handler<LeaderIs> for Delivery {
                 ctx.cancel_future(handler);
                 println!("[Delivery][LeaderIs] KEEP-ALIVE CANCELADO (ya conectado al líder)");
             }
+
+            let local_address = self
+                .communicator
+                .as_ref()
+                .map(|c| c.local_address)
+                .expect("Socket address not set");
+            self.send_network_message(NetworkMessage::RegisterUser(RegisterUser {
+                origin_addr: local_address.clone(),
+                user_id: self.delivery_id.clone(),
+                position: self.position,
+            }));
             return;
         }
 
@@ -297,20 +297,24 @@ impl Handler<LeaderIs> for Delivery {
         }
         self.communicator = None;
 
-        println!("[Delivery][LeaderIs] Intentando conectar al nuevo líder: {}", leader_addr);
+        println!(
+            "[Delivery][LeaderIs] Intentando conectar al nuevo líder: {}",
+            leader_addr
+        );
         let fut_connect = async move { connect_one(leader_addr, PeerType::DeliveryType).await };
-
-        
 
         let fut = wrap_future::<_, Self>(fut_connect).map(|result, actor: &mut Self, ctx| {
             println!("[Delivery][LeaderIs] Futuro de reconexión terminado");
             match result {
                 Some(stream) => {
                     println!("[Delivery][LeaderIs] Reconexión exitosa, creando communicator");
-                    let communicator = Communicator::new(stream, ctx.address(), PeerType::DeliveryType);
+                    let communicator =
+                        Communicator::new(stream, ctx.address(), PeerType::DeliveryType);
                     actor.communicator = Some(communicator);
 
-                    actor.logger.info("Reconnected successfully. Restarting actor...");
+                    actor
+                        .logger
+                        .info("Reconnected successfully. Restarting actor...");
 
                     // CANCELA EL KEEP-ALIVE SI EXISTE
                     if let Some(handler) = actor.keep_alive_timer.take() {
@@ -326,12 +330,14 @@ impl Handler<LeaderIs> for Delivery {
 
                     let addr = ctx.address();
                     ctx.run_later(std::time::Duration::from_millis(100), move |_, _| {
-                        println!("[Delivery][LeaderIs] Enviando StartRunningMsg tras reconexión");
-                        addr.do_send(StartRunningMsg);
+                        println!("[Delivery][LeaderIs] Enviando StartRunning tras reconexión");
+                        addr.do_send(StartRunning);
                     });
                 }
                 None => {
-                    println!("[Delivery][LeaderIs] No se pudo reconectar al líder, deteniendo actor");
+                    println!(
+                        "[Delivery][LeaderIs] No se pudo reconectar al líder, deteniendo actor"
+                    );
                     actor.logger.error(format!(
                         "Failed to reconnect to any server after closed connection"
                     ));
@@ -339,9 +345,6 @@ impl Handler<LeaderIs> for Delivery {
                 }
             }
         });
-
-
-
 
         ctx.spawn(fut);
     }
@@ -358,29 +361,18 @@ impl Handler<GetLocalAddress> for Delivery {
     type Result = MessageResult<GetLocalAddress>;
 
     fn handle(&mut self, _msg: GetLocalAddress, _ctx: &mut Self::Context) -> Self::Result {
-        let addr = self
-            .communicator
-            .as_ref()
-            .map(|c| c.local_address);
+        let addr = self.communicator.as_ref().map(|c| c.local_address);
         MessageResult(addr)
     }
 }
 
-// Mensaje interno para iniciar el flujo después del delay
-pub struct StartRunningMsg;
-
-impl Message for StartRunningMsg {
-    type Result = ();
-}
-
-impl Handler<StartRunningMsg> for Delivery {
+impl Handler<StartRunning> for Delivery {
     type Result = ();
 
-    fn handle(&mut self, _msg: StartRunningMsg, ctx: &mut Self::Context) -> Self::Result {
+    fn handle(&mut self, _msg: StartRunning, ctx: &mut Self::Context) -> Self::Result {
         self.start_running(ctx);
     }
 }
-
 
 /// Handler for the `RecoverProcedure` message.
 ///
@@ -731,266 +723,73 @@ impl Handler<NetworkMessage> for Delivery {
                 ));
                 ctx.address().do_send(msg_data);
             }
-
-    NetworkMessage::ConnectionClosed(msg_data) => {
-        println!("[Delivery][NetworkMessage] ConnectionClosed recibido: {:?}", msg_data.remote_addr);
-        println!("[DEBUG] Intentando reconectar a servidores: {:?}", self.servers);
-        self.logger.info(format!(
-            "Connection closed with address: {}",
-            msg_data.remote_addr
-        ));
-        if let Some(communicator) = &self.communicator {
-            if communicator.peer_address == msg_data.remote_addr {
+            NetworkMessage::ConnectionClosed(msg_data) => {
+                println!(
+                    "[Delivery][NetworkMessage] ConnectionClosed recibido: {:?}",
+                    msg_data.remote_addr
+                );
+                println!(
+                    "[DEBUG] Intentando reconectar a servidores: {:?}",
+                    self.servers
+                );
                 self.logger.info(format!(
-                    "Removing communicator for address: {}",
+                    "Connection closed with address: {}",
                     msg_data.remote_addr
                 ));
-                if let Some(comm) = self.communicator.as_mut() {
-                    comm.shutdown();
+                if let Some(communicator) = &self.communicator {
+                    if communicator.peer_address == msg_data.remote_addr {
+                        self.logger.info(format!(
+                            "Removing communicator for address: {}",
+                            msg_data.remote_addr
+                        ));
+                        if let Some(comm) = self.communicator.as_mut() {
+                            comm.shutdown();
+                        }
+                        self.communicator = None;
+                        self.logger.warn("Retrying to reconnect to the server ...");
+
+                        let msg_data_cloned = msg_data.clone();
+
+                        // --- KEEP ALIVE TIMER ---
+                        // Cancela uno anterior si existe
+                        if let Some(handle) = self.keep_alive_timer.take() {
+                            ctx.cancel_future(handle);
+                        }
+                        // Programa un timer dummy para mantener vivo el actor
+                        let keep_alive_handle = ctx.run_interval(Duration::from_secs(1), |_, _| {
+                            // No hace nada, solo mantiene vivo el actor
+                            println!(
+                                "[Delivery][KeepAlive] Manteniendo actor vivo durante reconexión"
+                            );
+                        });
+                        self.keep_alive_timer = Some(keep_alive_handle);
+
+                        // --- TIMER DE RECONEXIÓN ---
+                        let handle =
+                            ctx.run_later(DELAY_SECONDS_TO_START_RECONNECT, move |_, ctx| {
+                                println!("Attempting to reconnect after delay...");
+                                ctx.address().do_send(ConnectionClosed {
+                                    remote_addr: msg_data_cloned.remote_addr,
+                                });
+                                println!("Reconnection attempt sent.");
+                            });
+                        self.waiting_reconnection_timer = Some(handle);
+                    }
+                } else {
+                    self.logger
+                        .error("Communicator not found, cannot handle closed connection.");
                 }
-                self.communicator = None;
-                self.logger.warn("Retrying to reconnect to the server ...");
-
-                let msg_data_cloned = msg_data.clone();
-
-                // --- KEEP ALIVE TIMER ---
-                // Cancela uno anterior si existe
-                if let Some(handle) = self.keep_alive_timer.take() {
-                    ctx.cancel_future(handle);
-                }
-                // Programa un timer dummy para mantener vivo el actor
-                let keep_alive_handle = ctx.run_interval(Duration::from_secs(1), |_, _| {
-                    // No hace nada, solo mantiene vivo el actor
-                    println!("[Delivery][KeepAlive] Manteniendo actor vivo durante reconexión");
-                });
-                self.keep_alive_timer = Some(keep_alive_handle);
-
-                // --- TIMER DE RECONEXIÓN ---
-                let handle = ctx.run_later(DELAY_SECONDS_TO_START_RECONNECT, move |_, ctx| {
-                    println!("Attempting to reconnect after delay...");
-                    ctx.address().do_send(ConnectionClosed { remote_addr: msg_data_cloned.remote_addr });
-                    println!("Reconnection attempt sent.");
-                });
-                self.waiting_reconnection_timer = Some(handle);
-
-                println!("HOLA!")
             }
-        } else {
-            self.logger
-                .error("Communicator not found, cannot handle closed connection.");
-        }
-    }
-
-
-
-
-
             _ => {
                 self.logger
                     .info(format!("NetworkMessage ignored: {:?}", msg));
             }
         }
     }
-
-
-
 }
-
 
 impl Drop for Delivery {
     fn drop(&mut self) {
         println!("[Delivery] ACTOR DROPPED");
     }
 }
-
-/*
-// ------- TESTING ------- //
-struct GetStatus;
-impl Message for GetStatus {
-    type Result = UserDTO;
-}
-impl Handler<GetStatus> for Delivery {
-    type Result = MessageResult<GetStatus>;
-    fn handle(&mut self, _msg: GetStatus, _ctx: &mut Self::Context) -> Self::Result {
-        MessageResult(UserDTO::Delivery(DeliveryDTO {
-            delivery_id: self.delivery_id.clone(),
-            delivery_position: self.position,
-            status: self.status.clone(),
-            current_order: self.current_order.clone(),
-            current_client_id: self.current_order.as_ref().map(|o| o.client_id.clone()),
-            time_stamp: std::time::SystemTime::now(),
-        }))
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use common::types::order_status::OrderStatus;
-    use std::collections::HashMap;
-
-    fn test_order(order_id: u64) -> OrderDTO {
-        OrderDTO {
-            order_id,
-            dish_name: "Pizza".to_string(),
-            client_id: "client1".to_string(),
-            restaurant_id: "rest1".to_string(),
-            delivery_id: Some("delivery1".to_string()),
-            status: OrderStatus::Pending,
-            client_position: (1.0, 2.0),
-            time_stamp: std::time::SystemTime::now(),
-        }
-    }
-
-    fn dummy_delivery(status: DeliveryStatus, current_order: Option<OrderDTO>) -> Delivery {
-
-    }
-
-    #[actix_rt::test]
-    async fn test_handle_new_offer_to_deliver_accepts_order() {
-        let delivery = dummy_delivery(DeliveryStatus::Available, None).start();
-        let order = test_order(1);
-        let msg = NewOfferToDeliver {
-            order: order.clone(),
-        };
-
-        // Enviamos el mensaje y esperamos a que se procese
-        delivery.send(msg).await.unwrap();
-
-        // Consultar el estado del actor Delivery
-        let result = delivery.send(GetStatus).await.unwrap();
-        if let UserDTO::Delivery(delivery_dto) = result {
-            assert_eq!(delivery_dto.status, DeliveryStatus::WaitingConfirmation);
-            assert_eq!(delivery_dto.current_order.unwrap().order_id, 1);
-        } else {
-            panic!("Expected UserDTO::Delivery variant");
-        }
-    }
-
-    #[actix_rt::test]
-    async fn test_handle_delivery_no_needed_resets_order() {
-        let order = test_order(2);
-        let delivery =
-            dummy_delivery(DeliveryStatus::WaitingConfirmation, Some(order.clone())).start();
-
-        // Primero simulamos que el delivery tiene un pedido pendiente
-        // Enviamos el mensaje DeliveryNoNeeded
-        delivery
-            .send(DeliveryNoNeeded {
-                order: order.clone(),
-            })
-            .await
-            .unwrap();
-
-        // Consultamos el estado
-        let result = delivery.send(GetStatus).await.unwrap();
-        if let UserDTO::Delivery(delivery_dto) = result {
-            assert_eq!(delivery_dto.status, DeliveryStatus::Available);
-            assert!(delivery_dto.current_order.is_none());
-        } else {
-            panic!("Expected UserDTO::Delivery variant");
-        }
-    }
-
-    #[actix_rt::test]
-    async fn test_handle_deliver_this_order_sets_delivering() {
-        let order = test_order(3);
-        let delivery =
-            dummy_delivery(DeliveryStatus::WaitingConfirmation, Some(order.clone())).start();
-
-        // Enviamos el mensaje DeliverThisOrder
-        delivery
-            .send(DeliverThisOrder {
-                order: order.clone(),
-            })
-            .await
-            .unwrap();
-
-        // Consultamos el estado
-        let result = delivery.send(GetStatus).await.unwrap();
-        if let UserDTO::Delivery(delivery_dto) = result {
-            assert_eq!(delivery_dto.status, DeliveryStatus::Delivering);
-            assert_eq!(delivery_dto.delivery_position, order.client_position);
-        } else {
-            panic!("Expected UserDTO::Delivery variant");
-        }
-    }
-
-    #[actix_rt::test]
-    async fn test_handle_order_delivered_sets_available() {
-        let order = test_order(4);
-        let delivery = dummy_delivery(DeliveryStatus::Delivering, Some(order.clone())).start();
-
-        // Enviamos el mensaje OrderDelivered
-        delivery
-            .send(OrderDelivered {
-                order: order.clone(),
-            })
-            .await
-            .unwrap();
-
-        // Consultamos el estado
-        let result = delivery.send(GetStatus).await.unwrap();
-        if let UserDTO::Delivery(delivery_dto) = result {
-            assert_eq!(delivery_dto.status, DeliveryStatus::Available);
-            assert!(delivery_dto.current_order.is_none());
-        } else {
-            panic!("Expected UserDTO::Delivery variant");
-        }
-    }
-
-    #[actix_rt::test]
-    async fn test_network_message_dispatch() {
-        let order = test_order(5);
-        let delivery = dummy_delivery(DeliveryStatus::Available, None).start();
-
-        // NewOfferToDeliver
-        delivery
-            .send(NetworkMessage::NewOfferToDeliver(NewOfferToDeliver {
-                order: order.clone(),
-            }))
-            .await
-            .unwrap();
-        let result = delivery.send(GetStatus).await.unwrap();
-        if let UserDTO::Delivery(delivery_dto) = result {
-            assert_eq!(delivery_dto.status, DeliveryStatus::WaitingConfirmation);
-        } else {
-            panic!("Expected UserDTO::Delivery variant");
-        }
-
-        // DeliveryNoNeeded
-        delivery
-            .send(NetworkMessage::DeliveryNoNeeded(DeliveryNoNeeded {
-                order: order.clone(),
-            }))
-            .await
-            .unwrap();
-        let result = delivery.send(GetStatus).await.unwrap();
-        if let UserDTO::Delivery(delivery_dto) = result {
-            assert_eq!(delivery_dto.status, DeliveryStatus::Available);
-        } else {
-            panic!("Expected UserDTO::Delivery variant");
-        }
-
-        // DeliverThisOrder
-        delivery
-            .send(NetworkMessage::NewOfferToDeliver(NewOfferToDeliver {
-                order: order.clone(),
-            }))
-            .await
-            .unwrap();
-        delivery
-            .send(NetworkMessage::DeliverThisOrder(DeliverThisOrder {
-                order: order.clone(),
-            }))
-            .await
-            .unwrap();
-        let result = delivery.send(GetStatus).await.unwrap();
-        if let UserDTO::Delivery(delivery_dto) = result {
-            assert_eq!(delivery_dto.status, DeliveryStatus::Delivering);
-        } else {
-            panic!("Expected UserDTO::Delivery variant");
-        }
-    }
-}
-*/

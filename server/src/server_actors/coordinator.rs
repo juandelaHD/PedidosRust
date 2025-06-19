@@ -802,14 +802,13 @@ impl Handler<NetworkMessage> for Coordinator {
                         }
                     }
 
-
-                // Actualiza el user_id asociado a la dirección de origen
-                self.user_addresses.insert(msg_data.origin_addr, msg_data.user_id.clone());
-                self.logger.info(format!(
-                    "User address mapping actualizado: {} -> {}",
-                    msg_data.origin_addr, msg_data.user_id
-                ));
-
+                    // Actualiza el user_id asociado a la dirección de origen
+                    self.user_addresses
+                        .insert(msg_data.origin_addr, msg_data.user_id.clone());
+                    self.logger.info(format!(
+                        "User address mapping actualizado: {} -> {}",
+                        msg_data.origin_addr, msg_data.user_id
+                    ));
                 } else {
                     self.logger.info(format!(
                         "Communicator not found for {}",

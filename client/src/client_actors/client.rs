@@ -236,7 +236,7 @@ impl Handler<ConnectionClosed> for Client {
                 // Esperar 100ms antes de enviar WhoIsLeader tras reconexión
                 let addr = ctx.address();
                 ctx.run_later(std::time::Duration::from_millis(100), move |_, _| {
-                    addr.do_send(StartRunningMsg);
+                    addr.do_send(StartRunning);
                 });
             }
             None => {
@@ -274,24 +274,20 @@ impl Actor for Client {
         let ui_handler = UIHandler::new(ctx.address(), self.logger.clone());
         self.ui_handler = Some(ui_handler.start());
 
-            // Esperar 100ms antes de enviar WhoIsLeader
+        // Esperar 100ms antes de enviar WhoIsLeader
         let addr = ctx.address();
         ctx.run_later(std::time::Duration::from_millis(100), move |_, _| {
-            addr.do_send(StartRunningMsg);
+            addr.do_send(StartRunning);
         });
-        }
-}
-
-
-
-
-impl Handler<StartRunningMsg> for Client {
-    type Result = ();
-    fn handle(&mut self, _msg: StartRunningMsg, ctx: &mut Self::Context) -> Self::Result {
-        self.start_running(ctx);
     }
 }
 
+impl Handler<StartRunning> for Client {
+    type Result = ();
+    fn handle(&mut self, _msg: StartRunning, ctx: &mut Self::Context) -> Self::Result {
+        self.start_running(ctx);
+    }
+}
 
 /// Handler for the `LeaderIs` message.
 ///
@@ -368,7 +364,7 @@ impl Handler<LeaderIs> for Client {
 
                     // Usar ctx.address() directamente
                     ctx.run_later(std::time::Duration::from_millis(100), move |_, ctx| {
-                        ctx.address().do_send(StartRunningMsg);
+                        ctx.address().do_send(StartRunning);
                     });
                 }
             }),

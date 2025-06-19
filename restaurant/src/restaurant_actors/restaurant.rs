@@ -1,11 +1,15 @@
 use crate::internal_messages::messages::SendToKitchen;
+use crate::restaurant_actors::delivery_assigner::DeliveryAssigner;
+use crate::restaurant_actors::kitchen::Kitchen;
 use actix::fut::wrap_future;
 use actix::prelude::*;
+use colored::Color;
 use common::constants::DELAY_SECONDS_TO_START_RECONNECT;
 use common::logger::Logger;
 use common::messages::{
     ConnectionClosed, DeliverThisOrder, DeliveryAccepted, LeaderIs, NetworkMessage, NewOrder,
-    RecoverProcedure, RegisterUser, RequestNearbyDelivery, UpdateOrderStatus, WhoIsLeader,
+    RecoverProcedure, RegisterUser, RequestNearbyDelivery, StartRunning, UpdateOrderStatus,
+    WhoIsLeader,
 };
 use common::network::communicator::Communicator;
 use common::network::connections::{connect_one, connect_some, reconnect};
@@ -17,10 +21,6 @@ use common::utils::random_bool_by_given_probability;
 use std::collections::HashSet;
 use std::net::SocketAddr;
 use tokio::net::TcpStream;
-use common::messages::shared_messages::StartRunningMsg;
-use crate::restaurant_actors::delivery_assigner::DeliveryAssigner;
-use crate::restaurant_actors::kitchen::Kitchen;
-use colored::Color;
 
 /// The `Restaurant` actor represents a restaurant in the distributed food ordering system.
 ///
@@ -159,7 +159,7 @@ impl Handler<ConnectionClosed> for Restaurant {
                 // Esperar 100ms antes de enviar WhoIsLeader tras reconexión
                 let addr = ctx.address();
                 ctx.run_later(std::time::Duration::from_millis(100), move |_, _| {
-                    addr.do_send(StartRunningMsg);
+                    addr.do_send(StartRunning);
                 });
             }
             None => {
@@ -173,10 +173,9 @@ impl Handler<ConnectionClosed> for Restaurant {
     }
 }
 
-
-impl Handler<StartRunningMsg> for Restaurant {
+impl Handler<StartRunning> for Restaurant {
     type Result = ();
-    fn handle(&mut self, _msg: StartRunningMsg, ctx: &mut Self::Context) -> Self::Result {
+    fn handle(&mut self, _msg: StartRunning, ctx: &mut Self::Context) -> Self::Result {
         self.start_running(ctx);
     }
 }
@@ -284,7 +283,7 @@ impl Handler<LeaderIs> for Restaurant {
 
                     // Usar ctx.address() directamente
                     ctx.run_later(std::time::Duration::from_millis(100), move |_, ctx| {
-                        ctx.address().do_send(StartRunningMsg);
+                        ctx.address().do_send(StartRunning);
                     });
                 }
             }),

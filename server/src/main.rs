@@ -10,7 +10,7 @@ use std::net::SocketAddr;
 use tokio::signal::ctrl_c;
 
 #[actix::main]
-async fn main() {
+async fn main() -> std::io::Result<()> {
     // Permitir pasar el puerto como argumento: ejemplo => cargo run -- 8081
     let args: Vec<String> = env::args().collect();
     let port = if args.len() > 1 {
@@ -47,6 +47,8 @@ async fn main() {
     tokio::select! {
         _ = ctrl_c() => {
             println!("Ctrl-C recibido, apagando...");
+            actix::System::current().stop();
         }
     }
+    Ok(())
 }

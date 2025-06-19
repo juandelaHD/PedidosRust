@@ -69,9 +69,6 @@ impl Actor for Acceptor {
                                             if let Some(peer_type) =
                                                 PeerType::from_u8(peer_type_byte[0])
                                             {
-
-
-
                                                 // let mut addr_line = String::new();
                                                 // let mut reader =
                                                 //     tokio::io::BufReader::new(&mut stream);
@@ -92,13 +89,11 @@ impl Actor for Acceptor {
                                                 //     peer_type,
                                                 // });
 
-
                                                 acceptor_addr.do_send(HandleConnection {
                                                     stream,
                                                     remote_addr,
                                                     peer_type,
                                                 });
-
                                             } else {
                                                 logger.info(format!(
                                                     "Received unsupported peer type byte from {}",

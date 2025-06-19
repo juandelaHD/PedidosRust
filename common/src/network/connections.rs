@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 use tokio::io::AsyncWriteExt;
 use tokio::net::TcpStream;
-use tokio::time::{timeout, Duration};
+use tokio::time::{Duration, timeout};
 
 pub async fn connect_to_all(
     servers: Vec<SocketAddr>,
@@ -78,7 +78,10 @@ async fn try_to_connect(server_addr: SocketAddr) -> Option<TcpStream> {
 }
 
 pub async fn reconnect(servers: Vec<SocketAddr>, peer_type: PeerType) -> Option<TcpStream> {
-    println!("[reconnect] Entrando a reconnect con servidores: {:?}", servers);
+    println!(
+        "[reconnect] Entrando a reconnect con servidores: {:?}",
+        servers
+    );
     for addr in servers {
         println!("[reconnect] Intentando conectar a {}", addr);
         match timeout(Duration::from_secs(2), TcpStream::connect(addr)).await {
@@ -86,7 +89,10 @@ pub async fn reconnect(servers: Vec<SocketAddr>, peer_type: PeerType) -> Option<
                 // Enviar solo el byte del tipo de peer
                 let type_byte = [peer_type.to_u8()];
                 if let Err(e) = stream.write_all(&type_byte).await {
-                    println!("[reconnect] Falló el envío del tipo de peer a {}: {}", addr, e);
+                    println!(
+                        "[reconnect] Falló el envío del tipo de peer a {}: {}",
+                        addr, e
+                    );
                     continue;
                 }
                 println!("[reconnect] Conectado exitosamente a {}", addr);
