@@ -294,15 +294,10 @@ impl Handler<LeaderIs> for Delivery {
         }
 
         if let Some(comm) = self.communicator.as_mut() {
-            println!("[Delivery][LeaderIs] Shutdown communicator anterior");
             comm.shutdown();
         }
         self.communicator = None;
 
-        println!(
-            "[Delivery][LeaderIs] Intentando conectar al nuevo líder: {}",
-            leader_addr
-        );
         let fut_connect = async move { connect_one(leader_addr, PeerType::DeliveryType).await };
 
         let fut = wrap_future::<_, Self>(fut_connect).map(|result, actor: &mut Self, ctx| {

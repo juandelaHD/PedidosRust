@@ -520,7 +520,6 @@ impl CoordinatorManager {
                 ));
                 // Nos autoproclamamos líder directamente
                 self.coordinator_actual = Some(self.my_socket_addr);
-                //self.coordinator_addr.do_send(LeaderIdIs { leader_id: id });
                 self.broadcast_leader_is();
             }
         }
