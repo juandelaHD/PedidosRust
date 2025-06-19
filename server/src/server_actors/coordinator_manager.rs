@@ -58,6 +58,9 @@ pub struct CoordinatorManager {
     waiting_pong_timer: Option<actix::SpawnHandle>,
     /// Timer handle for periodic storage updates.
     get_storage_updates_timer: Option<actix::SpawnHandle>,
+    /// waiting for leader response
+    waiting_for_leader: Option<actix::SpawnHandle>,
+    
 }
 
 impl Actor for CoordinatorManager {
@@ -101,6 +104,7 @@ impl CoordinatorManager {
             pong_leader_addr: None,
             waiting_pong_timer: None,
             get_storage_updates_timer: None,
+            waiting_for_leader: None,
         }
     }
 
@@ -465,7 +469,7 @@ impl CoordinatorManager {
         match self.broadcast_who_is_leader() {
             Ok(_) => {
                 // Esperamos X segundos para ver si alguien responde
-                ctx.run_later(TIMEOUT_LEADER_RESPONSE, |actor: &mut Self, _ctx| {
+                let handler = ctx.run_later(TIMEOUT_LEADER_RESPONSE, |actor: &mut Self, _ctx| {
                     if actor.coordinator_actual.is_none() {
                         actor
                             .logger
@@ -502,6 +506,7 @@ impl CoordinatorManager {
                         }
                     }
                 });
+                self.waiting_for_leader = Some(handler);
             }
             Err(reason) => {
                 self.logger.warn(format!(
@@ -565,6 +570,7 @@ impl CoordinatorManager {
     /// Handles an incoming `LeaderIdIs` message.
     fn handle_leader_is(&mut self, msg: LeaderIdIs, _ctx: &mut Context<Self>) {
         self.election_in_progress = false;
+        self.waiting_for_leader = None;
         if self.coordinator_actual.is_none() {
             if let Some(leader_addr) = self.coord_addresses.get_by_value(&msg.leader_id) {
                 self.logger.info(format!(

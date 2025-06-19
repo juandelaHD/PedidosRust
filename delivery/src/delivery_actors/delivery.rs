@@ -204,12 +204,13 @@ impl Handler<ConnectionClosed> for Delivery {
                     }
 
                     let addr = ctx.address();
-                    ctx.run_later(std::time::Duration::from_millis(100), move |_, _| {
+                    let handler = ctx.run_later(std::time::Duration::from_millis(100), move |_, _| {
                         println!(
                             "[Delivery][ConnectionClosed] Enviando StartRunning tras reconexión"
                         );
                         addr.do_send(StartRunning);
                     });
+                    actor.waiting_reconnection_timer = Some(handler);
                 }
                 None => {
                     println!(
@@ -247,9 +248,10 @@ impl Actor for Delivery {
         self.communicator = Some(communicator);
         // Esperar 100ms antes de enviar WhoIsLeader
         let addr = ctx.address();
-        ctx.run_later(std::time::Duration::from_millis(100), move |_, _| {
+        let handler = ctx.run_later(std::time::Duration::from_millis(100), move |_, _| {
             addr.do_send(StartRunning);
         });
+        self.waiting_reconnection_timer = Some(handler);
     }
 }
 
@@ -329,10 +331,11 @@ impl Handler<LeaderIs> for Delivery {
                     }
 
                     let addr = ctx.address();
-                    ctx.run_later(std::time::Duration::from_millis(100), move |_, _| {
+                    let handler = ctx.run_later(std::time::Duration::from_millis(100), move |_, _| {
                         println!("[Delivery][LeaderIs] Enviando StartRunning tras reconexión");
                         addr.do_send(StartRunning);
                     });
+                    actor.waiting_reconnection_timer = Some(handler);
                 }
                 None => {
                     println!(
@@ -664,13 +667,7 @@ impl Handler<NetworkMessage> for Delivery {
             // Users messages
             NetworkMessage::RetryLater(_msg_data) => {
                 self.logger.info("Retrying to connect in some seconds");
-                // let ctx_addr = ctx.address();
-                // let handle = ctx.spawn(
-                //     actix::clock::sleep(std::time::Duration::from_secs(3)).into_actor(self).map(move |_, _, ctx| {
-                //         // aca hay que llamar a start_running
-                //     })
-                // );
-                // self.waiting_reconnection_timer= Some(handle);
+
             }
             NetworkMessage::LeaderIs(msg_data) => ctx.address().do_send(msg_data),
             NetworkMessage::RecoveredInfo(user_dto_opt) => {

@@ -65,9 +65,16 @@ impl OrderService {
             .parse::<SocketAddr>()
             .expect("Failed to parse server address");
 
+        println!("TRATANDO DE CONECTAR AL PAYMENT GATEWAY: {}", payment_gateway_address);
+
         let pending_stream =
             connect_some(vec![payment_gateway_address], PeerType::CoordinatorType).await;
 
+        if pending_stream.is_none() {
+            logger.error("Failed to connect to PaymentGateway");
+        } else {
+            logger.info("Connected to PaymentGateway successfully");
+        }
         Self {
             orders: HashMap::new(),
             clients_orders: HashMap::new(),

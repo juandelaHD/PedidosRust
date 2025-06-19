@@ -93,6 +93,9 @@ impl Coordinator {
         if pending_streams.is_empty() {
             println!("No connections established.");
         }
+
+
+
         Self {
             id: format!("server_{}", srv_addr.port() - BASE_PORT),
             ring_nodes,
@@ -232,6 +235,7 @@ impl Actor for Coordinator {
             ctx.address(),
             storage_address.clone(),
         );
+        // self.order_service.start();
 
         self.coordinator_manager = Some(coordinator_manager.start());
         self.logger.info("Coordinator started.");
@@ -266,6 +270,8 @@ impl Actor for Coordinator {
         let nearby_delivery_service =
             NearbyDeliveryService::new(storage_address.clone(), ctx.address());
         self.nearby_delivery_service = Some(nearby_delivery_service.start());
+
+
 
         if let Some(order_service) = &self.order_service {
             order_service.do_send(SetActorsAddresses {

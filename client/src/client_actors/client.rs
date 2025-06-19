@@ -21,6 +21,7 @@ use common::types::order_status::OrderStatus;
 use rand::Rng;
 use std::net::SocketAddr;
 use tokio::net::TcpStream;
+use std::process;
 
 /// Represents a client actor in the restaurant ordering system.
 ///
@@ -156,6 +157,8 @@ impl Client {
 
             let delivery_time = order.expected_delivery_time;
             let handle = ctx.run_later(
+                //////////////////////////////////////////////
+                // TODO: IF YA LLEGÓ EL PEDIDO, NO HAY QUE ESPERAR, HACER UN SHUTDOWN ENTERO
                 std::time::Duration::from_secs(delivery_time),
                 move |act, _ctx| {
                     act.logger.info(format!(
@@ -235,9 +238,10 @@ impl Handler<ConnectionClosed> for Client {
                 }
                 // Esperar 100ms antes de enviar WhoIsLeader tras reconexión
                 let addr = ctx.address();
-                ctx.run_later(std::time::Duration::from_millis(100), move |_, _| {
+                let handler = ctx.run_later(std::time::Duration::from_millis(100), move |_, _| {
                     addr.do_send(StartRunning);
                 });
+                actor.waiting_reconnection_timer = Some(handler);
             }
             None => {
                 actor.logger.error(format!(
@@ -276,9 +280,10 @@ impl Actor for Client {
 
         // Esperar 100ms antes de enviar WhoIsLeader
         let addr = ctx.address();
-        ctx.run_later(std::time::Duration::from_millis(100), move |_, _| {
+        let handler =  ctx.run_later(std::time::Duration::from_millis(100), move |_, _| {
             addr.do_send(StartRunning);
         });
+        self.waiting_reconnection_timer = Some(handler);
     }
 }
 
@@ -363,9 +368,10 @@ impl Handler<LeaderIs> for Client {
                     actor.communicator = Some(new_communicator);
 
                     // Usar ctx.address() directamente
-                    ctx.run_later(std::time::Duration::from_millis(100), move |_, ctx| {
+                    let handler = ctx.run_later(std::time::Duration::from_millis(100), move |_, ctx| {
                         ctx.address().do_send(StartRunning);
                     });
+                    actor.waiting_reconnection_timer = Some(handler);
                 }
             }),
         );
@@ -652,14 +658,7 @@ impl Handler<NetworkMessage> for Client {
                                 ctx.address().do_send(msg_data_cloned.clone());
                             });
 
-                        // let msg_clone = msg_data.clone();
-                        // let handle = ctx.spawn(
-                        //     actix::clock::sleep(std::time::Duration::from_secs(3))
-                        //         .into_actor(self)
-                        //         .map(move |_, _, ctx| {
-                        //             ctx.address().do_send(msg_clone.clone());
-                        //         }),
-                        // );
+
                         self.waiting_reconnection_timer = Some(handle);
                     }
                 }
@@ -676,5 +675,14 @@ impl Handler<NetworkMessage> for Client {
 impl Drop for Client {
     fn drop(&mut self) {
         println!("[Client] ACTOR DROPPED");
+        if let Some(communicator) = self.communicator.as_mut() {
+            communicator.shutdown();
+        }
+        
+        /////////////////////////////////////////////////////////
+        // TODO matar bien al actor, no solo al communicator
+        // if let Some(ui_handler) = &self.ui_handler {
+        //     ui_handler.do_send(common::messages::shared_messages::Shutdown);
+        process::exit(0); // Exit the process
     }
 }

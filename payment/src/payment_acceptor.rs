@@ -71,20 +71,6 @@ impl Actor for PaymentAcceptor {
                                             if let Some(peer_type) =
                                                 PeerType::from_u8(peer_type_byte[0])
                                             {
-                                                let mut addr_line = String::new();
-                                                let mut reader =
-                                                    tokio::io::BufReader::new(&mut stream);
-                                                reader
-                                                    .read_line(&mut addr_line)
-                                                    .await
-                                                    .unwrap_or_else(|_| {
-                                                        logger.info(format!(
-                                                            "Error reading address line from {}",
-                                                            remote_addr
-                                                        ));
-                                                        0
-                                                    });
-
                                                 payment_acceptor_addr.do_send(HandleConnection {
                                                     stream,
                                                     remote_addr,
@@ -167,5 +153,14 @@ impl Handler<HandleConnection> for PaymentAcceptor {
             client_addr: remote_addr,
             communicator,
         });
+    }
+}
+
+impl Drop for PaymentAcceptor {
+    /// Called when the actor is dropped.
+    ///
+    /// Logs that the payment acceptor is shutting down.
+    fn drop(&mut self) {
+        self.logger.info("Payment acceptor shutting down");
     }
 }

@@ -146,3 +146,9 @@ impl Handler<NetworkMessage> for PaymentGateway {
         }
     }
 }
+
+impl Drop for PaymentGateway {
+    fn drop(&mut self) {
+        println!("[Payment] ACTOR DROPPED");
+    }
+}
