@@ -564,9 +564,7 @@ impl Handler<DeliverThisOrder> for Delivery {
                     "Delivering order for client '{}' to destination {:?}",
                     current_order.client_id, msg.order.client_position
                 ));
-                // Actualizar el estado del delivery y la orden
                 let mut new_order = msg.order.clone();
-                new_order.status = OrderStatus::Delivering;
 
                 // Simular el tiempo de llegada al restaurante y al cliente
                 let delay_ms = self.calcular_delay_ms(
@@ -729,7 +727,6 @@ impl Handler<NetworkMessage> for Delivery {
                     msg_data.remote_addr
                 ));
 
-
                 self.logger.info(format!(
                     "Removing communicator for address: {}",
                     msg_data.remote_addr
@@ -750,24 +747,19 @@ impl Handler<NetworkMessage> for Delivery {
                 // Programa un timer dummy para mantener vivo el actor
                 let keep_alive_handle = ctx.run_interval(Duration::from_secs(1), |_, _| {
                     // No hace nada, solo mantiene vivo el actor
-                    println!(
-                        "[Delivery][KeepAlive] Manteniendo actor vivo durante reconexión"
-                    );
+                    println!("[Delivery][KeepAlive] Manteniendo actor vivo durante reconexión");
                 });
                 self.keep_alive_timer = Some(keep_alive_handle);
 
                 // --- TIMER DE RECONEXIÓN ---
-                let handle =
-                    ctx.run_later(DELAY_SECONDS_TO_START_RECONNECT, move |_, ctx| {
-                        println!("Attempting to reconnect after delay...");
-                        ctx.address().do_send(ConnectionClosed {
-                            remote_addr: msg_data_cloned.remote_addr,
-                        });
-                        println!("Reconnection attempt sent.");
+                let handle = ctx.run_later(DELAY_SECONDS_TO_START_RECONNECT, move |_, ctx| {
+                    println!("Attempting to reconnect after delay...");
+                    ctx.address().do_send(ConnectionClosed {
+                        remote_addr: msg_data_cloned.remote_addr,
                     });
+                    println!("Reconnection attempt sent.");
+                });
                 self.waiting_reconnection_timer = Some(handle);
-                    
-
             }
             _ => {
                 self.logger

@@ -10,7 +10,6 @@ pub fn get_rand_f32_tuple() -> (f32, f32) {
     )
 }
 
-
 pub fn random_bool_by_given_probability(probability: f32) -> bool {
     let rand_value: f32 = random();
     rand_value < probability

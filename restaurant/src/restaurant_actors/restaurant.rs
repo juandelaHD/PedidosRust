@@ -47,7 +47,10 @@ pub struct Restaurant {
     pub logger: Logger,
     /// List of server socket addresses.
     pub servers: Vec<SocketAddr>,
+    /// Timer handle for waiting reconnection attempts.
     waiting_reconnection_timer: Option<actix::SpawnHandle>,
+    /// Flag to indicate if the restaurant is already connected to a server.
+    pub already_connected: bool,
 }
 
 impl Restaurant {
@@ -82,6 +85,7 @@ impl Restaurant {
             logger,
             servers,
             waiting_reconnection_timer: None,
+            already_connected: false,
         }
     }
 
@@ -242,11 +246,18 @@ impl Handler<LeaderIs> for Restaurant {
                 .as_ref()
                 .map(|c| c.local_address)
                 .expect("Socket address not set");
-            self.send_network_message(NetworkMessage::RegisterUser(RegisterUser {
-                origin_addr: local_address,
-                user_id: self.info.id.clone(),
-                position: self.info.position,
-            }));
+            if self.already_connected {
+                self.logger.info(format!(
+                    "Already connected to the leader at address: {}. No need to register again.",
+                    leader_addr
+                ));
+            } else {
+                self.send_network_message(NetworkMessage::RegisterUser(RegisterUser {
+                    origin_addr: local_address,
+                    user_id: self.info.id.clone(),
+                    position: self.info.position,
+                }));
+            }
             return;
         }
 
@@ -316,7 +327,7 @@ impl Handler<RecoverProcedure> for Restaurant {
                     let mut all_orders: HashSet<OrderDTO> = HashSet::new();
                     all_orders.extend(restaurant_dto.pending_orders);
                     all_orders.extend(restaurant_dto.authorized_orders);
-                    // pending -> cooking 
+
                     for order in all_orders {
                         self.logger.info(format!(
                             "Recovered order with ID={} and status={:?}",
@@ -326,6 +337,7 @@ impl Handler<RecoverProcedure> for Restaurant {
                             order: order.clone(),
                         });
                     }
+                    self.already_connected = true;
                 } else {
                     self.logger.warn(format!(
                         "Received recovered info for a different restaurant ({}), ignoring",
@@ -335,7 +347,7 @@ impl Handler<RecoverProcedure> for Restaurant {
             }
             other => {
                 self.logger.warn(format!(
-                    "Received recovered info of type {:?}, but I'm Client. Ignoring.",
+                    "Received recovered info of type {:?}, but I'm Restaurant. Ignoring.",
                     other
                 ));
             }
@@ -541,8 +553,6 @@ impl Handler<NetworkMessage> for Restaurant {
                 ));
                 // Si el comunicador actual posee una peer_address que coincide con la dirección cerrada,
                 // se elimina el comunicador actual. Si no, se ignora.
-
-
                 self.logger.info(format!(
                     "Removing communicator for address: {}",
                     msg_data.remote_addr
@@ -553,14 +563,11 @@ impl Handler<NetworkMessage> for Restaurant {
                 let msg_data_cloned = msg_data.clone();
 
                 // Inicia un temporizador para reconectar después de un tiempo
-                let handle =
-                    ctx.run_later(DELAY_SECONDS_TO_START_RECONNECT, move |_, ctx| {
-                        ctx.address().do_send(msg_data_cloned.clone());
-                    });
+                let handle = ctx.run_later(DELAY_SECONDS_TO_START_RECONNECT, move |_, ctx| {
+                    ctx.address().do_send(msg_data_cloned.clone());
+                });
 
                 self.waiting_reconnection_timer = Some(handle);
-                
-
             }
 
             _ => {

@@ -128,11 +128,10 @@ impl Handler<SelectNearbyRestaurants> for UIHandler {
 
         // Spawn blocking para no trabar el actor
         actix::spawn(async move {
-            let (restaurant_id, dish_name) = tokio::task::spawn_blocking(move || {
-                ask_user_order_blocking(&logger, restaurants)
-            })
-            .await
-            .unwrap();
+            let (restaurant_id, dish_name) =
+                tokio::task::spawn_blocking(move || ask_user_order_blocking(&logger, restaurants))
+                    .await
+                    .unwrap();
 
             addr.do_send(UserOrderResult {
                 restaurant_id,
@@ -186,8 +185,7 @@ fn ask_user_order_blocking(
 
     // Ingreso del nombre del plato
     let dish_name = loop {
-        logger
-            .info("Please enter the name of the dish you want to order:");
+        logger.info("Please enter the name of the dish you want to order:");
         std::io::stdout().flush().unwrap();
 
         let mut dish_input = String::new();
@@ -203,8 +201,7 @@ fn ask_user_order_blocking(
         if !dish.is_empty() {
             break dish.to_string();
         } else {
-            logger
-                .warn("Dish name cannot be empty. Please enter a valid dish name.");
+            logger.warn("Dish name cannot be empty. Please enter a valid dish name.");
             continue;
         }
     };
@@ -215,7 +212,6 @@ fn ask_user_order_blocking(
     ));
     (selected_restaurant.id.clone(), dish_name)
 }
-
 
 impl Handler<UserOrderResult> for UIHandler {
     type Result = ();

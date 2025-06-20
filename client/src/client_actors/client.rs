@@ -3,6 +3,7 @@ use crate::messages::internal_messages::*;
 use actix::fut::wrap_future;
 use actix::prelude::*;
 use colored::Color;
+use common::constants::BASE_DELAY_MILLIS;
 use common::constants::DELAY_SECONDS_TO_START_RECONNECT;
 use common::logger::Logger;
 use common::messages::NearbyRestaurants;
@@ -155,7 +156,7 @@ impl Client {
                 ctx.cancel_future(handle);
             }
 
-            let delivery_time = order.expected_delivery_time / 1000;
+            let delivery_time = order.expected_delivery_time / 1000  + BASE_DELAY_MILLIS;
             let handle = ctx.run_later(
                 //////////////////////////////////////////////
                 // TODO: IF YA LLEGÓ EL PEDIDO, NO HAY QUE ESPERAR, HACER UN SHUTDOWN ENTERO
@@ -218,7 +219,6 @@ impl Handler<ConnectionClosed> for Client {
             ctx.cancel_future(handle);
             self.delivery_timer = None;
         }
-
 
         if self.communicator.is_some() {
             self.logger
@@ -607,31 +607,18 @@ impl Handler<NetworkMessage> for Client {
                     msg_data.order.status.to_string().to_uppercase()
                 ));
                 self.client_order = Some(msg_data.order.clone());
-                self.communicator = None;
                 match msg_data.order.status {
                     OrderStatus::Delivered => {
-                        if let Some(comm) = self.communicator.as_mut() {
-                            comm.shutdown();
-                        }
-                        self.communicator = None;
                         self.logger
                             .info("Your order has been delivered. Thanks for using our service!");
                         ctx.stop();
                     }
                     OrderStatus::Unauthorized => {
-                        if let Some(comm) = self.communicator.as_mut() {
-                            comm.shutdown();
-                        }
-                        self.communicator = None;
                         self.logger
                             .info("Your order has been unauthorized. Please try again later.");
                         ctx.stop();
                     }
                     OrderStatus::Cancelled => {
-                        if let Some(comm) = self.communicator.as_mut() {
-                            comm.shutdown();
-                        }
-                        self.communicator = None;
                         self.logger.info(format!(
                             "Order {} has been cancelled. Please try again later.",
                             msg_data.order.order_id
@@ -653,15 +640,12 @@ impl Handler<NetworkMessage> for Client {
                 // CANCELA EL TIMER DE DELIVERY SI EXISTE
                 if let Some(handle) = self.delivery_timer.take() {
                     ctx.cancel_future(handle);
-                    println!("ZZZZZZ");
                     self.delivery_timer = None;
                 }
-                println!("EEEEEE");
 
                 // Aquí podrías manejar la reconexión o el cierre de la aplicación
                 // Si el comunicador actual posee una peer_address que coincide con la dirección cerrada,
                 // se elimina el comunicador actual. Si no, se ignora.
-
 
                 self.logger.info(format!(
                     "Removing communicator for address: {}",
@@ -673,12 +657,11 @@ impl Handler<NetworkMessage> for Client {
                 let msg_data_cloned = msg_data.clone();
 
                 // Inicia un temporizador para reconectar después de un tiempo
-                let handle =
-                    ctx.run_later(DELAY_SECONDS_TO_START_RECONNECT, move |_, ctx| {
-                        ctx.address().do_send(ConnectionClosed {
-                            remote_addr: msg_data_cloned.remote_addr,
-                        });
+                let handle = ctx.run_later(DELAY_SECONDS_TO_START_RECONNECT, move |_, ctx| {
+                    ctx.address().do_send(ConnectionClosed {
+                        remote_addr: msg_data_cloned.remote_addr,
                     });
+                });
 
                 self.waiting_reconnection_timer = Some(handle);
             }
@@ -697,11 +680,11 @@ impl Drop for Client {
         if let Some(communicator) = self.communicator.as_mut() {
             communicator.shutdown();
         }
-
         /////////////////////////////////////////////////////////
         // TODO matar bien al actor, no solo al communicator
         // if let Some(ui_handler) = &self.ui_handler {
         //     ui_handler.do_send(common::messages::shared_messages::Shutdown);
+        actix::System::current().stop();
         process::exit(0); // Exit the process
     }
 }

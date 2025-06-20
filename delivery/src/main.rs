@@ -1,5 +1,7 @@
 use actix::prelude::*;
-use common::constants::{BASE_PORT, NUM_COORDINATORS, SERVER_IP_ADDRESS, DELIVERY_SUCCESS_PROBABILITY};
+use common::constants::{
+    BASE_PORT, DELIVERY_SUCCESS_PROBABILITY, NUM_COORDINATORS, SERVER_IP_ADDRESS,
+};
 use common::utils::{get_rand_f32_tuple, print_welcome_message};
 use delivery::delivery_actors::delivery::Delivery;
 use std::env;

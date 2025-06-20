@@ -1115,3 +1115,19 @@ Cuando una instancia previamente caída se reincorpora, ejecuta el proceso de [i
 - Actualización de su rol (líder o seguidor).
 
 Este mecanismo garantiza que el sistema se mantenga **coherente, resiliente y auto-recuperable** frente a fallos parciales.
+
+# Cambios en la entrega final
+
+## **Exclusión Mutua Centralizada**
+
+Unos de los mayores cambios fueron los realizados al sistema de exclusión mutua. Actualmente, la lógica de exclusión mutua y la decisión de asignar un delivery a un pedido específico se realiza en el actor interno `OrderService`, que accede de forma serializada al estado global a través de `Storage`.
+
+Cuando varios deliveries aceptan la oferta mediante el mensaje [`AcceptedOrder`], `OrderService` garantiza que **solo el primer** mensaje que llegue sea el asignado al pedido, descartando las demás ofertas.
+
+En caso de que el `OrderService` recibe un mensaje de aceptacion del pedido, consulta con el storage el estado actual de la orden. En caso de que la orden ya estuviera tomada por otro delivery, le envía un mensaje para comunicarle que el delivery ya fue tomado [`DeliveryNoNeeded`].
+
+## Nuevo actor `Payment_apceptor`
+
+El PaymentAcceptor es un actor agregado al proceso `PaymentGateway` cuya responsabilidad principal es escuchar conexiones TCP entrantes y registrar cada nueva conexión con el actor principal. 
+
+El PaymentAcceptor abstrae y desacopla la lógica de aceptación de conexiones de la lógica de procesamiento de pagos.

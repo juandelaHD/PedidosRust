@@ -918,8 +918,6 @@ impl Handler<NetworkMessage> for Coordinator {
 
             // CoordinatorManager messages
             NetworkMessage::RequestNewStorageUpdates(msg_data) => {
-                self.logger
-                    .info("Received RequestNewStorageUpdates message");
                 if let Some(coordinator_manager) = &self.coordinator_manager {
                     coordinator_manager.do_send(msg_data);
                 } else {
@@ -927,7 +925,6 @@ impl Handler<NetworkMessage> for Coordinator {
                 }
             }
             NetworkMessage::StorageUpdates(msg_data) => {
-                self.logger.info("Received StorageUpdates message");
                 if let Some(coordinator_manager) = &self.coordinator_manager {
                     coordinator_manager.do_send(msg_data);
                 } else {

@@ -9,7 +9,7 @@ use common::logger::Logger;
 use common::messages::internal_messages::{
     AddAuthorizedOrderToRestaurant, AddOrder, AddPendingOrderToRestaurant,
     RemoveAuthorizedOrderToRestaurant, RemoveOrder, RemovePendingOrderToRestaurant,
-    SetCurrentOrderToDelivery, SetDeliveryToOrder, SetOrderStatus,
+    SetCurrentOrderToDelivery, SetDeliveryToOrder, SetOrderStatus, SetOrderExpectedTime
 };
 use common::messages::{
     AcceptedOrder, BillPayment, DeliverThisOrder, DeliveryAccepted, DeliveryAvailable,
@@ -328,22 +328,14 @@ impl Handler<UpdateOrderStatus> for OrderService {
                     ));
                     return;
                 }
-                let delivery_id = delivery_id_opt.unwrap();
-                ctx.address().do_send(SetCurrentOrderToDelivery {
-                    delivery_id: delivery_id.clone(),
-                    order: msg.order.clone(),
+                ctx.address().do_send(SetOrderExpectedTime {
+                    order_id: msg.order.order_id.clone(),
+                    expected_time: msg.order.expected_delivery_time.clone(),
                 });
-                ctx.address().do_send(SetDeliveryToOrder {
+
+                self.send_to_coordinator(NotifyOrderUpdated {
+                    peer_id: msg.order.client_id.clone(),
                     order: msg.order.clone(),
-                    delivery_id,
-                });
-                ctx.address().do_send(SetOrderStatus {
-                    order: msg.order.clone(),
-                    order_status: OrderStatus::Delivering,
-                });
-                ctx.address().do_send(RemoveAuthorizedOrderToRestaurant {
-                    order: msg.order.clone(),
-                    restaurant_id: msg.order.restaurant_id.clone(),
                 });
             }
             OrderStatus::Delivered => {
@@ -605,6 +597,19 @@ impl Handler<SetDeliveryToOrder> for OrderService {
             msg.order.order_id.clone()
         ));
 
+        self.send_to_storage(msg);
+    }
+}
+
+impl Handler<SetOrderExpectedTime> for OrderService {
+    type Result = ();
+
+    fn handle(&mut self, msg: SetOrderExpectedTime, _ctx: &mut Self::Context) -> Self::Result {
+        self.logger.info(format!(
+            "Sending SetOrderExpectedTime to Storage: order {} -> expected time {:?}",
+            msg.order_id,
+            msg.expected_time
+        ));
         self.send_to_storage(msg);
     }
 }

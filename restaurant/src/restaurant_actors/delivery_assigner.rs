@@ -100,7 +100,8 @@ impl Handler<DeliveryAvailable> for DeliveryAssigner {
         if let Some(order) = self.ready_orders.get(&msg.order.order_id) {
             // chequeo si el delivery no es none:
             if msg.delivery_info.delivery_id.is_empty() {
-                self.logger.warn("Delivery ID is empty, cannot assign order.".to_string());
+                self.logger
+                    .warn("Delivery ID is empty, cannot assign order.".to_string());
                 // TODO: CANCELAR LA ORDEN;
             }
             // Si la orden esta lista, asignamos el delivery
@@ -109,6 +110,7 @@ impl Handler<DeliveryAvailable> for DeliveryAssigner {
             // Actualizamos el delivery del pedido
             let mut new_order = order.clone();
             new_order.delivery_id = Some(msg.delivery_info.delivery_id.clone());
+            new_order.status = OrderStatus::Delivering;
             // Avisamos al delivery que puede buscar la orden y enviarla
             self.my_restaurant.do_send(DeliverThisOrder {
                 order: new_order,

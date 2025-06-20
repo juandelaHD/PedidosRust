@@ -72,6 +72,7 @@ pub enum StorageLogMessage {
     SetCurrentOrderToDelivery(SetCurrentOrderToDelivery),
     SetDeliveryToOrder(SetDeliveryToOrder),
     SetOrderStatus(SetOrderStatus),
+    SetOrderExpectedTime(SetOrderExpectedTime),
 
     InsertAcceptedDelivery(InsertAcceptedDelivery),
     RemoveAcceptedDeliveries(RemoveAcceptedDeliveries),
@@ -414,6 +415,21 @@ pub struct SetOrderStatus {
     pub order: OrderDTO,
     pub order_status: OrderStatus,
 }
+
+/// Message struct used to set the expected time for an order.
+///
+/// ## Purpose
+/// Used to update the expected delivery time of an order.
+/// 
+/// # Fields
+/// - `order_id`: The unique identifier of the order.
+/// - `expected_time`: Expected time to deliver the order.
+#[derive(Message, Debug, Clone, Serialize, Deserialize)]
+#[rtype(result = "()")]
+pub struct SetOrderExpectedTime {
+    pub order_id: u64,
+    pub expected_time: u64,
+} 
 
 /////////////////////////////////////////////////////////////////////
 // Mensajes de servicios internos
