@@ -588,6 +588,7 @@ impl Handler<NetworkMessage> for Client {
                 } else {
                     self.logger
                         .warn("No restaurants found for the order. Try again later.");
+                    ctx.stop();
                 }
             }
 

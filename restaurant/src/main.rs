@@ -1,5 +1,5 @@
 use actix::prelude::*;
-use common::constants::{BASE_PORT, NUM_COORDINATORS, SERVER_IP_ADDRESS, SUCCESS_PROBABILITY};
+use common::constants::{BASE_PORT, NUM_COORDINATORS, SERVER_IP_ADDRESS, RESTAURANT_SUCCESS_PROBABILITY};
 use common::types::restaurant_info::RestaurantInfo;
 use common::utils::{get_rand_f32_tuple, print_welcome_message};
 use restaurant::restaurant_actors::restaurant::Restaurant;
@@ -31,7 +31,7 @@ async fn main() -> std::io::Result<()> {
 
     let restaurant = Restaurant::new(
         RestaurantInfo { id, position },
-        SUCCESS_PROBABILITY,
+        RESTAURANT_SUCCESS_PROBABILITY,
         servers,
     )
     .await;

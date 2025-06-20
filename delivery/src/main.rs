@@ -1,5 +1,5 @@
 use actix::prelude::*;
-use common::constants::{BASE_PORT, NUM_COORDINATORS, SERVER_IP_ADDRESS, SUCCESS_PROBABILITY};
+use common::constants::{BASE_PORT, NUM_COORDINATORS, SERVER_IP_ADDRESS, DELIVERY_SUCCESS_PROBABILITY};
 use common::utils::{get_rand_f32_tuple, print_welcome_message};
 use delivery::delivery_actors::delivery::Delivery;
 use std::env;
@@ -28,7 +28,7 @@ async fn main() -> std::io::Result<()> {
 
     print_welcome_message();
 
-    let delivery = Delivery::new(servers.clone(), id, position, SUCCESS_PROBABILITY).await;
+    let delivery = Delivery::new(servers.clone(), id, position, DELIVERY_SUCCESS_PROBABILITY).await;
     delivery.start();
 
     tokio::select! {
