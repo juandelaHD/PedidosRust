@@ -176,7 +176,7 @@ impl Coordinator {
 
         // Iniciar timer para la orden
         let order_id = order.order_id;
-        let timer_duration = Duration::from_secs(30); // Por ejemplo, 30 segundos
+        let timer_duration = Duration::from_secs(6); // Por ejemplo, 30 segundos
 
         let handle = ctx.run_later(timer_duration, move |actor, _ctx| {
             actor.logger.warn(format!(
@@ -303,28 +303,10 @@ impl Handler<RegisterConnection> for Coordinator {
         // Registrar la conexión del cliente
         self.communicators.insert(msg.client_addr, msg.communicator);
 
-        // TODO: El valor debe ser el ID del cliente (el nombre)
         self.user_addresses
             .insert(msg.client_addr, "UNKNOWN_USER".to_string());
         self.logger
             .info(format!("Registered connection from {} ", msg.client_addr));
-
-        // --- NUEVO: Notificar quién es el líder si soy el líder ---
-        if let Some(current_leader) = self.current_coordinator {
-            if current_leader == self.my_addr {
-                if let Some(communicator) = self.communicators.get(&msg.client_addr) {
-                    if let Some(sender) = &communicator.sender {
-                        sender.do_send(NetworkMessage::LeaderIs(LeaderIs {
-                            coord_addr: self.my_addr,
-                        }));
-                        self.logger.info(format!(
-                            "Sent LeaderIs to {} after reconnection",
-                            msg.client_addr
-                        ));
-                    }
-                }
-            }
-        }
     }
 }
 

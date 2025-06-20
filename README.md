@@ -1134,11 +1134,28 @@ El `PaymentAcceptor` abstrae y desacopla la lógica de aceptación de conexiones
 
 ## Heartbeats
 
-La implementación final incluye un sistema donde los `CoordinatorManager` envían mensajes [`Ping`] al `CoordinatorManager` Líder. Este último responde con un mensaje [`Pong`]. Pasado un timeout de no recibir mensaje del Lider, se realiza una nueva elección de lider.
+La implementación final incluye un sistema donde los `CoordinatorManager` envían mensajes [`Ping`] al `CoordinatorManager` Líder. Este último responde con un mensaje [`Pong`]. Pasado un timeout de no recibir mensaje del Lider, se realiza una nueva elección de lider (usando el mensaje [`CheckPongTimeout`]).
 
 ## Nuevos Mensajes implementados
 
-- `ConnectionClosed`
-- `RegisterConnectionWithCoordinator`
-- `RegisterConnection`
+- `ConnectionClosed` :
+- `RegisterConnectionWithCoordinator` :
+- `RegisterConnection` :
 - `DeliveryExpectedTime` : Mensaje usado para informar al cliente del tiempo esperado de delivery.
+- `StorageSnapshot` :
+- `Ping` (ver heartbeat)
+- `Pong` (ver heartbeat)
+- `CheckPongTimeout` (ver heartbeat)
+- `OrderDelivered` : Mensaje que envía el Delivery al servidor cuando terminó de enviar un pedido.
+- `IAmDelivering` : Mensaje que envía el Delivery al servidor para notificar que el delivery está actualmente en progreso.
+- `GetClient`
+- `GetRestaurant`
+- `GetDelivery`
+- `GetRestaurants`
+- `GetAllRestaurantsInfo`
+- `GetDeliveries`
+- `GetAllAvailableDeliveries`
+- `SetOrderExpectedTime` : Usado para comunicar al storage el tiempo esperado en hacer el delivery de una orden
+- `InsertAcceptedDelivery` : Usado para comunicar al storage que una orden fue aceptada por un delivery
+- `RemoveAcceptedDeliveries` : Usada para que el Storage limpie o elimine las ofertas de repartidores (deliveries) que ya han sido aceptadas para un pedido específico.
+- `PaymentCompleted` : Usado para que el `PaymentGateway` comunique a las partes que el pago fue completado.

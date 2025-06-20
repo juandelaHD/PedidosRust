@@ -276,7 +276,6 @@ impl Handler<LeaderIs> for Restaurant {
                     ));
                     actor.communicator = Some(new_communicator);
 
-                    // Usar ctx.address() directamente
                     let handler =
                         ctx.run_later(std::time::Duration::from_millis(100), move |_, ctx| {
                             ctx.address().do_send(StartRunning);
@@ -478,6 +477,7 @@ impl Handler<NetworkMessage> for Restaurant {
             }
             NetworkMessage::LeaderIs(msg_data) => ctx.address().do_send(msg_data),
             NetworkMessage::RecoveredInfo(user_dto_opt) => {
+                println!("AAAAAAAAAAAA Se recibió RecoveredInfo en Restaurant");
                 let user_dto = user_dto_opt;
                 match user_dto {
                     UserDTO::Restaurant(restaurant_dto) => {
