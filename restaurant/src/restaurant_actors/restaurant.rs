@@ -316,7 +316,7 @@ impl Handler<RecoverProcedure> for Restaurant {
                     let mut all_orders: HashSet<OrderDTO> = HashSet::new();
                     all_orders.extend(restaurant_dto.pending_orders);
                     all_orders.extend(restaurant_dto.authorized_orders);
-
+                    // pending -> cooking 
                     for order in all_orders {
                         self.logger.info(format!(
                             "Recovered order with ID={} and status={:?}",
@@ -541,29 +541,26 @@ impl Handler<NetworkMessage> for Restaurant {
                 ));
                 // Si el comunicador actual posee una peer_address que coincide con la dirección cerrada,
                 // se elimina el comunicador actual. Si no, se ignora.
-                if let Some(communicator) = &self.communicator {
-                    if communicator.peer_address == msg_data.remote_addr {
-                        self.logger.info(format!(
-                            "Removing communicator for address: {}",
-                            msg_data.remote_addr
-                        ));
-                        self.communicator = None;
-                        self.logger.warn("Retrying to reconnect to the server ...");
 
-                        let msg_data_cloned = msg_data.clone();
 
-                        // Inicia un temporizador para reconectar después de un tiempo
-                        let handle =
-                            ctx.run_later(DELAY_SECONDS_TO_START_RECONNECT, move |_, ctx| {
-                                ctx.address().do_send(msg_data_cloned.clone());
-                            });
+                self.logger.info(format!(
+                    "Removing communicator for address: {}",
+                    msg_data.remote_addr
+                ));
+                self.communicator = None;
+                self.logger.warn("Retrying to reconnect to the server ...");
 
-                        self.waiting_reconnection_timer = Some(handle);
-                    }
-                } else {
-                    self.logger
-                        .error("Communicator not found, cannot handle closed connection.");
-                }
+                let msg_data_cloned = msg_data.clone();
+
+                // Inicia un temporizador para reconectar después de un tiempo
+                let handle =
+                    ctx.run_later(DELAY_SECONDS_TO_START_RECONNECT, move |_, ctx| {
+                        ctx.address().do_send(msg_data_cloned.clone());
+                    });
+
+                self.waiting_reconnection_timer = Some(handle);
+                
+
             }
 
             _ => {

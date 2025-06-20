@@ -728,49 +728,46 @@ impl Handler<NetworkMessage> for Delivery {
                     "Connection closed with address: {}",
                     msg_data.remote_addr
                 ));
-                if let Some(communicator) = &self.communicator {
-                    if communicator.peer_address == msg_data.remote_addr {
-                        self.logger.info(format!(
-                            "Removing communicator for address: {}",
-                            msg_data.remote_addr
-                        ));
-                        if let Some(comm) = self.communicator.as_mut() {
-                            comm.shutdown();
-                        }
-                        self.communicator = None;
-                        self.logger.warn("Retrying to reconnect to the server ...");
 
-                        let msg_data_cloned = msg_data.clone();
 
-                        // --- KEEP ALIVE TIMER ---
-                        // Cancela uno anterior si existe
-                        if let Some(handle) = self.keep_alive_timer.take() {
-                            ctx.cancel_future(handle);
-                        }
-                        // Programa un timer dummy para mantener vivo el actor
-                        let keep_alive_handle = ctx.run_interval(Duration::from_secs(1), |_, _| {
-                            // No hace nada, solo mantiene vivo el actor
-                            println!(
-                                "[Delivery][KeepAlive] Manteniendo actor vivo durante reconexión"
-                            );
-                        });
-                        self.keep_alive_timer = Some(keep_alive_handle);
-
-                        // --- TIMER DE RECONEXIÓN ---
-                        let handle =
-                            ctx.run_later(DELAY_SECONDS_TO_START_RECONNECT, move |_, ctx| {
-                                println!("Attempting to reconnect after delay...");
-                                ctx.address().do_send(ConnectionClosed {
-                                    remote_addr: msg_data_cloned.remote_addr,
-                                });
-                                println!("Reconnection attempt sent.");
-                            });
-                        self.waiting_reconnection_timer = Some(handle);
-                    }
-                } else {
-                    self.logger
-                        .error("Communicator not found, cannot handle closed connection.");
+                self.logger.info(format!(
+                    "Removing communicator for address: {}",
+                    msg_data.remote_addr
+                ));
+                if let Some(comm) = self.communicator.as_mut() {
+                    comm.shutdown();
                 }
+                self.communicator = None;
+                self.logger.warn("Retrying to reconnect to the server ...");
+
+                let msg_data_cloned = msg_data.clone();
+
+                // --- KEEP ALIVE TIMER ---
+                // Cancela uno anterior si existe
+                if let Some(handle) = self.keep_alive_timer.take() {
+                    ctx.cancel_future(handle);
+                }
+                // Programa un timer dummy para mantener vivo el actor
+                let keep_alive_handle = ctx.run_interval(Duration::from_secs(1), |_, _| {
+                    // No hace nada, solo mantiene vivo el actor
+                    println!(
+                        "[Delivery][KeepAlive] Manteniendo actor vivo durante reconexión"
+                    );
+                });
+                self.keep_alive_timer = Some(keep_alive_handle);
+
+                // --- TIMER DE RECONEXIÓN ---
+                let handle =
+                    ctx.run_later(DELAY_SECONDS_TO_START_RECONNECT, move |_, ctx| {
+                        println!("Attempting to reconnect after delay...");
+                        ctx.address().do_send(ConnectionClosed {
+                            remote_addr: msg_data_cloned.remote_addr,
+                        });
+                        println!("Reconnection attempt sent.");
+                    });
+                self.waiting_reconnection_timer = Some(handle);
+                    
+
             }
             _ => {
                 self.logger

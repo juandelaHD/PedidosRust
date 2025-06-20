@@ -155,7 +155,7 @@ impl Client {
                 ctx.cancel_future(handle);
             }
 
-            let delivery_time = order.expected_delivery_time;
+            let delivery_time = order.expected_delivery_time / 1000;
             let handle = ctx.run_later(
                 //////////////////////////////////////////////
                 // TODO: IF YA LLEGÓ EL PEDIDO, NO HAY QUE ESPERAR, HACER UN SHUTDOWN ENTERO
@@ -163,7 +163,7 @@ impl Client {
                 move |act, _ctx| {
                     act.logger.info(format!(
                         "Delivery expected time of {:.2} seconds has elapsed!",
-                        delivery_time as f64 / 1000.0
+                        delivery_time as f64
                     ));
                     if let Some(order) = &act.client_order {
                         if order.status == OrderStatus::Delivered {
@@ -211,6 +211,15 @@ impl Handler<ConnectionClosed> for Client {
     fn handle(&mut self, _msg: ConnectionClosed, ctx: &mut Self::Context) -> Self::Result {
         // Llama a la función async y usa wrap_future para obtener el resultado
         // Antes de reconectar o crear communicator:
+
+        print!("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
+        // CANCELA EL TIMER DE DELIVERY SI EXISTE
+        if let Some(handle) = self.delivery_timer.take() {
+            ctx.cancel_future(handle);
+            self.delivery_timer = None;
+        }
+
+
         if self.communicator.is_some() {
             self.logger
                 .info("Already connected, skipping reconnection.");
@@ -640,29 +649,38 @@ impl Handler<NetworkMessage> for Client {
                     "Connection closed with address: {}",
                     msg_data.remote_addr
                 ));
+
+                // CANCELA EL TIMER DE DELIVERY SI EXISTE
+                if let Some(handle) = self.delivery_timer.take() {
+                    ctx.cancel_future(handle);
+                    println!("ZZZZZZ");
+                    self.delivery_timer = None;
+                }
+                println!("EEEEEE");
+
                 // Aquí podrías manejar la reconexión o el cierre de la aplicación
                 // Si el comunicador actual posee una peer_address que coincide con la dirección cerrada,
                 // se elimina el comunicador actual. Si no, se ignora.
-                if let Some(communicator) = &self.communicator {
-                    if communicator.peer_address == msg_data.remote_addr {
-                        self.logger.info(format!(
-                            "Removing communicator for address: {}",
-                            msg_data.remote_addr
-                        ));
-                        self.communicator = None;
-                        self.logger.warn("Retrying to reconnect to the server ...");
 
-                        let msg_data_cloned = msg_data.clone();
 
-                        // Inicia un temporizador para reconectar después de un tiempo
-                        let handle =
-                            ctx.run_later(DELAY_SECONDS_TO_START_RECONNECT, move |_, ctx| {
-                                ctx.address().do_send(msg_data_cloned.clone());
-                            });
+                self.logger.info(format!(
+                    "Removing communicator for address: {}",
+                    msg_data.remote_addr
+                ));
+                self.communicator = None;
+                self.logger.warn("Retrying to reconnect to the server ...");
 
-                        self.waiting_reconnection_timer = Some(handle);
-                    }
-                }
+                let msg_data_cloned = msg_data.clone();
+
+                // Inicia un temporizador para reconectar después de un tiempo
+                let handle =
+                    ctx.run_later(DELAY_SECONDS_TO_START_RECONNECT, move |_, ctx| {
+                        ctx.address().do_send(ConnectionClosed {
+                            remote_addr: msg_data_cloned.remote_addr,
+                        });
+                    });
+
+                self.waiting_reconnection_timer = Some(handle);
             }
 
             _ => {

@@ -98,6 +98,11 @@ impl Handler<DeliveryAvailable> for DeliveryAssigner {
         ));
         // chequeo si esa orden esta en ready_orders
         if let Some(order) = self.ready_orders.get(&msg.order.order_id) {
+            // chequeo si el delivery no es none:
+            if msg.delivery_info.delivery_id.is_empty() {
+                self.logger.warn("Delivery ID is empty, cannot assign order.".to_string());
+                // TODO: CANCELAR LA ORDEN;
+            }
             // Si la orden esta lista, asignamos el delivery
             self.orders_delivery
                 .insert(order.order_id, msg.delivery_info.delivery_id.clone());
