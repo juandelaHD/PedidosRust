@@ -80,3 +80,12 @@ where
         );
     }
 }
+
+impl<A> Drop for Communicator<A>
+where
+    A: Actor<Context = Context<A>> + Handler<NetworkMessage>,
+{
+    fn drop(&mut self) {
+        self.shutdown();
+    }
+}

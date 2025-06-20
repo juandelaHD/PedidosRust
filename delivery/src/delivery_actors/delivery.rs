@@ -18,6 +18,7 @@ use common::types::dtos::{DeliveryDTO, OrderDTO, UserDTO};
 use common::types::order_status::OrderStatus;
 use common::utils::calculate_distance;
 use std::net::SocketAddr;
+use std::process;
 use std::time::Duration;
 use tokio::net::TcpStream;
 
@@ -783,6 +784,7 @@ impl Handler<NetworkMessage> for Delivery {
 
 impl Drop for Delivery {
     fn drop(&mut self) {
-        println!("[Delivery] ACTOR DROPPED");
+        actix::System::current().stop();
+        process::exit(0);
     }
 }

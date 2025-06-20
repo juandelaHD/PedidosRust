@@ -20,6 +20,7 @@ use common::types::restaurant_info::RestaurantInfo;
 use common::utils::random_bool_by_given_probability;
 use std::collections::HashSet;
 use std::net::SocketAddr;
+use std::process;
 use tokio::net::TcpStream;
 
 /// The `Restaurant` actor represents a restaurant in the distributed food ordering system.
@@ -566,6 +567,7 @@ impl Handler<NetworkMessage> for Restaurant {
 
 impl Drop for Restaurant {
     fn drop(&mut self) {
-        println!("[Restaurant] ACTOR DROPPED");
+        actix::System::current().stop();
+        process::exit(0);
     }
 }

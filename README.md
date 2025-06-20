@@ -1138,9 +1138,9 @@ La implementación final incluye un sistema donde los `CoordinatorManager` enví
 
 ## Nuevos Mensajes implementados
 
-- `ConnectionClosed` :
-- `RegisterConnectionWithCoordinator` :
-- `RegisterConnection` :
+- `ConnectionClosed` : Notifica que una conexión TCP se cerró
+- `RegisterConnectionWithCoordinator` : Usado por el `Aceptor` para registrar una nueva conexión con un `CoordinadorManager`
+- `RegisterConnection` : Usado por el `Aceptor` para registrar una nueva conexión con un `Coordinador`
 - `DeliveryExpectedTime` : Mensaje usado para informar al cliente del tiempo esperado de delivery.
 - `StorageSnapshot` :
 - `Ping` (ver heartbeat)
@@ -1159,3 +1159,12 @@ La implementación final incluye un sistema donde los `CoordinatorManager` enví
 - `InsertAcceptedDelivery` : Usado para comunicar al storage que una orden fue aceptada por un delivery
 - `RemoveAcceptedDeliveries` : Usada para que el Storage limpie o elimine las ofertas de repartidores (deliveries) que ya han sido aceptadas para un pedido específico.
 - `PaymentCompleted` : Usado para que el `PaymentGateway` comunique a las partes que el pago fue completado.
+- `BillPayment` : Usado por el `PaymentGateway` para pedirle al cliente el pago por un pedido.
+- `DeliveryAccepted` : Mensaje que envía el Delivery indicando que acepta una oferta de envío.
+- `LeaderIdIs` : mensaje que informa a nodo sobre el Id del Líder actual.
+- `StartRunning`
+- `NewLeaderConnection` : Mensaje que comunica la conexión de un nuevo Lider luego de un proceso de elección de líder.
+- `RecoverProcedure` : Mensaje enviado para pedir la devolución de información de un usuario pos-crash.
+- `RetryLater` : Mensaje enviado pidiendo que se vuelva a reenviar el mensaje más tarde.
+- `Shutdown`
+- `Stop`

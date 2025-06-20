@@ -29,6 +29,7 @@ use common::types::dtos::RestaurantDTO;
 use common::types::dtos::UserDTO;
 use common::types::order_status::OrderStatus;
 use std::collections::HashSet;
+use std::process;
 use std::time::Duration;
 use std::{collections::HashMap, net::SocketAddr};
 use tokio::net::TcpStream;
@@ -995,5 +996,12 @@ impl Handler<NetworkMessage> for Coordinator {
                 ));
             }
         }
+    }
+}
+
+impl Drop for Coordinator {
+    fn drop(&mut self) {
+        actix::System::current().stop();
+        process::exit(0);
     }
 }

@@ -682,15 +682,7 @@ impl Handler<NetworkMessage> for Client {
 
 impl Drop for Client {
     fn drop(&mut self) {
-        println!("[Client] ACTOR DROPPED");
-        if let Some(communicator) = self.communicator.as_mut() {
-            communicator.shutdown();
-        }
-        /////////////////////////////////////////////////////////
-        // TODO matar bien al actor, no solo al communicator
-        // if let Some(ui_handler) = &self.ui_handler {
-        //     ui_handler.do_send(common::messages::shared_messages::Shutdown);
         actix::System::current().stop();
-        process::exit(0); // Exit the process
+        process::exit(0);
     }
 }
