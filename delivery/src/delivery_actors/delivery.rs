@@ -48,8 +48,12 @@ pub struct Delivery {
     pub pending_stream: Option<TcpStream>,
     /// Logger for delivery events.
     pub logger: Logger,
+    /// Timer handle for waiting reconnection attempts.
     waiting_reconnection_timer: Option<actix::SpawnHandle>,
+    /// Timer handle for keeping the actor alive during reconnection attempts.
     keep_alive_timer: Option<actix::SpawnHandle>,
+    /// Flag to indicate if the delivery is already connected and waiting for reconnection.
+    already_connected: bool,
 }
 
 impl Delivery {
@@ -96,6 +100,7 @@ impl Delivery {
             logger,
             waiting_reconnection_timer: None,
             keep_alive_timer: None,
+            already_connected: false,
         }
     }
 
@@ -381,6 +386,11 @@ impl Handler<RecoverProcedure> for Delivery {
     type Result = ();
 
     fn handle(&mut self, msg: RecoverProcedure, ctx: &mut Self::Context) -> Self::Result {
+        if self.already_connected {
+            self.logger
+                .info("Already connected, skipping recovery procedure.");
+            return;
+        }
         self.logger.info(format!(
             "Handling RecoverProcedure for Delivery ID={}",
             self.delivery_id
@@ -393,6 +403,7 @@ impl Handler<RecoverProcedure> for Delivery {
                 return;
             }
         };
+        self.already_connected = true;
         let order_dto = delivery_dto.current_order.clone();
 
         // Actualizar el estado del delivery con la información recuperada
@@ -694,6 +705,7 @@ impl Handler<NetworkMessage> for Delivery {
             NetworkMessage::NoRecoveredInfo => {
                 self.logger
                     .warn("No recovered info available, proceeding with normal operation.");
+                self.already_connected = true;
             }
 
             NetworkMessage::NewOfferToDeliver(msg_data) => {

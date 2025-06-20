@@ -140,17 +140,6 @@ impl Handler<ConnectionClosed> for Restaurant {
                     Communicator::new(stream, ctx.address(), PeerType::RestaurantType);
                 actor.communicator = Some(communicator);
 
-                actor.delivery_assigner_address =
-                    Some(DeliveryAssigner::new(actor.info.clone(), ctx.address()).start());
-
-                actor.kitchen_address = Some(
-                    Kitchen::new(
-                        ctx.address(),
-                        actor.delivery_assigner_address.clone().unwrap(),
-                    )
-                    .start(),
-                );
-
                 actor
                     .logger
                     .info("Reconnected successfully. Restarting actor...");
@@ -246,18 +235,12 @@ impl Handler<LeaderIs> for Restaurant {
                 .as_ref()
                 .map(|c| c.local_address)
                 .expect("Socket address not set");
-            if self.already_connected {
-                self.logger.info(format!(
-                    "Already connected to the leader at address: {}. No need to register again.",
-                    leader_addr
-                ));
-            } else {
-                self.send_network_message(NetworkMessage::RegisterUser(RegisterUser {
-                    origin_addr: local_address,
-                    user_id: self.info.id.clone(),
-                    position: self.info.position,
-                }));
-            }
+
+            self.send_network_message(NetworkMessage::RegisterUser(RegisterUser {
+                origin_addr: local_address,
+                user_id: self.info.id.clone(),
+                position: self.info.position,
+            }));
             return;
         }
 
@@ -313,11 +296,17 @@ impl Handler<RecoverProcedure> for Restaurant {
     type Result = ();
 
     fn handle(&mut self, msg: RecoverProcedure, ctx: &mut Self::Context) -> Self::Result {
+        if self.already_connected {
+            self.logger
+                .info("Already connected and recovered, ignoring RecoverProcedure message.");
+            return;
+        }
+
         match msg.user_info {
             UserDTO::Restaurant(restaurant_dto) => {
                 if restaurant_dto.restaurant_id == self.info.id {
                     self.logger.info(format!(
-                        "Recovering info for Client ID={} ...",
+                        "Recovering info for Restaurant ID={} ...",
                         restaurant_dto.restaurant_id
                     ));
 
@@ -493,10 +482,6 @@ impl Handler<NetworkMessage> for Restaurant {
                 match user_dto {
                     UserDTO::Restaurant(restaurant_dto) => {
                         if restaurant_dto.restaurant_id == self.info.id {
-                            self.logger.info(format!(
-                                "Recovered info for Restaurant ID={}, updating local state...",
-                                restaurant_dto.restaurant_id
-                            ));
                             ctx.address().do_send(RecoverProcedure {
                                 user_info: UserDTO::Restaurant(restaurant_dto),
                             });
@@ -518,6 +503,7 @@ impl Handler<NetworkMessage> for Restaurant {
             NetworkMessage::NoRecoveredInfo => {
                 self.logger
                     .info("No recovered info received, waiting for new orders.");
+                self.already_connected = true;
             }
             // Restaurant messages
             NetworkMessage::NewOrder(msg_data) => ctx.address().do_send(msg_data),

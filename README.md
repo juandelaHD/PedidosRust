@@ -1126,8 +1126,19 @@ Cuando varios deliveries aceptan la oferta mediante el mensaje [`AcceptedOrder`]
 
 En caso de que el `OrderService` recibe un mensaje de aceptacion del pedido, consulta con el storage el estado actual de la orden. En caso de que la orden ya estuviera tomada por otro delivery, le envía un mensaje para comunicarle que el delivery ya fue tomado [`DeliveryNoNeeded`].
 
-## Nuevo actor `Payment_apceptor`
+## Nuevo actor para payment Gateway: `PaymentAcceptor`
 
-El PaymentAcceptor es un actor agregado al proceso `PaymentGateway` cuya responsabilidad principal es escuchar conexiones TCP entrantes y registrar cada nueva conexión con el actor principal. 
+El `PaymentAcceptor` es un actor agregado al proceso `PaymentGateway` cuya responsabilidad principal es escuchar conexiones TCP entrantes y registrar cada nueva conexión con el actor principal.
 
-El PaymentAcceptor abstrae y desacopla la lógica de aceptación de conexiones de la lógica de procesamiento de pagos.
+El `PaymentAcceptor` abstrae y desacopla la lógica de aceptación de conexiones de la lógica de procesamiento de pagos. De esta forma el `PaymentGateway` tiene enfoque en la lógica de negocio.
+
+## Heartbeats
+
+La implementación final incluye un sistema donde los `CoordinatorManager` envían mensajes [`Ping`] al `CoordinatorManager` Líder. Este último responde con un mensaje [`Pong`]. Pasado un timeout de no recibir mensaje del Lider, se realiza una nueva elección de lider.
+
+## Nuevos Mensajes implementados
+
+- `ConnectionClosed`
+- `RegisterConnectionWithCoordinator`
+- `RegisterConnection`
+- `DeliveryExpectedTime` : Mensaje usado para informar al cliente del tiempo esperado de delivery.

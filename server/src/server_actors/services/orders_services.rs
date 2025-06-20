@@ -9,7 +9,7 @@ use common::logger::Logger;
 use common::messages::internal_messages::{
     AddAuthorizedOrderToRestaurant, AddOrder, AddPendingOrderToRestaurant,
     RemoveAuthorizedOrderToRestaurant, RemoveOrder, RemovePendingOrderToRestaurant,
-    SetCurrentOrderToDelivery, SetDeliveryToOrder, SetOrderStatus, SetOrderExpectedTime
+    SetCurrentOrderToDelivery, SetDeliveryToOrder, SetOrderExpectedTime, SetOrderStatus,
 };
 use common::messages::{
     AcceptedOrder, BillPayment, DeliverThisOrder, DeliveryAccepted, DeliveryAvailable,
@@ -423,7 +423,7 @@ impl Handler<DeliveryNoNeeded> for OrderService {
 impl Handler<OrderFinalized> for OrderService {
     type Result = ();
 
-    fn handle(&mut self, msg: OrderFinalized, _ctx: &mut Self::Context) -> Self::Result {
+    fn handle(&mut self, msg: OrderFinalized, ctx: &mut Self::Context) -> Self::Result {
         self.logger.info(format!(
             "Reenviando CancelOrder al Storage: {:?}",
             msg.order
@@ -444,6 +444,10 @@ impl Handler<OrderFinalized> for OrderService {
             self.logger
                 .error("PaymentGateway Communicator not initialized");
         }
+        // eliminar datos asociados a la orden -> eliminar el cliente, si está en el restaurant y si está en el delivery
+        ctx.address().do_send(RemoveOrder {
+            order: msg.order.clone(),
+        });
     }
 }
 
@@ -607,8 +611,7 @@ impl Handler<SetOrderExpectedTime> for OrderService {
     fn handle(&mut self, msg: SetOrderExpectedTime, _ctx: &mut Self::Context) -> Self::Result {
         self.logger.info(format!(
             "Sending SetOrderExpectedTime to Storage: order {} -> expected time {:?}",
-            msg.order_id,
-            msg.expected_time
+            msg.order_id, msg.expected_time
         ));
         self.send_to_storage(msg);
     }

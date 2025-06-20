@@ -12,8 +12,8 @@ use common::messages::internal_messages::{
     GetClient, GetDeliveries, GetDelivery, GetOrder, GetRestaurant, GetRestaurants,
     InsertAcceptedDelivery, RemoveAcceptedDeliveries, RemoveAuthorizedOrderToRestaurant,
     RemoveClient, RemoveDelivery, RemoveOrder, RemovePendingOrderToRestaurant, RemoveRestaurant,
-    SetCurrentClientToDelivery, SetCurrentOrderToDelivery, SetDeliveryPosition, SetDeliveryStatus, SetOrderExpectedTime,
-    SetDeliveryToOrder, SetOrderStatus, StorageLogMessage,
+    SetCurrentClientToDelivery, SetCurrentOrderToDelivery, SetDeliveryPosition, SetDeliveryStatus,
+    SetDeliveryToOrder, SetOrderExpectedTime, SetOrderStatus, StorageLogMessage,
 };
 use common::messages::{DeliveryAvailable, DeliveryNoNeeded};
 use common::types::order_status::OrderStatus;
@@ -84,7 +84,7 @@ impl Storage {
         self.next_log_id += 1;
     }
 
-    fn update_associated_order(&mut self, order: &OrderDTO) {        
+    fn update_associated_order(&mut self, order: &OrderDTO) {
         // chequemos si la orden existe en el storage
         if let Some(order) = self.orders.get_mut(&order.order_id) {
             // Actualizamos la orden en el storage
@@ -95,10 +95,8 @@ impl Storage {
             if let Some(client) = self.clients.get_mut(&order.client_id) {
                 client.client_order = Some(order.clone());
             } else {
-                self.logger.error(format!(
-                    "Client not found for order: {}",
-                    order.client_id
-                ));
+                self.logger
+                    .error(format!("Client not found for order: {}", order.client_id));
             }
             // nos fijamos si el delivery existe
             // y actualizamos la orden asociada al delivery
@@ -106,10 +104,8 @@ impl Storage {
                 if let Some(delivery) = self.deliverys.get_mut(delivery_id) {
                     delivery.current_order = Some(order.clone());
                 } else {
-                    self.logger.error(format!(
-                        "Delivery not found for order: {}",
-                        order.order_id
-                    ));
+                    self.logger
+                        .error(format!("Delivery not found for order: {}", order.order_id));
                 }
             }
             // nos fijamos si el restaurant existe
@@ -131,9 +127,9 @@ impl Storage {
                     order.restaurant_id
                 ));
             }
-            
         } else {
-            self.logger.error(format!("Order not found: {}", order.order_id));
+            self.logger
+                .error(format!("Order not found: {}", order.order_id));
         }
     }
 }
@@ -643,19 +639,6 @@ impl Handler<RemoveClient> for Storage {
     fn handle(&mut self, msg: RemoveClient, _ctx: &mut Self::Context) -> Self::Result {
         self.logger
             .info(format!("Client removed: {}", msg.client_id));
-        // TODO: Ver si es necesario eliminar órdenes asociadas al cliente.
-        if let Some(order) = self
-            .clients
-            .get(&msg.client_id)
-            .and_then(|c| c.client_order.clone())
-        {
-            self.orders.remove(&order.order_id);
-            self.logger
-                .info(format!("Order removed for client: {}", msg.client_id));
-        } else {
-            self.logger
-                .error(format!("No order found for client: {}", msg.client_id));
-        }
         self.clients.remove(&msg.client_id);
         self.add_to_log(StorageLogMessage::RemoveClient(msg.clone()));
     }
@@ -782,6 +765,7 @@ impl Handler<RemoveOrder> for Storage {
                         .warn(format!("Delivery not found for order: {}", delivery_id));
                 }
             }
+            self.clients.remove(&msg.order.client_id);
         } else {
             self.logger
                 .error(format!("Order not found: {}", msg.order.order_id));
@@ -917,12 +901,12 @@ impl Handler<SetOrderExpectedTime> for Storage {
             let order_clone = order.clone();
             self.update_associated_order(&order_clone);
         } else {
-            self.logger.error(format!("Order not found: {}", msg.order_id));
+            self.logger
+                .error(format!("Order not found: {}", msg.order_id));
         }
         self.add_to_log(StorageLogMessage::SetOrderExpectedTime(msg.clone()));
     }
 }
-
 
 /// Handles requests to get all restaurants in storage
 impl Handler<GetRestaurants> for Storage {

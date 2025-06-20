@@ -81,6 +81,7 @@ impl Handler<SendThisOrder> for DeliveryAssigner {
             order: order.clone(),
             restaurant_info: self.restaurant_info.clone(),
         });
+        println!("Ready orders: {:?}", self.ready_orders);
     }
 }
 
@@ -96,12 +97,14 @@ impl Handler<DeliveryAvailable> for DeliveryAssigner {
             "Delivery '{}' is ready to take an order!",
             msg.delivery_info.delivery_id
         ));
+        println!("Received order: {:?}", msg.order);
+        println!("Ready orders: {:?}", self.ready_orders);
         // chequeo si esa orden esta en ready_orders
         if let Some(order) = self.ready_orders.get(&msg.order.order_id) {
             // chequeo si el delivery no es none:
             if msg.delivery_info.delivery_id.is_empty() {
                 self.logger
-                    .warn("Delivery ID is empty, cannot assign order.".to_string());
+                    .warn("Delivery ID is empty, cannot assign order.");
                 // TODO: CANCELAR LA ORDEN;
             }
             // Si la orden esta lista, asignamos el delivery
@@ -136,5 +139,12 @@ impl Handler<CancelOrder> for DeliveryAssigner {
             .warn(format!("Cancelling order: {}", msg.order.order_id));
         // Remove the order from ready orders if it exists
         self.ready_orders.remove(&msg.order.order_id);
+    }
+}
+
+impl Drop for DeliveryAssigner {
+    fn drop(&mut self) {
+        self.logger
+            .info("AAAAAAAAAAAAAAAa Delivery Assigner is being dropped.");
     }
 }

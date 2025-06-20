@@ -49,7 +49,10 @@ pub struct Client {
     pub logger: Logger,
     /// Handle for the delivery timer, if active.
     delivery_timer: Option<actix::SpawnHandle>,
+    /// Timer for waiting reconnection attempts after a connection is closed.
     waiting_reconnection_timer: Option<actix::SpawnHandle>,
+    /// Flag to indicate if the client is already connected and waiting for reconnection.
+    already_connected: bool,
 }
 
 impl Client {
@@ -89,6 +92,7 @@ impl Client {
             logger,
             delivery_timer: None, // Inicializamos el temporizador de entrega como None
             waiting_reconnection_timer: None, // Timer for reconnection attempts
+            already_connected: false, // Flag to indicate if waiting for reconnection
         }
     }
 
@@ -156,7 +160,7 @@ impl Client {
                 ctx.cancel_future(handle);
             }
 
-            let delivery_time = order.expected_delivery_time / 1000  + BASE_DELAY_MILLIS;
+            let delivery_time = order.expected_delivery_time / 1000 + BASE_DELAY_MILLIS;
             let handle = ctx.run_later(
                 //////////////////////////////////////////////
                 // TODO: IF YA LLEGÓ EL PEDIDO, NO HAY QUE ESPERAR, HACER UN SHUTDOWN ENTERO
@@ -213,8 +217,6 @@ impl Handler<ConnectionClosed> for Client {
         // Llama a la función async y usa wrap_future para obtener el resultado
         // Antes de reconectar o crear communicator:
 
-        print!("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
-        // CANCELA EL TIMER DE DELIVERY SI EXISTE
         if let Some(handle) = self.delivery_timer.take() {
             ctx.cancel_future(handle);
             self.delivery_timer = None;
@@ -233,9 +235,6 @@ impl Handler<ConnectionClosed> for Client {
             Some(stream) => {
                 let communicator = Communicator::new(stream, ctx.address(), PeerType::ClientType);
                 actor.communicator = Some(communicator);
-
-                actor.ui_handler =
-                    Some(UIHandler::new(ctx.address(), actor.logger.clone()).start());
 
                 actor
                     .logger
@@ -396,6 +395,11 @@ impl Handler<RecoverProcedure> for Client {
     type Result = ();
 
     fn handle(&mut self, msg: RecoverProcedure, _ctx: &mut Self::Context) -> Self::Result {
+        if self.already_connected {
+            self.logger
+                .info("Already connected, skipping recovery procedure.");
+            return;
+        }
         match msg.user_info {
             UserDTO::Client(client_dto) => {
                 if client_dto.client_id == self.client_id {
@@ -428,7 +432,8 @@ impl Handler<RecoverProcedure> for Client {
                                 ));
                             }
                             _ => {
-                                self.logger.info(format!("State: {}", client_dto.status));
+                                self.logger
+                                    .info(format!("State after recovering: {}", client_dto.status));
                             }
                         }
                     } else {
@@ -449,6 +454,7 @@ impl Handler<RecoverProcedure> for Client {
                             },
                         ));
                     }
+                    self.already_connected = true;
                 } else {
                     self.logger.warn(format!(
                         "Received recovered info for a different client ({}), ignoring",
@@ -560,6 +566,7 @@ impl Handler<NetworkMessage> for Client {
                 self.logger
                     .info("No recovered info received, proceeding with normal flow");
                 // Aquí podrías enviar un mensaje para solicitar restaurantes cercanos
+                self.already_connected = true;
                 let new_client_dto = ClientDTO {
                     client_position: self.client_position,
                     client_id: self.client_id.clone(),
@@ -643,7 +650,6 @@ impl Handler<NetworkMessage> for Client {
                     self.delivery_timer = None;
                 }
 
-                // Aquí podrías manejar la reconexión o el cierre de la aplicación
                 // Si el comunicador actual posee una peer_address que coincide con la dirección cerrada,
                 // se elimina el comunicador actual. Si no, se ignora.
 
