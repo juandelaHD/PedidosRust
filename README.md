@@ -1142,7 +1142,7 @@ La implementación final incluye un sistema donde los `CoordinatorManager` enví
 - `RegisterConnectionWithCoordinator` : Usado por el `Aceptor` para registrar una nueva conexión con un `CoordinadorManager`
 - `RegisterConnection` : Usado por el `Aceptor` para registrar una nueva conexión con un `Coordinador`
 - `DeliveryExpectedTime` : Mensaje usado para informar al cliente del tiempo esperado de delivery.
-- `StorageSnapshot` :
+- `StorageSnapshot` : Es un mensaje del Storage con todos los datos del storage
 - `Ping` (ver heartbeat)
 - `Pong` (ver heartbeat)
 - `CheckPongTimeout` (ver heartbeat)
@@ -1168,3 +1168,11 @@ La implementación final incluye un sistema donde los `CoordinatorManager` enví
 - `RetryLater` : Mensaje enviado pidiendo que se vuelva a reenviar el mensaje más tarde.
 - `Shutdown`
 - `Stop`
+- `SetCoordinatorManager` : Mensaje para actualizar la referencia al `CoordinatorManager`
+- `AddOrderAccepted` : Mensaje usado para registrar que un repartidor (delivery) ha aceptado una oferta para entregar un pedido.
+- `FinishDeliveryAssignment` : Mensaje que notifica al `DeliveryAssigner` que una orden fue asignada a un delivery.
+- `SetActorsAddresses` : Actualiza las direcciones de los coordinadores y storage en el orderService.
+- `GetMinLogIndex` : Obtiene el Log de mínimo index del storage
+- `GetLogsFromIndex` : Obtiene todos los logs usando un índice
+- `GetAllStorage` : Para obtener una Snapshot de toda la data de storage
+- `ShareCommunicator`: Usado para compartir el `Comunicator` con los actores componentes del restaurante.
