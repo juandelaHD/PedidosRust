@@ -1,7 +1,7 @@
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::HashMap;
-use serde::{Serialize, Deserialize, Serializer, Deserializer};
-use std::iter::IntoIterator;
 use std::collections::hash_map;
+use std::iter::IntoIterator;
 
 #[derive(Debug, Clone)]
 pub struct BiMap<K, V> {
@@ -104,7 +104,6 @@ where
         Ok(BiMap { forward, backward })
     }
 }
-
 
 impl<K, V> IntoIterator for BiMap<K, V> {
     type Item = (K, V);

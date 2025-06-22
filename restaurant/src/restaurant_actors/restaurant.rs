@@ -7,7 +7,9 @@ use colored::Color;
 use common::constants::DELAY_SECONDS_TO_START_RECONNECT;
 use common::logger::Logger;
 use common::messages::{
-    CancelOrder, ConnectionClosed, DeliverThisOrder, DeliveryAccepted, LeaderIs, NetworkMessage, NewOrder, RecoverProcedure, RegisterUser, RequestNearbyDelivery, StartRunning, UpdateOrderStatus, WhoIsLeader
+    CancelOrder, ConnectionClosed, DeliverThisOrder, DeliveryAccepted, LeaderIs, NetworkMessage,
+    NewOrder, RecoverProcedure, RegisterUser, RequestNearbyDelivery, StartRunning,
+    UpdateOrderStatus, WhoIsLeader,
 };
 use common::network::communicator::Communicator;
 use common::network::connections::{connect_one, connect_some, reconnect};
@@ -394,11 +396,10 @@ impl Handler<NewOrder> for Restaurant {
                         self.logger
                             .error("Kitchen sender is not set, cannot send order to kitchen");
                     }
-                    
+
                     ctx.address().do_send(UpdateOrderStatus {
                         order: new_order.clone(),
                     });
-
                 } else {
                     // Simulamos que el restaurante rechaza el pedido
                     self.logger.info(format!(
@@ -411,7 +412,6 @@ impl Handler<NewOrder> for Restaurant {
                         order: new_order.clone(),
                     });
                 }
-
             }
             _ => {
                 self.logger.warn(format!(

@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
-use crate::{bimap::BiMap, types::delivery_status::DeliveryStatus};
 use crate::types::order_status::OrderStatus;
+use crate::{bimap::BiMap, types::delivery_status::DeliveryStatus};
 use actix::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;

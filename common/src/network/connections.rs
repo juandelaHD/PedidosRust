@@ -71,10 +71,7 @@ pub async fn connect_one(addr: SocketAddr, peer_type: PeerType) -> Option<TcpStr
 }
 
 async fn try_to_connect(server_addr: SocketAddr) -> Option<TcpStream> {
-    match TcpStream::connect(server_addr).await {
-        Ok(stream) => Some(stream),
-        Err(_) => None,
-    }
+    TcpStream::connect(server_addr).await.ok()
 }
 
 pub async fn reconnect(servers: Vec<SocketAddr>, peer_type: PeerType) -> Option<TcpStream> {

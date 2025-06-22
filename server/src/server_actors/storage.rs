@@ -10,11 +10,11 @@ use common::messages::coordinatormanager_messages::StorageSnapshot;
 use common::messages::internal_messages::{
     AddAuthorizedOrderToRestaurant, AddClient, AddDelivery, AddOrder, AddPendingOrderToRestaurant,
     AddRestaurant, ApplyStorageUpdates, GetAllAvailableDeliveries, GetAllRestaurantsInfo,
-    GetClient, GetDeliveries, GetDelivery, GetOrder, RemoveUser, GetRestaurant, GetRestaurants,
+    GetClient, GetDeliveries, GetDelivery, GetOrder, GetRestaurant, GetRestaurants,
     InsertAcceptedDelivery, RemoveAcceptedDeliveries, RemoveAuthorizedOrderToRestaurant,
     RemoveClient, RemoveDelivery, RemoveOrder, RemovePendingOrderToRestaurant, RemoveRestaurant,
-    SetCurrentClientToDelivery, SetCurrentOrderToDelivery, SetDeliveryPosition, SetDeliveryStatus,
-    SetDeliveryToOrder, SetOrderExpectedTime, SetOrderStatus, StorageLogMessage,
+    RemoveUser, SetCurrentClientToDelivery, SetCurrentOrderToDelivery, SetDeliveryPosition,
+    SetDeliveryStatus, SetDeliveryToOrder, SetOrderExpectedTime, SetOrderStatus, StorageLogMessage,
 };
 use common::messages::{DeliveryAvailable, DeliveryNoNeeded};
 use common::types::order_status::OrderStatus;
@@ -22,8 +22,8 @@ use common::types::{
     dtos::{ClientDTO, DeliveryDTO, OrderDTO, RestaurantDTO, Snapshot},
     restaurant_info::RestaurantInfo,
 };
+use std::collections::HashMap;
 use std::collections::hash_map::Entry;
-use std::collections::{HashMap, HashSet};
 
 /// The `Storage` actor is responsible for maintaining and updating all persistent state in the system,
 /// including clients, restaurants, deliveries, orders, and the storage log.
@@ -323,8 +323,7 @@ impl Handler<StorageSnapshot> for Storage {
             self.orders.insert(order_id, order);
         }
         for (order_id, delivery_id) in snapshot.accepted_deliveries {
-            self.accepted_deliveries
-                .insert(order_id, delivery_id);
+            self.accepted_deliveries.insert(order_id, delivery_id);
         }
         self.next_log_id = snapshot.next_log_id;
         self.min_persistent_log_index = snapshot.min_persistent_log_index;
@@ -426,7 +425,10 @@ impl Handler<AddOrderAccepted> for Storage {
                 //     order_id: msg.order.order_id,
                 //     delivery_id: msg.delivery.delivery_id.clone(),
                 // });
-            } else if self.accepted_deliveries.contains_value(&msg.delivery.delivery_id) {
+            } else if self
+                .accepted_deliveries
+                .contains_value(&msg.delivery.delivery_id)
+            {
                 // Ya existe una delivery aceptada con el mismo delivery_id.
                 self.logger.info(format!(
                     "Delivery has already accepted order with ID: {}",
@@ -438,7 +440,6 @@ impl Handler<AddOrderAccepted> for Storage {
                     order: msg.order.clone(),
                     delivery_info: msg.delivery.clone(),
                 });
-            
             } else {
                 // No existe un delivery aceptada para esta orden.
                 self.logger.info(format!(
@@ -447,10 +448,13 @@ impl Handler<AddOrderAccepted> for Storage {
                 ));
 
                 // Agrego la orden y el delivery a accepted_deliveries.
-                self.handle(InsertAcceptedDelivery {
-                    order_id: msg.order.order_id,
-                    delivery_id: msg.delivery.delivery_id.clone(),
-                }, ctx);
+                self.handle(
+                    InsertAcceptedDelivery {
+                        order_id: msg.order.order_id,
+                        delivery_id: msg.delivery.delivery_id.clone(),
+                    },
+                    ctx,
+                );
 
                 // Reenviar el mensaje al address contenida en el mensaje
                 msg.addr.do_send(DeliveryAvailable {
@@ -478,7 +482,7 @@ impl Handler<InsertAcceptedDelivery> for Storage {
 
     fn handle(&mut self, msg: InsertAcceptedDelivery, _ctx: &mut Self::Context) -> Self::Result {
         self.accepted_deliveries
-            .insert(msg.order_id.clone(), msg.delivery_id.clone());
+            .insert(msg.order_id, msg.delivery_id.clone());
         self.add_to_log(StorageLogMessage::InsertAcceptedDelivery(msg.clone()));
     }
 }
@@ -545,35 +549,53 @@ impl Handler<FinishDeliveryAssignment> for Storage {
 
     fn handle(&mut self, msg: FinishDeliveryAssignment, ctx: &mut Self::Context) -> Self::Result {
         if let Some(delivery_id) = msg.order.delivery_id.clone() {
-            self.handle(SetDeliveryToOrder {
-                order: msg.order.clone(),
-                delivery_id: delivery_id.clone(),
-            }, ctx);
-            self.handle(SetOrderStatus {
-                order: msg.order.clone(),
-                order_status: OrderStatus::Delivering,
-            }, ctx);
+            self.handle(
+                SetDeliveryToOrder {
+                    order: msg.order.clone(),
+                    delivery_id: delivery_id.clone(),
+                },
+                ctx,
+            );
+            self.handle(
+                SetOrderStatus {
+                    order: msg.order.clone(),
+                    order_status: OrderStatus::Delivering,
+                },
+                ctx,
+            );
 
-            self.handle(SetCurrentOrderToDelivery {
-                delivery_id: delivery_id.clone(),
-                order: msg.order.clone(),
-            }, ctx);
-            self.handle(SetCurrentClientToDelivery {
-                delivery_id: delivery_id.clone(),
-                client_id: msg.order.client_id.clone(),
-            }, ctx);
-            self.handle(RemovePendingOrderToRestaurant {
-                order: msg.order.clone(),
-                restaurant_id: msg.order.restaurant_id.clone(),
-            }, ctx);
+            self.handle(
+                SetCurrentOrderToDelivery {
+                    delivery_id: delivery_id.clone(),
+                    order: msg.order.clone(),
+                },
+                ctx,
+            );
+            self.handle(
+                SetCurrentClientToDelivery {
+                    delivery_id: delivery_id.clone(),
+                    client_id: msg.order.client_id.clone(),
+                },
+                ctx,
+            );
+            self.handle(
+                RemovePendingOrderToRestaurant {
+                    order: msg.order.clone(),
+                    restaurant_id: msg.order.restaurant_id.clone(),
+                },
+                ctx,
+            );
         } else {
             self.logger.error("No delivery ID found in order.");
             return;
         }
 
-        self.handle(RemoveAcceptedDeliveries {
-            order_id: msg.order.order_id,
-        }, ctx);
+        self.handle(
+            RemoveAcceptedDeliveries {
+                order_id: msg.order.order_id,
+            },
+            ctx,
+        );
 
         // let mut rejected_deliveries: HashMap<String, DeliveryDTO> = HashMap::new();
         // if let Some(deliveries) = self.accepted_deliveries.get(&msg.order.order_id) {
@@ -654,24 +676,32 @@ impl Handler<RemoveUser> for Storage {
 
     fn handle(&mut self, msg: RemoveUser, ctx: &mut Self::Context) -> Self::Result {
         if self.clients.contains_key(&msg.user_id) {
-            self.handle(RemoveClient {
-                client_id: msg.user_id,
-            }, ctx);
+            self.handle(
+                RemoveClient {
+                    client_id: msg.user_id,
+                },
+                ctx,
+            );
         } else if self.restaurants.contains_key(&msg.user_id) {
-            self.handle(RemoveRestaurant {
-                restaurant_id: msg.user_id,
-            }, ctx);
+            self.handle(
+                RemoveRestaurant {
+                    restaurant_id: msg.user_id,
+                },
+                ctx,
+            );
         } else if self.deliverys.contains_key(&msg.user_id) {
-            self.handle(RemoveDelivery {
-                delivery_id: msg.user_id,
-            }, ctx);
+            self.handle(
+                RemoveDelivery {
+                    delivery_id: msg.user_id,
+                },
+                ctx,
+            );
         } else {
             self.logger
                 .error(format!("User not found: {}", msg.user_id));
         }
     }
 }
-
 
 /// Handles removing a client from storage and logs the operation.
 impl Handler<RemoveClient> for Storage {

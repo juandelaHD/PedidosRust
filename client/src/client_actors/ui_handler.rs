@@ -3,7 +3,7 @@ use crate::messages::internal_messages::{SelectNearbyRestaurants, SendThisOrder}
 use actix::prelude::*;
 use common::logger::Logger;
 use common::types::restaurant_info::RestaurantInfo;
-use std::io::{self, Write};
+use std::io::Write;
 
 /// The `UIHandler` actor is responsible for managing the user interface interactions
 /// in the client application. It prompts the user to select a restaurant and dish,
@@ -24,82 +24,6 @@ impl UIHandler {
     /// * `logger` - Logger instance for UI messages.
     pub fn new(client: Addr<Client>, logger: Logger) -> Self {
         UIHandler { client, logger }
-    }
-
-    /// Prompts the user to select a restaurant and enter a dish name.
-    ///
-    /// ## Arguments
-    ///
-    /// * `_ctx` - The Actix actor context.
-    /// * `possible_restaurants` - A list of available restaurants to choose from.
-    ///
-    /// ## Returns
-    ///
-    /// Returns a tuple containing the selected restaurant ID and the dish name.
-    fn ask_user_order(
-        &self,
-        _ctx: &mut Context<Self>,
-        possible_restaurants: Vec<RestaurantInfo>,
-    ) -> (String, String) {
-        let selected_index = loop {
-            self.logger.info("Select a restaurant by number:");
-            for (i, restaurant) in possible_restaurants.iter().enumerate() {
-                self.logger.info(format!("{}: {}", i + 1, restaurant.id));
-            }
-            io::stdout().flush().unwrap();
-
-            let mut input = String::new();
-            if let Err(e) = io::stdin().read_line(&mut input) {
-                self.logger.error(format!(
-                    "Error while reading input: {}. Please try again.",
-                    e
-                ));
-                continue;
-            }
-
-            match input.trim().parse::<usize>() {
-                Ok(num) if num >= 1 && num <= possible_restaurants.len() => break num - 1,
-                _ => {
-                    self.logger.warn(
-                        "Invalid selection. Please enter a number corresponding to a restaurant.",
-                    );
-                    continue;
-                }
-            }
-        };
-
-        let selected_restaurant = &possible_restaurants[selected_index];
-
-        // Ingreso del nombre del plato
-        let dish_name = loop {
-            self.logger
-                .info("Please enter the name of the dish you want to order:");
-            io::stdout().flush().unwrap();
-
-            let mut dish_input = String::new();
-            if let Err(e) = io::stdin().read_line(&mut dish_input) {
-                self.logger.error(format!(
-                    "Error while reading dish input: {}. Please try again.",
-                    e
-                ));
-                continue;
-            }
-
-            let dish = dish_input.trim();
-            if !dish.is_empty() {
-                break dish.to_string();
-            } else {
-                self.logger
-                    .warn("Dish name cannot be empty. Please enter a valid dish name.");
-                continue;
-            }
-        };
-
-        self.logger.info(format!(
-            "You selected restaurant: {} and dish: {}",
-            selected_restaurant.id, dish_name
-        ));
-        (selected_restaurant.id.clone(), dish_name)
     }
 }
 

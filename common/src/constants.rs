@@ -3,7 +3,7 @@ use tokio::time::Duration;
 const DELAY_SECONDS: u64 = 2;
 pub const COORDINATE_SCALE: f32 = 10.0;
 pub const NEARBY_RADIUS: f32 = 8.0;
-pub const RESTAURANT_SUCCESS_PROBABILITY: f32 = 0.999;//0.9
+pub const RESTAURANT_SUCCESS_PROBABILITY: f32 = 0.999; //0.9
 pub const DELIVERY_SUCCESS_PROBABILITY: f32 = 0.99; //0.9
 pub const NUM_COORDINATORS: u16 = 4;
 pub const BASE_PORT: u16 = 8080;

@@ -329,8 +329,8 @@ impl Handler<UpdateOrderStatus> for OrderService {
                     return;
                 }
                 ctx.address().do_send(SetOrderExpectedTime {
-                    order_id: msg.order.order_id.clone(),
-                    expected_time: msg.order.expected_delivery_time.clone(),
+                    order_id: msg.order.order_id,
+                    expected_time: msg.order.expected_delivery_time,
                 });
 
                 self.send_to_coordinator(NotifyOrderUpdated {
@@ -424,10 +424,8 @@ impl Handler<OrderFinalized> for OrderService {
     type Result = ();
 
     fn handle(&mut self, msg: OrderFinalized, ctx: &mut Self::Context) -> Self::Result {
-        self.logger.info(format!(
-            "Finalizing order: {:?}",
-            msg.order
-        ));
+        self.logger
+            .info(format!("Finalizing order: {:?}", msg.order));
         if let Some(communicator) = self.payment_gateway_address.as_ref() {
             let socket_addr = communicator.local_address;
             if let Some(sender) = communicator.sender.as_ref() {
@@ -479,8 +477,6 @@ impl Handler<RemoveOrder> for OrderService {
             msg.order
         ));
         self.send_to_storage(msg.clone());
-
-        
     }
 }
 

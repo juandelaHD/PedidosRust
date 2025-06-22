@@ -150,11 +150,9 @@ pub struct GetLogsFromIndex {
 #[rtype(result = "Snapshot")]
 pub struct GetAllStorage;
 
-
-
 /// Represents a message to trigger a timer for the removal or cleanup of
 /// a user by its unique identifier.
-/// 
+///
 /// # Fields
 /// - `restaurant_id`: The unique identifier of the user to be reaped.
 #[derive(Message, Debug, Clone, Serialize, Deserialize)]
@@ -162,7 +160,6 @@ pub struct GetAllStorage;
 pub struct ReapUser {
     pub user_id: String,
 }
-
 
 /// Message used to cancel reaping process for a specific user.
 ///

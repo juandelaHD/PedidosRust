@@ -1,18 +1,23 @@
 use actix::prelude::*;
 use colored::Color;
-use std::{collections::{HashMap, HashSet}, net::SocketAddr, process, time::Duration};
+use std::{
+    collections::{HashMap, HashSet},
+    net::SocketAddr,
+    process,
+    time::Duration,
+};
 use tokio::net::TcpStream;
 
 use crate::{
     messages::internal_messages::{
-        ReapUser, ReconnectUser, RegisterConnection, RegisterConnectionWithCoordinator, SetActorsAddresses,
+        ReapUser, ReconnectUser, RegisterConnection, RegisterConnectionWithCoordinator,
+        SetActorsAddresses,
     },
     server_actors::{
         coordinator_manager::CoordinatorManager,
         reaper::{self, Reaper},
         services::{
-            nearby_delivery::NearbyDeliveryService,
-            nearby_restaurants::NearbyRestaurantsService,
+            nearby_delivery::NearbyDeliveryService, nearby_restaurants::NearbyRestaurantsService,
             orders_services::OrderService,
         },
         storage::Storage,
@@ -23,8 +28,8 @@ use common::{
     constants::BASE_PORT,
     logger::Logger,
     messages::{
-        CancelOrder, DeliverThisOrder, OrderFinalized, UpdateOrderStatus,
-        coordinator_messages::*, internal_messages::*, shared_messages::*,
+        CancelOrder, DeliverThisOrder, OrderFinalized, UpdateOrderStatus, coordinator_messages::*,
+        internal_messages::*, shared_messages::*,
     },
     network::{communicator::Communicator, connections::connect_to_all, peer_types::PeerType},
     types::{
@@ -241,7 +246,6 @@ impl Actor for Coordinator {
 
         self.coordinator_manager = Some(coordinator_manager.start());
         self.logger.info("Coordinator started.");
-
 
         let reaper = reaper::Reaper::new(storage_address.clone());
         self.reaper = Some(reaper.start());
@@ -1010,8 +1014,6 @@ impl Handler<NetworkMessage> for Coordinator {
                     self.logger
                         .error("Reaper not initialized, cannot reap user.");
                 }
-
-
 
                 // Si el remote_addr está en self.communicators, lo eliminamos
                 if let Some(_communicator) = self.communicators.get(&remote_addr) {

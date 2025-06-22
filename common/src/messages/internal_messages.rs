@@ -7,7 +7,7 @@ use crate::types::order_status::OrderStatus;
 use crate::types::restaurant_info::RestaurantInfo;
 use actix::Message;
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 /////////////////////////////////////////////////////////////////////
 // Mensajes del storage
@@ -194,7 +194,6 @@ pub struct GetOrder {
 pub struct RemoveUser {
     pub user_id: String,
 }
-
 
 /// Message to remove a client from storage.
 ///
@@ -434,7 +433,7 @@ pub struct SetOrderStatus {
 ///
 /// ## Purpose
 /// Used to update the expected delivery time of an order.
-/// 
+///
 /// # Fields
 /// - `order_id`: The unique identifier of the order.
 /// - `expected_time`: Expected time to deliver the order.
@@ -443,7 +442,7 @@ pub struct SetOrderStatus {
 pub struct SetOrderExpectedTime {
     pub order_id: u64,
     pub expected_time: u64,
-} 
+}
 
 /////////////////////////////////////////////////////////////////////
 // Mensajes de servicios internos
