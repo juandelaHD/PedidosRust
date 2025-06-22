@@ -125,6 +125,11 @@ impl Client {
             .as_ref()
             .map(|c| c.local_address)
             .expect("Socket address not initialized");
+        self.logger.info(format!(
+            "Starting Client actor with ID: {} at position: {:?}",
+            self.client_id, self.client_position
+        ));
+
         self.send_network_message(NetworkMessage::WhoIsLeader(WhoIsLeader {
             origin_addr: actual_socket_addr,
             user_id: self.client_id.clone(),
@@ -394,7 +399,7 @@ impl Handler<LeaderIs> for Client {
 impl Handler<RecoverProcedure> for Client {
     type Result = ();
 
-    fn handle(&mut self, msg: RecoverProcedure, _ctx: &mut Self::Context) -> Self::Result {
+    fn handle(&mut self, msg: RecoverProcedure, ctx: &mut Self::Context) -> Self::Result {
         if self.already_connected {
             self.logger
                 .info("Already connected, skipping recovery procedure.");
@@ -424,12 +429,14 @@ impl Handler<RecoverProcedure> for Client {
                                     "Your order has been cancelled: {}. Try again later.",
                                     client_dto.dish_name
                                 ));
+                                ctx.stop();
                             }
                             OrderStatus::Delivered => {
                                 self.logger.info(format!(
                                     "Your order has already been delivered: {}. Enjoy your meal!",
                                     client_dto.dish_name
                                 ));
+                                ctx.stop();
                             }
                             _ => {
                                 self.logger
@@ -595,6 +602,7 @@ impl Handler<NetworkMessage> for Client {
                         self.logger
                             .info("Your order has been cancelled. Try again later.");
                         self.client_order = None; // Limpiamos el pedido actual
+                        ctx.stop();
                     } else {
                         self.logger.error(format!(
                             "Received cancel request for order {}, but I have order {}",
@@ -604,8 +612,8 @@ impl Handler<NetworkMessage> for Client {
                 } else {
                     self.logger
                         .warn("No restaurants found for the order. Try again later.");
-                    ctx.stop();
-                }
+                        ctx.stop();
+                    }
             }
 
             NetworkMessage::NotifyOrderUpdated(msg_data) => {

@@ -425,7 +425,7 @@ impl Handler<OrderFinalized> for OrderService {
 
     fn handle(&mut self, msg: OrderFinalized, ctx: &mut Self::Context) -> Self::Result {
         self.logger.info(format!(
-            "Reenviando CancelOrder al Storage: {:?}",
+            "Finalizing order: {:?}",
             msg.order
         ));
         if let Some(communicator) = self.payment_gateway_address.as_ref() {
@@ -479,6 +479,8 @@ impl Handler<RemoveOrder> for OrderService {
             msg.order
         ));
         self.send_to_storage(msg.clone());
+
+        
     }
 }
 

@@ -1,38 +1,38 @@
-use crate::messages::internal_messages::RegisterConnection;
-use crate::messages::internal_messages::RegisterConnectionWithCoordinator;
-use crate::messages::internal_messages::SetActorsAddresses;
-use crate::server_actors::coordinator_manager::CoordinatorManager;
-use crate::server_actors::services::nearby_delivery::NearbyDeliveryService;
-use crate::server_actors::services::nearby_restaurants::NearbyRestaurantsService;
-use crate::server_actors::services::orders_services::OrderService;
-use crate::server_actors::storage::Storage;
 use actix::prelude::*;
 use colored::Color;
-use common::bimap::BiMap;
-use common::constants::BASE_PORT;
-use common::logger::Logger;
-use common::messages::CancelOrder;
-use common::messages::DeliverThisOrder;
-use common::messages::OrderFinalized;
-use common::messages::UpdateOrderStatus;
-use common::messages::coordinator_messages::*;
-use common::messages::internal_messages::*;
-use common::messages::shared_messages::*;
-use common::network::communicator::Communicator;
-use common::network::connections::connect_to_all;
-use common::network::peer_types::PeerType;
-use common::types::delivery_status::DeliveryStatus;
-use common::types::dtos::ClientDTO;
-use common::types::dtos::DeliveryDTO;
-use common::types::dtos::OrderDTO;
-use common::types::dtos::RestaurantDTO;
-use common::types::dtos::UserDTO;
-use common::types::order_status::OrderStatus;
-use std::collections::HashSet;
-use std::process;
-use std::time::Duration;
-use std::{collections::HashMap, net::SocketAddr};
+use std::{collections::{HashMap, HashSet}, net::SocketAddr, process, time::Duration};
 use tokio::net::TcpStream;
+
+use crate::{
+    messages::internal_messages::{
+        ReapUser, ReconnectUser, RegisterConnection, RegisterConnectionWithCoordinator, SetActorsAddresses,
+    },
+    server_actors::{
+        coordinator_manager::CoordinatorManager,
+        reaper::{self, Reaper},
+        services::{
+            nearby_delivery::NearbyDeliveryService,
+            nearby_restaurants::NearbyRestaurantsService,
+            orders_services::OrderService,
+        },
+        storage::Storage,
+    },
+};
+use common::{
+    bimap::BiMap,
+    constants::BASE_PORT,
+    logger::Logger,
+    messages::{
+        CancelOrder, DeliverThisOrder, OrderFinalized, UpdateOrderStatus,
+        coordinator_messages::*, internal_messages::*, shared_messages::*,
+    },
+    network::{communicator::Communicator, connections::connect_to_all, peer_types::PeerType},
+    types::{
+        delivery_status::DeliveryStatus,
+        dtos::{ClientDTO, DeliveryDTO, OrderDTO, RestaurantDTO, UserDTO},
+        order_status::OrderStatus,
+    },
+};
 
 /// The `Coordinator` actor orchestrates the main logic of the distributed system,
 /// managing user connections, order processing, communication with other coordinators,
@@ -66,6 +66,8 @@ pub struct Coordinator {
     pub nearby_restaurant_service: Option<Addr<NearbyRestaurantsService>>,
     /// Address of the nearby delivery service actor.
     pub nearby_delivery_service: Option<Addr<NearbyDeliveryService>>,
+    /// Reaper for removing inactive users
+    pub reaper: Option<Addr<Reaper>>,
     /// Logger for coordinator events.
     pub logger: Logger,
     /// Address of the coordinator manager actor.
@@ -108,6 +110,7 @@ impl Coordinator {
             order_service: Some(OrderService::new().await.start()),
             nearby_restaurant_service: None,
             nearby_delivery_service: None,
+            reaper: None,
             storage: None,
             order_timers: HashMap::new(),
         }
@@ -238,6 +241,11 @@ impl Actor for Coordinator {
 
         self.coordinator_manager = Some(coordinator_manager.start());
         self.logger.info("Coordinator started.");
+
+
+        let reaper = reaper::Reaper::new(storage_address.clone());
+        self.reaper = Some(reaper.start());
+        self.logger.info("Reaper started.");
 
         for (addr, stream) in self.pending_streams.drain() {
             let communicator = Communicator::new(stream, ctx.address(), PeerType::CoordinatorType);
@@ -585,6 +593,16 @@ impl Handler<NetworkMessage> for Coordinator {
             }
             NetworkMessage::RegisterUser(msg_data) => {
                 let user_id = msg_data.user_id.clone();
+
+                if let Some(reaper) = &self.reaper {
+                    reaper.do_send(ReconnectUser {
+                        user_id: user_id.clone(),
+                    });
+                } else {
+                    self.logger
+                        .error("Reaper not initialized, cannot reap user.");
+                }
+
                 if let Some(communicator) = self.communicators.get(&msg_data.origin_addr) {
                     match communicator.peer_type {
                         PeerType::ClientType => {
@@ -876,6 +894,11 @@ impl Handler<NetworkMessage> for Coordinator {
                     self.logger.info("OrderService not initialized yet.");
                 }
             }
+
+            NetworkMessage::CancelOrder(msg_data) => {
+                ctx.address().do_send(msg_data);
+            }
+
             NetworkMessage::RequestNearbyDelivery(msg_data) => {
                 if let Some(service) = &self.nearby_delivery_service {
                     service.do_send(msg_data);
@@ -968,6 +991,28 @@ impl Handler<NetworkMessage> for Coordinator {
                 self.logger
                     .info(format!("Connection closed for {}", msg_data.remote_addr));
                 let remote_addr = msg_data.remote_addr;
+
+                let user = self
+                    .user_addresses
+                    .get_by_key(&remote_addr)
+                    .cloned()
+                    .unwrap_or_else(|| "UNKNOWN_USER".to_string());
+
+                if let Some(reaper_addr) = &self.reaper {
+                    reaper_addr.do_send(ReapUser {
+                        user_id: user.clone(),
+                    });
+                    self.logger.info(format!(
+                        "Reaping user {} due to disconnection from {}",
+                        user, remote_addr
+                    ));
+                } else {
+                    self.logger
+                        .error("Reaper not initialized, cannot reap user.");
+                }
+
+
+
                 // Si el remote_addr está en self.communicators, lo eliminamos
                 if let Some(_communicator) = self.communicators.get(&remote_addr) {
                     self.communicators.remove(&remote_addr);

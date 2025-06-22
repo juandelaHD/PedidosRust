@@ -134,6 +134,10 @@ impl Delivery {
             .as_ref()
             .map(|c| c.local_address)
             .expect("Socket address not initialized");
+        self.logger.info(format!(
+            "Starting Delivery actor with ID: {} at position: {:?}",
+            self.delivery_id, self.position
+        ));
         self.send_network_message(NetworkMessage::WhoIsLeader(WhoIsLeader {
             origin_addr: actual_socket_addr,
             user_id: self.delivery_id.clone(),
@@ -497,8 +501,8 @@ impl Handler<NewOfferToDeliver> for Delivery {
             msg.order.order_id
         ));
         match self.status {
-            // Si estoy disponible, acepto el pedido
-            DeliveryStatus::Available => {
+            // Si estoy disponible o esperando confirmación, acepto el pedido
+            DeliveryStatus::Available | DeliveryStatus::WaitingConfirmation => {
                 // Probabilidad de aceptar el pedido
                 let accept_order = rand::random::<f32>() < self.probability;
                 if !accept_order {
@@ -508,7 +512,7 @@ impl Handler<NewOfferToDeliver> for Delivery {
                     ));
                     return;
                 }
-                self.current_order = Some(msg.order.clone());
+                // self.current_order = Some(msg.order.clone());
                 self.status = DeliveryStatus::WaitingConfirmation;
                 let my_info = DeliveryDTO {
                     delivery_id: self.delivery_id.clone(),
@@ -523,11 +527,7 @@ impl Handler<NewOfferToDeliver> for Delivery {
                     delivery_info: my_info.clone(),
                 }));
             }
-            // Si estoy ocupado, ignoro el pedido
-            DeliveryStatus::WaitingConfirmation => {
-                self.logger
-                    .warn("Already waiting for confirmation, ignoring new offer.");
-            }
+            // Si estoy en otro estado, ignoro el pedido
             _ => {
                 self.logger.warn(format!(
                     "Delivery is not available to accept new offers, current status: {:?}",
@@ -545,20 +545,20 @@ impl Handler<DeliveryNoNeeded> for Delivery {
     type Result = ();
 
     fn handle(&mut self, msg: DeliveryNoNeeded, _ctx: &mut Self::Context) -> Self::Result {
-        if let Some(current_order) = &self.current_order {
-            if current_order.order_id == msg.order.order_id {
-                self.logger
-                    .info("Order no longer needed, resetting current order.");
-                self.current_order = None;
-                self.status = DeliveryStatus::Available;
-            } else {
-                self.logger.warn(format!(
-                    "Received DeliveryNoNeeded for a different order ({}), ignoring",
-                    msg.order.order_id
-                ));
-            }
+        if let Some(_current_order) = &self.current_order {
+            self.logger
+                .info(format!(
+                "Received DeliveryNoNeeded for a different order ({}), ignoring",
+                msg.order.order_id
+            ));
+                
         } else {
-            self.logger.warn("No current order to cancel.");
+            self.logger.info(format!(
+                "DeliveryNoNeeded received for order ID: {}",
+                msg.order.order_id
+            ));
+            self.current_order = None;
+            self.status = DeliveryStatus::Available;
         }
     }
 }
@@ -571,12 +571,18 @@ impl Handler<DeliverThisOrder> for Delivery {
 
     fn handle(&mut self, msg: DeliverThisOrder, ctx: &mut Self::Context) -> Self::Result {
         if let Some(current_order) = &self.current_order {
-            if current_order.order_id == msg.order.order_id {
-                self.logger.info(format!(
+            self.logger.warn(format!(
+                "Delivery already has an order (ID: {}), cannot deliver new order (ID: {})",
+                current_order.order_id, msg.order.order_id
+            ));
+        } else {
+            self.status = DeliveryStatus::Delivering;
+            let mut new_order = msg.order.clone();
+            
+            self.logger.info(format!(
                     "Delivering order for client '{}' to destination {:?}",
-                    current_order.client_id, msg.order.client_position
+                    new_order.client_id, new_order.client_position
                 ));
-                let mut new_order = msg.order.clone();
 
                 // Simular el tiempo de llegada al restaurante y al cliente
                 let delay_ms = self.calcular_delay_ms(
@@ -592,6 +598,8 @@ impl Handler<DeliverThisOrder> for Delivery {
 
                 new_order.expected_delivery_time = delay_ms;
 
+                self.current_order = Some(new_order.clone());
+
                 self.send_network_message(NetworkMessage::UpdateOrderStatus(UpdateOrderStatus {
                     order: new_order.clone(),
                 }));
@@ -604,14 +612,6 @@ impl Handler<DeliverThisOrder> for Delivery {
                 });
 
                 self.position = msg.order.client_position;
-            } else {
-                self.logger.warn(format!(
-                    "Received DeliverThisOrder for a different order ({}), ignoring",
-                    msg.order.order_id
-                ));
-            }
-        } else {
-            self.logger.warn("No current order to deliver.");
         }
     }
 }

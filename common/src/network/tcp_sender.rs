@@ -44,11 +44,6 @@ impl Handler<NetworkMessage> for TCPSender {
 
     fn handle(&mut self, msg: NetworkMessage, ctx: &mut Self::Context) {
         self.queue.push_back(msg);
-        println!(
-            "[TCPSender] Message added to queue, queue size: {}",
-            self.queue.len()
-        );
-        println!("[TCPSender] Current queue: {:?}", self.queue);
         if self.queue.len() == 1 {
             ctx.notify(ProcessQueue);
         }
@@ -97,13 +92,7 @@ impl Handler<ProcessQueue> for TCPSender {
                         act.queue.clear(); // Opcional: limpiar cola porque hay error
 
                         // Loguear error (o enviar a otro actor supervisor)
-                        println!("[TCPSender] {}", err_msg);
-
-                        // Por ejemplo, enviar mensaje a supervisor o hacer self-stop:
-                        // ctx.stop();
-
-                        // O emitir mensaje para que quien controle la conexión maneje reconexión
-                        // addr.do_send(SendError(err_msg));
+                        eprintln!("[TCPSender] {}", err_msg);
                     }
                 }
             }))
@@ -117,7 +106,6 @@ impl Handler<Shutdown> for TCPSender {
     type Result = ();
 
     fn handle(&mut self, _msg: Shutdown, ctx: &mut Self::Context) {
-        println!("[TCPSender] Received Shutdown signal.");
         self.writer = None;
         self.queue.clear();
         ctx.stop();

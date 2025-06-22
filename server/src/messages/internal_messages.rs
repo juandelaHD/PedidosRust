@@ -94,36 +94,6 @@ pub struct FinishDeliveryAssignment {
 }
 
 /////////////////////////////////////////////////////////////////////
-// Mensajes del Reaper
-/////////////////////////////////////////////////////////////////////
-
-/// Message to start the reaping process for a user.
-///
-/// ## Purpose
-/// Initiates the process to check and clean up resources for a user (e.g., after disconnect).
-///
-/// ## Contents
-/// - `user_id`: The ID of the user to reap.
-#[derive(Message, Debug, Clone, Serialize, Deserialize)]
-#[rtype(result = "()")]
-pub struct StartReapProcess {
-    pub user_id: String,
-}
-
-/// Message to check if a user should be reaped (cleaned up).
-///
-/// ## Purpose
-/// Used to verify if a user is eligible for resource cleanup.
-///
-/// ## Contents
-/// - `user_id`: The ID of the user to check.
-#[derive(Message, Debug, Clone, Serialize, Deserialize)]
-#[rtype(result = "()")]
-pub struct CheckReapUser {
-    pub user_id: String,
-}
-
-/////////////////////////////////////////////////////////////////////
 // Mensajes del Order Service
 /////////////////////////////////////////////////////////////////////
 
@@ -179,3 +149,27 @@ pub struct GetLogsFromIndex {
 #[derive(Message, Debug, Clone, Serialize, Deserialize)]
 #[rtype(result = "Snapshot")]
 pub struct GetAllStorage;
+
+
+
+/// Represents a message to trigger a timer for the removal or cleanup of
+/// a user by its unique identifier.
+/// 
+/// # Fields
+/// - `restaurant_id`: The unique identifier of the user to be reaped.
+#[derive(Message, Debug, Clone, Serialize, Deserialize)]
+#[rtype(result = "()")]
+pub struct ReapUser {
+    pub user_id: String,
+}
+
+
+/// Message used to cancel reaping process for a specific user.
+///
+/// # Fields
+/// * `user_id` - The unique identifier of the user to reconnect.
+#[derive(Message, Debug, Clone, Serialize, Deserialize)]
+#[rtype(result = "()")]
+pub struct ReconnectUser {
+    pub user_id: String,
+}

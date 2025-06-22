@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use crate::types::delivery_status::DeliveryStatus;
+use crate::{bimap::BiMap, types::delivery_status::DeliveryStatus};
 use crate::types::order_status::OrderStatus;
 use actix::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -113,8 +113,8 @@ pub struct Snapshot {
     pub deliverys: HashMap<String, DeliveryDTO>,
     /// Dictionary with information about orders.
     pub orders: HashMap<u64, OrderDTO>,
-    /// Dictionary of accepted deliveries
-    pub accepted_deliveries: HashMap<u64, HashSet<String>>,
+    /// BiMap of accepted deliveries
+    pub accepted_deliveries: BiMap<u64, String>,
     /// Index of the next log
     pub next_log_id: u64,
     /// Index of the minimum persistent log

@@ -182,6 +182,20 @@ pub struct GetOrder {
     pub order_id: u64,
 }
 
+/// Message to remove a user from storage.
+///
+/// ## Purpose
+/// Used to record the removal of a user.
+///
+/// ## Contents
+/// - `user_id`: The ID of the user to remove.
+#[derive(Message, Debug, Clone, Serialize, Deserialize)]
+#[rtype(result = "()")]
+pub struct RemoveUser {
+    pub user_id: String,
+}
+
+
 /// Message to remove a client from storage.
 ///
 /// ## Purpose
@@ -459,7 +473,7 @@ pub struct InsertAcceptedDelivery {
 /// - `order_id`: The ID of the order.
 ///   Returns: An optional set of delivery IDs that were removed.
 #[derive(Message, Debug, Clone, Serialize, Deserialize)]
-#[rtype(result = "Option<HashSet<String>>")]
+#[rtype(result = "()")]
 pub struct RemoveAcceptedDeliveries {
     pub order_id: u64,
 }

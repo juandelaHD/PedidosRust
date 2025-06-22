@@ -7,9 +7,7 @@ use colored::Color;
 use common::constants::DELAY_SECONDS_TO_START_RECONNECT;
 use common::logger::Logger;
 use common::messages::{
-    ConnectionClosed, DeliverThisOrder, DeliveryAccepted, LeaderIs, NetworkMessage, NewOrder,
-    RecoverProcedure, RegisterUser, RequestNearbyDelivery, StartRunning, UpdateOrderStatus,
-    WhoIsLeader,
+    CancelOrder, ConnectionClosed, DeliverThisOrder, DeliveryAccepted, LeaderIs, NetworkMessage, NewOrder, RecoverProcedure, RegisterUser, RequestNearbyDelivery, StartRunning, UpdateOrderStatus, WhoIsLeader
 };
 use common::network::communicator::Communicator;
 use common::network::connections::{connect_one, connect_some, reconnect};
@@ -108,6 +106,11 @@ impl Restaurant {
             .as_ref()
             .map(|c| c.local_address)
             .expect("Socket address not initialized");
+
+        self.logger.info(format!(
+            "Starting Restaurant actor with ID: {} at position: {:?}",
+            self.info.id, self.info.position
+        ));
         self.send_network_message(NetworkMessage::WhoIsLeader(WhoIsLeader {
             origin_addr: actual_socket_addr,
             user_id: self.info.id.clone(),
@@ -391,6 +394,11 @@ impl Handler<NewOrder> for Restaurant {
                         self.logger
                             .error("Kitchen sender is not set, cannot send order to kitchen");
                     }
+                    
+                    ctx.address().do_send(UpdateOrderStatus {
+                        order: new_order.clone(),
+                    });
+
                 } else {
                     // Simulamos que el restaurante rechaza el pedido
                     self.logger.info(format!(
@@ -399,10 +407,11 @@ impl Handler<NewOrder> for Restaurant {
                     ));
                     new_order.status = OrderStatus::Cancelled;
                     // Aquí podrías enviar un mensaje de rechazo al coordinador o al cliente
+                    ctx.address().do_send(CancelOrder {
+                        order: new_order.clone(),
+                    });
                 }
-                ctx.address().do_send(UpdateOrderStatus {
-                    order: new_order.clone(),
-                });
+
             }
             _ => {
                 self.logger.warn(format!(
@@ -422,6 +431,17 @@ impl Handler<UpdateOrderStatus> for Restaurant {
 
     fn handle(&mut self, msg: UpdateOrderStatus, _ctx: &mut Self::Context) -> Self::Result {
         self.send_network_message(NetworkMessage::UpdateOrderStatus(msg));
+    }
+}
+
+/// Handles [`CancelOrder`] messages.
+///
+/// Forwards a cancel order message to the server cluster via the network communicator.
+impl Handler<CancelOrder> for Restaurant {
+    type Result = ();
+
+    fn handle(&mut self, msg: CancelOrder, _ctx: &mut Self::Context) -> Self::Result {
+        self.send_network_message(NetworkMessage::CancelOrder(msg));
     }
 }
 
