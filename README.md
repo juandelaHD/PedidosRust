@@ -43,6 +43,8 @@ La consigna del trabajo práctico puede encontrarse [aqui](https://concurrentes-
 3. [Instalación y Ejecución](#instalación-y-ejecución)
 4. [Ejemplo de Ejecución](#ejemplo-de-ejecución)
 5. [Pruebas](#pruebas)
+   - [Pruebas manuales](#pruebas-manuales)
+   - [Pruebas de volumen](#pruebas-automáticas-y-de-volumen)
 
 ---
 
@@ -79,11 +81,11 @@ El sistema está conformado por múltiples procesos independientes que se ejecut
 
 Los siguientes procesos representan las distintas funciones centrales del sistema:
 
-- **PaymentGateway** — Puerto TCP: `8080`
-- **Server1** — Puerto TCP: `8081`
-- **Server2** — Puerto TCP: `8082`
-- **Server3** — Puerto TCP: `8083`
-- **Server4** — Puerto TCP: `8084`
+- **PaymentGateway** — Puerto TCP: `8085`
+- **Server1** — Puerto TCP: `8080`
+- **Server2** — Puerto TCP: `8081`
+- **Server3** — Puerto TCP: `8082`
+- **Server4** — Puerto TCP: `8083`
 
 Cada uno de estos servidores ejecuta un `Coordinator`, coordina actores internos y maneja conexiones con otros nodos del sistema.
 
@@ -1326,9 +1328,7 @@ La implementación final incluye un sistema donde los `CoordinatorManager` enví
   - `RetryLater` : Mensaje enviado pidiendo que se vuelva a reenviar el mensaje más tarde.
   - `Shutdown`: Señal para iniciar el proceso de cierre ordenado de la aplicación o componente.
 
-
-
-
+---
 
 ## Instalación y Ejecución
 
@@ -1436,7 +1436,46 @@ Además de las pruebas manuales, el repositorio incluye **scripts de automatizac
 - Se pueden lanzar varios servidores a la vez para probar la tolerancia a fallos y la correcta replicación del estado.
 - Los logs generados por cada proceso permiten analizar el comportamiento del sistema ante cargas elevadas y detectar posibles cuellos de botella o errores de sincronización.
 
-> **Nota:** Consulta la carpeta `scripts/` del repositorio para ver ejemplos de uso y las instrucciones detalladas para ejecutar pruebas automáticas y de stress.
+#### **Ejecutar una prueba automática paso a paso**
 
----
+1. **Ubícate en la raíz del repositorio**  
+   Abre una terminal y navega hasta la carpeta principal del proyecto:
+
+   ```bash
+   cd /ruta/a/PedidosRust
+   ```
+
+2. **Da permisos de ejecución al script deseado**  
+   Por ejemplo, para el script [`test_3_2_5_5.sh`](scripts/test_3_2_5_5.sh):
+
+   ```bash
+   chmod +x scripts/test_3_2_5_5.sh
+   ```
+
+3. **Ejecuta el script**  
+   Lanza la prueba automática con:
+
+   ```bash
+   ./scripts/test_3_2_5_5.sh
+   ```
+    > **Nota:** Este script lanza 3 servidores, 2 restaurantes, 5 deliveries y 5 clientes, simulando un escenario de prueba con múltiples interacciones.
+
+    > **Nota:** El script abrirá múltiples terminales (requiere entorno gráfico y `gnome-terminal`) y ejecutará los procesos necesarios (servidores, clientes, restaurantes, deliveries, etc.) de forma coordinada.
+
+4. **Observa los logs**  
+   Cada terminal mostrará la salida de un proceso distinto. Puedes analizar el comportamiento del sistema, buscar errores o cuellos de botella y verificar la tolerancia a fallos.
+
+5. **Detén los procesos**  
+   Cuando finalices la prueba, puedes cerrar las terminales abiertas o detener los procesos manualmente.  
+   Para cerrar **todas** las terminales abiertas por la prueba de forma automática, ejecuta el siguiente script desde la raíz del repositorio:
+
+   ```bash
+   ./scripts/close_all_terminals.sh
+   ```
+
+   > **Nota:** Este script cerrará **todas** las terminales `gnome-terminal` abiertas por el usuario actual, no solo las de las pruebas. Úsalo con precaución.
+
+> **Importante:**  
+> - Asegúrate de tener instalado `gnome-terminal` y de estar en un entorno gráfico compatible.  
+> - Puedes modificar los scripts o crear nuevos en la carpeta [`scripts/`](scripts/) para adaptar las pruebas a tus necesidades específicas.
 

@@ -78,8 +78,8 @@ impl Handler<RegisterConnection> for PaymentGateway {
 
 /// Handles [`NetworkMessage`] messages for payment authorization and payment completion.
 ///
-/// - On [`RequestAuthorization`], decides to authorize or reject the order.
-/// - On [`BillPayment`], completes the payment if the order was previously authorized.
+/// - On [`NetworkMessage::RequestAuthorization`], decides to authorize or reject the order.
+/// - On [`NetworkMessage::BillPayment`], completes the payment if the order was previously authorized.
 impl Handler<NetworkMessage> for PaymentGateway {
     type Result = ();
 

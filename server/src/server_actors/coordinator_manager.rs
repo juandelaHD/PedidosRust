@@ -122,10 +122,10 @@ impl CoordinatorManager {
             }
 
             self.logger
-                .info(format!("Iniciando elección. Enviado a {}", next));
+                .info(format!("Starting election. Sent to {}", next));
         } else {
             self.logger.warn(
-                "No hay siguiente nodo en el anillo para iniciar elección me autoproclamo líder",
+                "There is no next node in the ring to start the election, I proclaim myself leader",
             );
             // Si no hay siguiente nodo, me autoproclamo líder
             self.coordinator_actual = Some(self.my_socket_addr);
@@ -141,7 +141,7 @@ impl CoordinatorManager {
             return; // Ya está corriendo
         }
         if self.election_in_progress {
-            self.logger.info("Elección en progreso, omitiendo Updates.");
+            self.logger.info("Election in progress, skipping Updates.");
             return;
         }
 
@@ -151,7 +151,7 @@ impl CoordinatorManager {
         let handler = ctx.run_interval(INTERVAL_STORAGE, move |act, ctx| {
             if act.election_in_progress {
                 act.logger
-                    .info("Elección en progreso, omitiendo actualizaciones de Storage.");
+                    .info("Election in progress, skipping Storage updates.");
                 return;
             }
 
@@ -276,19 +276,20 @@ impl CoordinatorManager {
         ctx.run_interval(INTERVAL_HEARTBEAT, |act, ctx| {
             if act.election_in_progress {
                 act.logger
-                    .info("Elección en progreso, omitiendo heartbeat.");
+                    .info("Election in progress, skipping heartbeat check.");
                 return;
             }
 
             if let Some(leader) = act.coordinator_actual {
                 if leader == act.my_socket_addr {
-                    act.logger.info("Soy el líder, no hago ping.");
+                    act.logger
+                        .info("I am the current leader, skipping heartbeat.");
                     return;
                 }
 
                 if act.pong_pending {
                     act.logger
-                        .warn("No se recibió Pong del líder. Iniciando elección...");
+                        .warn("Did not receive Pong from leader. Starting election...");
                     act.coordinator_actual = None;
                     act.election_in_progress = true;
 
@@ -321,7 +322,7 @@ impl CoordinatorManager {
                         }
                         Err(e) => {
                             act.logger.warn(format!(
-                                "Fallo al enviar ping al líder: {}. Iniciando elección...",
+                                "Failed to send ping to leader: {}. Starting election...",
                                 e
                             ));
                             act.coordinator_actual = None;
@@ -339,7 +340,7 @@ impl CoordinatorManager {
                 }
             } else {
                 act.logger
-                    .info("No hay líder actual. Iniciando elección...");
+                    .info("No current leader known, starting election...");
                 act.election_in_progress = true;
                 act.start_leader_election();
             }
@@ -581,7 +582,7 @@ impl CoordinatorManager {
                     "Received LeaderIdIs from {}, updating coordinator to {}",
                     leader_addr, msg.leader_id
                 ));
-                self.coordinator_actual = Some(*leader_addr); ///////////////
+                self.coordinator_actual = Some(*leader_addr);
             } else {
                 self.logger.info(format!(
                     "Received LeaderIdIs from {}, but no address found for it",
@@ -599,10 +600,10 @@ impl CoordinatorManager {
         {
             if self.coordinator_actual != Some(*registered_remote_addr) {
                 self.logger.warn(format!(
-                    "Pisé a mi coordinador porque llegó LeaderIdIs. Local: {:?}, Received: {}",
+                    "I overwrote my coordinator because LeaderIdIs arrived. Local: {:?}, Received: {}",
                     self.coordinator_actual, *registered_remote_addr
                 ));
-                self.coordinator_actual = Some(*registered_remote_addr); //piso al actual
+                self.coordinator_actual = Some(*registered_remote_addr);
             }
         }
     }
@@ -649,16 +650,14 @@ impl Handler<RequestAllStorage> for CoordinatorManager {
         if let Some(remote_addr) = self.coord_addresses.get_by_value(&id) {
             if !self.coord_communicators.contains_key(remote_addr) {
                 self.logger.warn(format!(
-                    "Coordinador {} no está conectado, no puedo enviarle actualizaciones de Storage",
+                    "Coordinator {} is not connected, cannot send Storage updates to it",
                     id
                 ));
                 return;
             }
         } else {
-            self.logger.warn(format!(
-                "No se encontró dirección para el coordinador: {}",
-                id
-            ));
+            self.logger
+                .warn(format!("No address found for coordinator: {}", id));
             return;
         }
 
@@ -681,12 +680,12 @@ impl Handler<RequestAllStorage> for CoordinatorManager {
                         )
                         .unwrap_or_else(|e| {
                             act.logger
-                                .error(format!("Error al enviar StorageSnapshot: {}", e))
+                                .error(format!("Error sending StorageSnapshot: {}", e))
                         });
                     }
                     Err(e) => {
                         act.logger
-                            .warn(format!("Error al obtener snapshot de storage: {:?}", e));
+                            .warn(format!("Error obtaining storage snapshot: {:?}", e));
                     }
                 }
                 fut::ready(())
@@ -711,7 +710,7 @@ impl Handler<LeaderIdIs> for CoordinatorManager {
 
     fn handle(&mut self, msg: LeaderIdIs, _ctx: &mut Context<Self>) {
         self.logger
-            .info(format!("Líder recibido: {}", msg.leader_id));
+            .info(format!("LLeader received: {}", msg.leader_id));
         self.handle_leader_is(msg, _ctx);
     }
 }
@@ -723,7 +722,7 @@ impl Handler<CheckPongTimeout> for CoordinatorManager {
     fn handle(&mut self, _msg: CheckPongTimeout, _ctx: &mut Self::Context) {
         if self.pong_pending && self.pong_leader_addr == self.coordinator_actual {
             self.logger
-                .warn("Timeout esperando Pong. Iniciando elección...");
+                .warn("Timeout waiting for Pong. Starting election...");
             self.pong_pending = false;
 
             if let Some(dead_leader) = self.coordinator_actual {
