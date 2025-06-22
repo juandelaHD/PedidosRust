@@ -1,4 +1,4 @@
-use crate::restaurant_actors::{chef::Chef};
+use crate::restaurant_actors::chef::Chef;
 use actix::{Addr, Message};
 use common::types::dtos::OrderDTO;
 use serde::{Deserialize, Serialize};

@@ -599,8 +599,23 @@ impl Handler<NetworkMessage> for Client {
                 // Chequeo si el pedido es el mio
                 if let Some(order) = &self.client_order {
                     if order.order_id == msg_data.order.order_id {
-                        self.logger
-                            .info("Your order has been cancelled. Try again later.");
+                        match order.status {
+                            OrderStatus::Authorized => {
+                                self.logger.info(format!(
+                                    "Your order has been cancelled. The restaurant {} rejected the order. Try again later.",
+                                    order.restaurant_id
+                                ));
+                            }
+                            OrderStatus::ReadyForDelivery => {
+                                self.logger.info(
+                                    "Your order has been cancelled. All deliveries have rejected the order. Try again later.",
+                                );
+                            }
+                            _ => {
+                                self.logger
+                                    .warn("Your order has been cancelled. Try again later.");
+                            }
+                        }
                         self.client_order = None; // Limpiamos el pedido actual
                         ctx.stop();
                     } else {

@@ -25,7 +25,7 @@ pub struct Reaper {
 
 impl Reaper {
     /// Creates a new `Reaper` actor with an empty user timer map and the specified storage address.
-    /// 
+    ///
     /// ## Parameters
     /// - `storage_addr`: The address of the `Storage` actor to send messages to.
     pub fn new(storage_addr: Addr<Storage>) -> Self {
