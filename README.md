@@ -35,11 +35,14 @@ La consigna del trabajo práctico puede encontrarse [aqui](https://concurrentes-
      - [Proceso Cliente](#proceso-cliente)
      - [Proceso Restaurante](#proceso-restaurante-async)
      - [Proceso Delivery](#proceso-delivery-async)
-   - [Modelo de replicación y tolerancia a fallos](#modelo-de-replicación-y-tolerancia-a-fallos)
+   - [Modelo de replicación y tolerancia a fallos](#modelo-de-replicación-de-servidores-y-tolerancia-a-fallos)
    - [Elección de líder](#elección-de-líder)
-2. [Instalación y Ejecución](#instalación-y-ejecución)
-3. [Ejemplo de Ejecución](#ejemplo-de-ejecución)
-4. [Pruebas](#pruebas)
+2. [Cambios en la entrega final](#cambios-en-la-entrega-final)
+   - [Heartbeats](#heartbeats)
+   - [Nuevos Mensajes implementados](#nuevos-mensajes-implementados)
+3. [Instalación y Ejecución](#instalación-y-ejecución)
+4. [Ejemplo de Ejecución](#ejemplo-de-ejecución)
+5. [Pruebas](#pruebas)
 
 ---
 
@@ -54,7 +57,7 @@ La consigna del trabajo práctico puede encontrarse [aqui](https://concurrentes-
   Se implementa el **algoritmo del anillo (Ring Algorithm)** para llevar a cabo la **elección de un Coordinator Manager** entre los distintos procesos `Coordinator`. Este mecanismo garantiza que, ante la caída del coordinador actual, el sistema pueda elegir automáticamente un nuevo líder sin necesidad de intervención externa.
 
 - **Exclusión Mutua Distribuida (Centralizada)**
-  Cuando se termina de preparar un pedido, el `DeliveryAssigner` debe asegurarse de que no se produzcan conflictos al asignar un delivery. Para ello, este actúa como punto de **exclusión mutua centralizada**. El `DeliveryAssigner` le envía un mensaje `RequestDelivery` al servidor, el cual notifica a todos los repartidores cercanos que hay un pedido listo para entregar enviándoles el mensaje `NewOfferToDeliver`. Los repartidores interesados envían un mensaje de oferta al servidor (`AcceptedOrder`), el servidor redirige la solicitud al `DeliveryAssigner` enviándole el mensaje `DeliveryAvailable` y este último selecciona al primero que se haya ofrecido, asignándole el pedido con el mensaje `DeliverThisOrder`. El resto de los repartidores reciben una notificación (mensaje `DeliveryNoNeeded`) de que ya no es necesario que se ofrezcan para esa entrega.
+  Cuando se termina de preparar un pedido, el `Coordinator`, particularmente el actor `Storage`, debe asegurarse de que no se produzcan conflictos al asignar un delivery. Para ello, este actúa como punto de **exclusión mutua centralizada**. El `DeliveryAssigner` le envía un mensaje `RequestDelivery` al servidor, el cual notifica a todos los repartidores cercanos que hay un pedido listo para entregar enviándoles el mensaje `NewOfferToDeliver`. Los repartidores interesados envían un mensaje de oferta al servidor (`DeliveryAccepted`), el servidor redirige la solicitud al `OrderService` reenviándole el mensaje `DeliveryAccepted` y este último selecciona al primero que se haya ofrecido, asignándole el pedido. En caso de que el `OrderService` recibe un mensaje de aceptacion del pedido, consulta con el storage el estado actual de la orden. En caso de que la orden ya estuviera tomada por otro delivery, le envía un mensaje para comunicarle que el delivery ya fue tomado [`DeliveryNoNeeded`]. Luego, el servidor envía al restaurant ese delivery disponible con el mensaje `DeliveryAvailable`. El restaurant enviará el mensaje `DeliverThisOrder`, el cual se reenviará al repartidor asignado para que complete la entrega. El resto de los repartidores reciben una notificación (mensaje `DeliveryNoNeeded`) de que ya no es necesario que se ofrezcan para esa entrega.
 
 - **Serialización de los accesos al estado global**
   Dentro del servidor, se encuentra el actor `Storage`, el cual es responsable de almacenar y gestionar el estado global del sistema. Este actor actúa como un repositorio centralizado para la información de clientes, restaurantes, repartidores y órdenes, asegurando que todos los nodos tengan acceso a un estado consistente. Al tratarse de un actor, el acceso a `Storage` está protegido por el modelo de actores, lo que evita problemas de concurrencia, permitiendo que múltiples nodos (clientes, restaurantes, deliveries y el gateway de pagos) interactúen con el estado global sin producirse race conditions.
@@ -150,7 +153,10 @@ El `TCPSender` es el actor responsable de **enviar mensajes TCP** hacia otro nod
 
 ```rust
 pub struct TCPSender {
+    /// Writer con buffer para el stream TCP.
     pub writer: Option<BufWriter<WriteHalf<TcpStream>>>,
+    /// Cola de mensajes pendientes por enviar.
+    pub queue: VecDeque<NetworkMessage>,
 }
 ```
 
@@ -165,9 +171,13 @@ Características:
 El `TCPReceiver` es el actor responsable de **leer mensajes entrantes desde un socket TCP** y reenviarlos al actor de destino adecuado dentro del sistema.
 
 ```rust
-pub struct TCPReceiver {
+pub struct TCPReceiver<A: Actor + Handler<NetworkMessage>> {
+    /// La dirección de socket del par remoto.
+    remote_addr: SocketAddr,
+    /// El lector con búfer para el flujo TCP.
     reader: Option<BufReader<ReadHalf<TcpStream>>>,
-    destination: Addr<Actor>,
+    /// La dirección Actix del actor de destino.
+    destination: Addr<A>,
 }
 ```
 
@@ -182,11 +192,22 @@ Características:
 Tanto el `TCP Sender` como el `TCP Receiver` están encapsulados dentro de una estructura llamada `Communicator`, que representa una **conexión lógica con otro nodo** (cliente, restaurante, delivery, otro servidor, o el Payment Gateway).
 
 ```rust
-pub struct Communicator {
-    pub sender: Addr<TCPSender>,
-    pub receiver: Addr<TCPReceiver>,
-    pub peer_type: PeerType, // Enum: Client, Restaurant, Delivery, Coordinator, Gateway
+pub struct Communicator<A>
+where
+    A: Actor<Context = Context<A>> + Handler<NetworkMessage>,
+{
+    /// La dirección de socket local de este par.
+    pub local_address: SocketAddr,
+    /// La dirección de socket del par remoto.
+    pub peer_address: SocketAddr,
+    /// El actor TCP remitente para los mensajes salientes.
+    pub sender: Option<Arc<Addr<TCPSender>>>,
+    /// El actor TCP receptor para los mensajes entrantes.
+    pub receiver: Option<Arc<Addr<TCPReceiver<A>>>>,
+    /// El tipo del par remoto.
+    pub peer_type: PeerType, // Enum: Cliente, Restaurante, Entrega, Coordinador, Gateway
 }
+
 ```
 
 Este diseño permite que los distintos actores del sistema interactúen entre sí mediante mensajes, sin necesidad de preocuparse por la gestión directa de sockets o serialización.
@@ -220,8 +241,12 @@ Estos actores son los encargados de gestionar la entrada y salida de mensajes TC
 
 ```rust
 pub struct Acceptor {
-    /// Puerto TCP donde escucha nuevas conexiones.
-    pub address: SocketAddr,
+    /// La dirección a la que se debe enlazar y escuchar conexiones entrantes.
+    addr: SocketAddr,
+    /// La dirección del actor coordinador con el que registrar las conexiones.
+    coordinator_address: Addr<Coordinator>,
+    /// Registrador de eventos del acceptor.
+    logger: Logger,
 }
 ```
 
@@ -248,26 +273,36 @@ Responsabilidades:
 
 ```rust
 pub struct Coordinator {
-  /// Coordinador actual.
-  pub current_coordinator: Option<SocketAddr>,
-  /// Estado de los pedidos en curso.
-  // pub active_orders: HashSet<u64>, // TODO: Ver si se puede sacar
-  /// Comunicador con el PaymentGateway
-  pub payment_communicator: Communicator
-  /// Diccionario de conexiones activas con clientes, restaurantes y deliverys.
-  pub communicators: HashMap<SocketAddr, Communicator>,
-  /// Diccionario de direcciones de usuarios con sus correspondientes IDs.
-  pub user_addresses: HashMap<SocketAddr, ClientId>
-  /// Canal de envío hacia el actor `Storage`.
-  pub storage: Addr<Storage>,
-  /// Canal de envío hacia el actor `Reaper`.
-  pub reaper: Addr<Reaper>,
-  /// Servicio de órdenes.
-  pub order_service: Addr<OrderService>,
-  /// Servicio de restaurantes cercanos.
-  pub nearby_restaurant_service: Addr<NearbyRestaurantService>,
-  /// Servicio de deliverys cercanos.
-  pub nearby_delivery_service: Addr<NearbyDeliveryService>,
+    /// Identificador único para este coordinador.
+    pub id: String,
+    /// Direcciones de todos los nodos en el anillo.
+    pub ring_nodes: HashMap<String, SocketAddr>,
+    /// Dirección de socket de este coordinador.
+    pub my_addr: SocketAddr,
+    /// Dirección del coordinador actual (líder).
+    pub current_coordinator: Option<SocketAddr>,
+    /// Mapa bidireccional de direcciones de usuario e IDs de usuario.
+    pub user_addresses: BiMap<SocketAddr, String>,
+    /// Mapa de direcciones remotas a sus comunicadores.
+    pub communicators: HashMap<SocketAddr, Communicator<Coordinator>>,
+    /// Dirección del actor de almacenamiento.
+    pub storage: Option<Addr<Storage>>,
+    /// Dirección del actor del servicio de pedidos.
+    pub order_service: Option<Addr<OrderService>>,
+    /// Dirección del actor del servicio de restaurantes cercanos.
+    pub nearby_restaurant_service: Option<Addr<NearbyRestaurantsService>>,
+    /// Dirección del actor del servicio de repartidores cercanos.
+    pub nearby_delivery_service: Option<Addr<NearbyDeliveryService>>,
+    /// Reaper para eliminar usuarios inactivos.
+    pub reaper: Option<Addr<Reaper>>,
+    /// Logger para eventos del coordinador.
+    pub logger: Logger,
+    /// Dirección del actor gestor de coordinadores.
+    pub coordinator_manager: Option<Addr<CoordinatorManager>>,
+    /// Streams TCP pendientes para conexiones del anillo.
+    pub pending_streams: HashMap<SocketAddr, TcpStream>,
+    /// Temporizadores para timeouts de asignación de pedidos.
+    pub order_timers: HashMap<u64, SpawnHandle>,
 }
 ```
 
@@ -287,12 +322,36 @@ Este actor utiliza los `Communicator` previamente establecidos con `Coordinator2
 
 ```rust
 pub struct CoordinatorManager {
-    /// Lista ordenada de nodos en el anillo.
-    pub ring_nodes: Vec<SocketAddr>,
-    /// Nodo coordinador actual.
-    pub coordinator: Option<SocketAddr>,
-    /// Timestamps de los últimos heartbeats recibidos por nodo.
-    pub heartbeat_timestamps: HashMap<SocketAddr, Instant>,
+    /// ID único de este CoordinatorManager.
+    pub id: String,
+    /// Direcciones de todos los nodos en el anillo.
+    pub ring_nodes: HashMap<String, SocketAddr>,
+    /// Nodo coordinador actual (líder).
+    pub coordinator_actual: Option<SocketAddr>,
+    /// Mapa de direcciones de nodos coordinadores a sus comunicadores.
+    pub coord_communicators: HashMap<SocketAddr, Communicator<Coordinator>>,
+    /// Mapa bidireccional de direcciones de coordinadores y sus IDs.
+    pub coord_addresses: BiMap<SocketAddr, String>,
+    /// Dirección de socket de este servidor.
+    pub my_socket_addr: SocketAddr,
+    /// Logger para eventos del gestor de coordinadores.
+    pub logger: Logger,
+    /// Dirección del actor local `Coordinator`.
+    pub coordinator_addr: Addr<Coordinator>,
+    /// Indica si hay un Pong pendiente del líder.
+    pong_pending: bool,
+    /// Indica si hay una elección de líder en curso.
+    election_in_progress: bool,
+    /// Dirección del actor `Storage`.
+    pub storage: Addr<Storage>,
+    /// Dirección del nodo del que se espera un Pong.
+    pong_leader_addr: Option<SocketAddr>,
+    /// Handle del temporizador para esperar respuestas Pong.
+    waiting_pong_timer: Option<actix::SpawnHandle>,
+    /// Handle del temporizador para actualizaciones periódicas de almacenamiento.
+    get_storage_updates_timer: Option<actix::SpawnHandle>,
+    /// Esperando respuesta del líder.
+    waiting_for_leader: Option<actix::SpawnHandle>,
 }
 ```
 
@@ -318,14 +377,24 @@ Los servicios internos se encargan de tareas especializadas dentro del proceso `
 
 ```rust
 pub struct OrderService {
-   /// Diccionario local de órdenes y sus estados.
-   pub orders: HashMap<u64, OrderStatus>,
-   /// Diccionario local de clientes y su órden.
-   pub clients_orders: HashMap<String, Vec<u64>>,
-   /// Diccionario local de restaurantes y sus órdenes.
-   pub restaurants_orders: HashMap<String, Vec<u64>>,
-   /// Cola de órdenes pendientes para procesamiento.
-   pub pending_orders: Vec<u64>,
+    /// Rastrea el estado de cada pedido por ID de pedido.
+    pub orders: HashMap<u64, OrderStatus>,
+    /// Mapea los IDs de clientes a sus IDs de pedidos asociados.
+    pub clients_orders: HashMap<String, Vec<u64>>,
+    /// Mapea los IDs de restaurantes a sus IDs de pedidos asociados.
+    pub restaurants_orders: HashMap<String, Vec<u64>>,
+    /// Lista de IDs de pedidos pendientes.
+    pub pending_orders: Vec<u64>,
+    /// Dirección del actor Coordinator.
+    pub coordinator_address: Option<Addr<Coordinator>>,
+    /// Dirección del actor Storage.
+    pub storage_address: Option<Addr<Storage>>,
+    /// Logger para eventos del servicio de pedidos.
+    pub logger: Logger,
+    /// Comunicador para interactuar con el PaymentGateway.
+    pub payment_gateway_address: Option<Communicator<OrderService>>,
+    /// Stream TCP pendiente para la conexión con PaymentGateway.
+    pub pending_stream: Option<TcpStream>,
 }
 ```
 
@@ -333,17 +402,25 @@ pub struct OrderService {
 
 ```rust
 pub struct NearbyDeliveryService {
-   /// Cache local de repartidores disponibles con su ubicación.
-   pub available_deliveries: HashMap<String, (f32, f32)>, // delivery_id -> posición (latitud, longitud)
+    /// Dirección del actor Coordinator al que se enviarán mensajes.
+    pub coordinator_address: Addr<Coordinator>,
+    /// Dirección del actor Storage para obtener repartidores.
+    pub storage_address: Addr<Storage>,
+    /// Instancia de logger para eventos.
+    pub logger: Logger,
 }
 ```
 
 ##### Estado interno de NearbyRestaurantService
 
 ```rust
-pub struct NearbyRestaurantService {
-   /// Cache local de restaurantes disponibles con su ubicación.
-   pub available_restaurants: HashMap<String, (f32, f32)>, // restaurant_id -> posición (latitud, longitud)
+pub struct NearbyRestaurantsService {
+    /// Dirección del actor Storage para obtener restaurantes.
+    pub storage_addr: Addr<Storage>,
+    /// Dirección del actor Coordinator al que se enviarán mensajes.
+    pub coordinator_addr: Addr<Coordinator>,
+    /// Instancia de logger para eventos.
+    pub logger: Logger,
 }
 ```
 
@@ -368,75 +445,97 @@ Se comunica directamente con los siguientes actores:
 ##### Estado interno del storage actor
 
 ```rust
+/// Objeto de transferencia de datos (DTO) para representar diferentes tipos de usuarios en el sistema.
+pub enum UserDTO {
+    /// Representa un Cliente (usuario que realiza pedidos).
+    Client(ClientDTO),
+    /// Representa un Restaurante (usuario que prepara los pedidos).
+    Restaurant(RestaurantDTO),
+    /// Representa un Repartidor (usuario que lleva los pedidos a los clientes).
+    Delivery(DeliveryDTO),
+}
+
 pub struct ClientDTO {
-  /// Posición actual del cliente en coordenadas 2D.
-  pub client_position: (f32, f32),
-  /// ID único del cliente.
-  pub client_id: String,
-  /// Pedido del cliente (id de alimento).
-  pub client_order_id: Option<u64>,
-  /// Marca de tiempo que registra la última actualización del cliente.
-  pub time_stamp: Instant,
+    /// Posición del cliente en coordenadas 2D.
+    pub client_position: (f32, f32),
+    /// ID único del cliente.
+    pub client_id: String,
+    /// Pedido asociado al cliente (si existe).
+    pub client_order: Option<OrderDTO>,
+    /// Marca temporal que registra la última actualización del cliente.
+    pub time_stamp: std::time::SystemTime,
 }
 
 pub struct RestaurantDTO {
-  /// Posición actual del restaurante en coordenadas 2D.
-  pub restaurant_position: (f32, f32),
-  /// ID único del restaurante.
-  pub restaurant_id: String,
-  /// Pedidos autorizados por el PaymentGatewat pero no aceptados todavía
-  /// por el restaurante
-  pub authorized_orders: HashSet<u64>,
-  /// Pedidos pendientes.
-  pub pending_orders: HashSet<u64>,
-  /// Marca de tiempo que registra la última actualización del restaurante.
-  pub time_stamp: Instant,
+    /// Posición del restaurante en coordenadas 2D.
+    pub restaurant_position: (f32, f32),
+    /// ID único del restaurante.
+    pub restaurant_id: String,
+    /// Pedidos que el sistema de pago ha autorizado para el restaurante, pero que aún no han sido aceptados por el restaurante.
+    pub authorized_orders: HashSet<OrderDTO>,
+    /// Pedidos pendientes que el restaurante aún no ha preparado.
+    pub pending_orders: HashSet<OrderDTO>,
+    /// Marca temporal que registra la última actualización del restaurante.
+    pub time_stamp: std::time::SystemTime,
 }
 
 pub struct DeliveryDTO {
-  /// Posición actual del delivery en coordenadas 2D.
-  pub delivery_position: (f32, f32),
-  /// ID único del delivery.
-  pub delivery_id: String,
-  /// ID del cliente actual asociado con el delivery (si existe).
-  pub current_client_id: Option<String>,
-  /// ID de la orden actual.
-  pub current_order_id: Option<u64>,
-  /// Estado actual del delivery.
-  pub status: DeliveryStatus,
-  /// Marca de tiempo que registra la última actualización del delivery.
-  pub time_stamp: Instant,
+    /// Posición del repartidor en coordenadas 2D.
+    pub delivery_position: (f32, f32),
+    /// ID único del repartidor.
+    pub delivery_id: String,
+    /// ID único del cliente que está siendo atendido actualmente por el repartidor (None si no está disponible).
+    pub current_client_id: Option<String>,
+    /// ID único del pedido que está siendo entregado (None si no está siendo entregado).
+    pub current_order: Option<OrderDTO>,
+    /// Estado del repartidor.
+    pub status: DeliveryStatus,
+    /// Marca temporal que registra la última actualización del repartidor.
+    pub time_stamp: std::time::SystemTime,
 }
 
 pub struct OrderDTO {
-  /// ID de la orden.
-  pub order_id: u64,
-  /// Nombre del plato seleccionado
-  pub dish_name: String
-  /// ID del cliente asociado a la orden.
-  pub client_id: String,
-  /// ID del restaurante asociado a la orden.
-  pub restaurant_id: String,
-  /// ID del delivery asociado a la orden.
-  pub delivery_id: Option<String>,
-  /// Estado de la orden.
-  pub status: OrderStatus,
-  /// Marca de tiempo que registra la última actualización de la orden.
-  pub time_stamp: Instant,
+    /// ID único del pedido.
+    pub order_id: u64,
+    /// Nombre del plato asociado con el pedido.
+    pub dish_name: String,
+    /// ID único del cliente que realizó el pedido.
+    pub client_id: String,
+    /// ID único del restaurante que preparará el pedido.
+    pub restaurant_id: String,
+    /// ID único del repartidor asignado para entregar el pedido (None si no está siendo entregado).
+    pub delivery_id: Option<String>,
+    /// Estado del pedido.
+    pub status: OrderStatus,
+    /// Posición del cliente en coordenadas 2D.
+    pub client_position: (f32, f32),
+    /// Tiempo estimado para la entrega del pedido.
+    pub expected_delivery_time: u64,
+    /// Marca temporal que registra la última actualización del pedido.
+    pub time_stamp: std::time::SystemTime,
 }
 
 pub struct Storage {
-  /// Diccionario con información sobre clientes.
-  pub clients: HashMap<String, ClientEntity>,
-  /// Diccionario con información sobre restaurantes.
-  pub restaurants: HashMap<String, RestaurantEntity>,
-  /// Diccionario con información sobre deliverys.
-  pub deliverys: HashMap<String, DeliveryEntity>,
-  /// Diccionario de órdenes.
-  pub orders: HashMap<u64, OrderEntity>,
-  /// Lista de actualizaciones del storage.
-  pub storage_updates: HashMap<u64, Message>
-
+    /// Diccionario con la información de los clientes.
+    pub clients: HashMap<String, ClientDTO>,
+    /// Diccionario con la información de los restaurantes.
+    pub restaurants: HashMap<String, RestaurantDTO>,
+    /// Diccionario con la información de los repartidores.
+    pub deliverys: HashMap<String, DeliveryDTO>,
+    /// Diccionario de pedidos.
+    pub orders: HashMap<u64, OrderDTO>,
+    /// Parejas de Repartidores y sus pedidos asignados.
+    pub accepted_deliveries: BiMap<u64, String>,
+    /// Lista de actualizaciones de registros de almacenamiento.
+    pub storage_updates: HashMap<u64, StorageLogMessage>,
+    /// Índice de la siguiente entrada en el registro.
+    pub next_log_id: u64,
+    /// Índice de la operación mínima persistente en el registro.
+    pub min_persistent_log_index: u64,
+    /// Dirección del `Coordinator` asociado.
+    pub coordinator: Addr<Coordinator>,
+    /// Registrador de eventos de almacenamiento.
+    pub logger: Logger,
 }
 ```
 
@@ -456,8 +555,10 @@ Responsabilidades:
 
 ```rust
 pub struct Reaper {
-  /// Referencia al actor `Storage`.
-  pub storage: Addr<Storage>,
+    /// Un mapa de IDs de usuario a sus manejadores de temporizador asociados.
+    pub users_timer: HashMap<String, SpawnHandle>,
+    /// La dirección del actor de almacenamiento a la que enviar los mensajes.
+    pub storage_addr: Addr<Storage>,
 }
 ```
 
@@ -607,11 +708,16 @@ Responsabilidades:
 
 ```rust
 pub struct PaymentGateway {
-  /// Diccionario de órdenes autorizadas.
-  pub authorized_orders: HashMap<u64, OrderDTO>,
-  /// Diccionario de conexiones activas con servidores.
-  pub communicators: HashMap<SocketAddr, Communicator>,
+    /// Conjunto de IDs de pedidos que han sido autorizados para el pago.
+    pub authorized_orders: HashSet<u64>,
+    /// Comunicadores activos mapeados por dirección remota.
+    pub communicators: HashMap<SocketAddr, Communicator<PaymentGateway>>,
+    /// Probabilidad de que un pedido sea autorizado (entre 0.0 y 1.0).
+    pub probability_of_success: f32,
+    /// Registrador de eventos del gateway de pagos.
+    pub logger: Logger,
 }
+
 ```
 
 ---
@@ -660,8 +766,10 @@ Responsabilidades:
 
 ```rust
 pub struct UIHandler {
-  /// Canal de envío hacia el actor `Client`
-  pub client: Addr<Client>,
+    /// Dirección del actor `Client` al que se envían las selecciones del usuario.
+    pub client: Addr<Client>,
+    /// Logger para mensajes y errores relacionados con la interfaz de usuario.
+    pub logger: Logger,
 }
 ```
 
@@ -686,21 +794,30 @@ Responsabilidades:
 
 ```rust
 pub struct Client {
-  /// Identificador único del comensal.
-  pub client_id: String,
-  /// Posición actual del cliente en coordenadas 2D.
-  pub position: (f32, f32),
-  /// Estado actual del pedido (si hay uno en curso).
-  pub order_status: Option<OrderStatus>,
-  /// Restaurante elegido para el pedido.
-  pub selected_restaurant: Option<String>,
-  /// ID del pedido actual.
-  pub order_id: Option<u64>,
-  /// Canal de envío hacia el actor `UIHandler`.
-  pub ui_handler: Addr<UIHandler>,
-  /// Comunicador asociado al `Server`.
-  pub communicator: Communicator,
+    /// Lista de direcciones de socket del servidor a las que conectarse.
+    pub servers: Vec<SocketAddr>,
+    /// Identificador único para el cliente.
+    pub client_id: String,
+    /// Posición actual del cliente en coordenadas 2D.
+    pub client_position: (f32, f32),
+    /// Pedido actual realizado por el cliente, si existe.
+    pub client_order: Option<OrderDTO>,
+    /// Dirección del actor que maneja la interfaz de usuario (UI).
+    pub ui_handler: Option<Addr<UIHandler>>,
+    /// Comunicador para las interacciones de red con el servidor.
+    pub communicator: Option<Communicator<Client>>,
+    /// Flujo TCP pendiente antes de que el actor inicie.
+    pub pending_stream: Option<TcpStream>,
+    /// Registrador de eventos del cliente.
+    pub logger: Logger,
+    /// Manejador para el temporizador de entrega, si está activo.
+    delivery_timer: Option<actix::SpawnHandle>,
+    /// Temporizador para esperar intentos de reconexión después de que una conexión se cierre.
+    waiting_reconnection_timer: Option<actix::SpawnHandle>,
+    /// Bandera para indicar si el cliente ya está conectado y esperando la reconexión.
+    already_connected: bool,
 }
+
 ```
 
 ---
@@ -776,16 +893,26 @@ Encargado de recibir pedidos provenientes del `Server` y reenviarlos al componen
 
 ```rust
 pub struct Restaurant {
-  /// Identificador único del restaurante.
-  pub restaurant_id: String,
-  /// Posición actual del restaurante en coordenadas 2D.
-  pub position: (f32, f32),
-  /// Probabilidad de que el restaurante acepte/rechace el pedido.
-  pub probability: f32,
-  /// Canal de envío hacia el actor `Kitchen`.
-  pub kitchen_sender: Addr<Kitchen>,
-  /// Comunicador asociado al `Server`.
-  pub communicator: Communicator,
+    /// Información básica sobre el restaurante.
+    pub info: RestaurantInfo,
+    /// Probabilidad de aceptar o rechazar un pedido.
+    pub probability: f32,
+    /// Dirección del actor de la cocina.
+    pub kitchen_address: Option<Addr<Kitchen>>,
+    /// Dirección del actor asignador de entregas.
+    pub delivery_assigner_address: Option<Addr<DeliveryAssigner>>,
+    /// Comunicador de red para la interacción con el servidor.
+    pub communicator: Option<Communicator<Restaurant>>,
+    /// Flujo TCP pendiente antes de que el actor comience.
+    pub pending_stream: Option<TcpStream>,
+    /// Registrador de eventos del restaurante.
+    pub logger: Logger,
+    /// Lista de direcciones de socket de los servidores.
+    pub servers: Vec<SocketAddr>,
+    /// Manejador del temporizador para esperar intentos de reconexión.
+    waiting_reconnection_timer: Option<actix::SpawnHandle>,
+    /// Bandera que indica si el restaurante ya está conectado a un servidor.
+    pub already_connected: bool,
 }
 ```
 
@@ -805,13 +932,18 @@ Gestiona la cola de pedidos que deben prepararse y coordina a los chefs disponib
 
 ```rust
 pub struct Kitchen {
-  /// Ordenes pendientes para ser preparadas.
-  pub pending_orders: VecDeque<Order>,
-  /// Chef disponible para preparar el pedido.
-  pub chefs_available: Vec<Addr<Chef>>,
-  /// Comunicador asociado al `Server`
-  pub communicator: Communicator,
+    /// Cola de pedidos esperando ser preparados.
+    pub pending_orders: VecDeque<OrderDTO>,
+    /// Cola de chefs disponibles.
+    pub chefs_available: VecDeque<Addr<Chef>>,
+    /// Dirección del actor del restaurante principal.
+    pub my_restaurant: Addr<Restaurant>,
+    /// Dirección del actor asignador de entregas.
+    pub my_delivery_assigner: Addr<DeliveryAssigner>,
+    /// Registrador de eventos de la cocina.
+    pub logger: Logger,
 }
+
 ```
 
 ---
@@ -830,14 +962,16 @@ Simula la preparación de un pedido, demora un tiempo artificial y notifica cuan
 
 ```rust
 pub struct Chef {
-  /// Tiempo estimado para preparar pedidos.
-  pub time_to_cook: Duration,
-  /// Pedido que está preparando.
-  pub order: Option<Order>,
-  /// Canal de envío hacia el actor `Kitchen`.
-  pub kitchen_sender: Addr<Kitchen>,
-  /// Canal de envío hacia el actor `DeliveryAssigner`.
-  pub delivery_assigner: Addr<DeliveryAssigner>
+    /// Tiempo estimado para cocinar un pedido.
+    pub time_to_cook: Duration,
+    /// El pedido que se está preparando actualmente.
+    pub order: Option<OrderDTO>,
+    /// Dirección del actor asignador de entregas.
+    pub delivery_assigner_address: Addr<DeliveryAssigner>,
+    /// Dirección del actor de la cocina.
+    pub kitchen_address: Addr<Kitchen>,
+    /// Registrador de eventos del chef.
+    pub logger: Logger,
 }
 ```
 
@@ -858,12 +992,16 @@ Encargado de pedir repartidores al `Server` y asociarlos con pedidos listos para
 
 ```rust
 pub struct DeliveryAssigner {
-  /// Queue de pedidos listos para ser despachados.
-  pub ready_orders: VecDeque<Order>,
-  /// Diccionario de ordenes enviadas y su delivery asignado.
-  pub orders_delivery: HashMap<u64, String>,
-  /// Comunicador asociado al `Server`.
-  pub communicator: Communicator,
+    /// Información sobre el restaurante.
+    pub restaurant_info: RestaurantInfo,
+    /// Pedidos listos para ser despachados.
+    pub ready_orders: HashMap<u64, OrderDTO>,
+    /// Mapeo de pedidos a IDs de entregas asignadas.
+    pub orders_delivery: HashMap<u64, String>,
+    /// Dirección del actor del restaurante principal.
+    pub my_restaurant: Addr<Restaurant>,
+    /// Registrador de eventos del asignador de entregas.
+    pub logger: Logger,
 }
 ```
 
@@ -916,7 +1054,7 @@ El proceso `Delivery` representa a un repartidor autónomo. Su función es acept
 | `RECONNECTING`        | Se conecta al `Server`              | `RECOVERING`          | Enviar `Recover(delivery_id)`              | Informa su `delivery_id` y solicita estado previo.                         |
 | `RECOVERING`          | Respuesta con datos de entrega      | `DELIVERING`          | Reanuda entrega pendiente                  | Retoma un pedido que había quedado en curso.                               |
 | `RECOVERING`          | Respuesta sin datos                 | `AVAILABLE`           | Enviar `IAmAvailable(delivery_id, pos)`    | No estaba entregando, se registra como disponible.                         |
-| `AVAILABLE`           | Recibe `NewOfferToDeliver`          | `WAITINGCONFIRMATION` | Si acepta: enviar `AcceptedOrder(order)`   | Si no acepta, ignora el mensaje y sigue disponible.                        |
+| `AVAILABLE`           | Recibe `NewOfferToDeliver`          | `WAITINGCONFIRMATION` | Si acepta: enviar `DeliveryAccepted(order)`   | Si no acepta, ignora el mensaje y sigue disponible.                        |
 | `WAITINGCONFIRMATION` | Recibe `DeliveryNoNeeded`           | `AVAILABLE`           | Espera o decide reconectarse más adelante  | Otro delivery fue asignado más rápido.                                     |
 | `WAITINGCONFIRMATION` | Recibe `DeliverThisOrder`           | `DELIVERING`          | Inicia simulación de entrega               | Confirmación final de asignación del pedido.                               |
 | `DELIVERING`          | Termina la entrega (viaje simulado) | `AVAILABLE`           | Enviar `Delivered(order)` + `IAmAvailable` | Informa finalización y vuelve a estar disponible para nuevas asignaciones. |
@@ -939,18 +1077,30 @@ El actor `Delivery` encapsula toda la lógica de un repartidor. Mantiene su esta
 
 ```rust
 pub struct Delivery {
+  /// Lista de direcciones de los servidores a los que puede conectarse.
+  pub servers: Vec<SocketAddr>,
   /// Identificador único del delivery.
   pub delivery_id: String,
   /// Posición actual del delivery.
   pub position: (f32, f32),
-  /// Estado actual del delivery: Disponible, Ocupado, Entregando.
+  /// Estado actual del delivery: Disponible, Ocupado, Entregando, etc.
   pub status: DeliveryStatus,
-  //  Probabilidad de que rechace un pedido disponible de un restaurante.
+  /// Probabilidad de rechazar un pedido disponible.
   pub probability: f32,
   /// Pedido actual en curso, si lo hay.
-  pub current_order: Option<Order>,
-  /// Comunicador asociado al Server.
-  pub communicator: Communicator,
+  pub current_order: Option<OrderDTO>,
+  /// Comunicador para la interacción en red con el servidor.
+  pub communicator: Option<Communicator<Delivery>>,
+  /// Stream TCP pendiente antes de que el actor inicie.
+  pub pending_stream: Option<TcpStream>,
+  /// Logger para eventos del delivery.
+  pub logger: Logger,
+  /// Timer para manejar intentos de reconexión.
+  waiting_reconnection_timer: Option<actix::SpawnHandle>,
+  /// Timer para mantener vivo el actor durante reconexiones.
+  keep_alive_timer: Option<actix::SpawnHandle>,
+  /// Flag que indica si el delivery ya está conectado y esperando reconexión.
+  already_connected: bool,
 }
 ```
 
@@ -958,10 +1108,18 @@ pub struct Delivery {
 
 ```rust
 pub enum DeliveryStatus {
-  Available,           // Listo para recibir ofertas de pedidos
-  WaitingConfirmation, // Esperando confirmación del restaurante (despues de aceptar un pedido)
-  Delivering,          // En proceso de entrega
+    /// Reconectando a un servidor
+    Reconnecting,
+    /// Recuperando el estado de un pedido
+    Recovering,
+    /// Disponible para aceptar pedidos
+    Available,
+    /// Esperando la confirmación del restaurante después de aceptar un pedido
+    WaitingConfirmation,
+    /// Entregando un pedido
+    Delivering,
 }
+
 ```
 
 ---
@@ -975,7 +1133,7 @@ pub enum DeliveryStatus {
 | `RecoveredUserInfo(Option<DeliveryDTO>)`  | `Coordinator` | Delivery                       | Respuesta con los datos del delivery si estaba activo antes de desconectarse. |
 | `IAmAvailable(DeliveryDTO)`               | `Delivery`    | `Coordinator`                  | Informa que está disponible para realizar entregas.                           |
 | `NewOfferToDeliver(DeliveryID, OrderDTO)` | `Coordinator` | `Delivery`                     | Oferta de un nuevo pedido para entregar.                                      |
-| `AcceptedOrder(OrderDTO)`                 | `Delivery`    | `Coordinator`                  | El delivery acepta el pedido y pasa a estado ocupado.                         |
+| `DeliveryAccepted(OrderDTO)`                 | `Delivery`    | `Coordinator`                  | El delivery acepta el pedido y pasa a estado ocupado.                         |
 | `DeliveryNoNeeded(OrderDTO)`              | `Coordinator` | `Delivery`                     | Notificación de que el pedido fue asignado a otro delivery (descarta oferta). |
 | `DeliverThisOrder(OrderDTO)`              | `Coordinator` | `Delivery`                     | Confirmación definitiva de que debe entregar el pedido.                       |
 | `Delivered(OrderDTO)`                     | `Delivery`    | `Coordinator`                  | Notifica que finalizó la entrega.                                             |
@@ -1116,63 +1274,169 @@ Cuando una instancia previamente caída se reincorpora, ejecuta el proceso de [i
 
 Este mecanismo garantiza que el sistema se mantenga **coherente, resiliente y auto-recuperable** frente a fallos parciales.
 
-# Cambios en la entrega final
+## Cambios en la entrega final
 
-## **Exclusión Mutua Centralizada**
+### Heartbeats
 
-Unos de los mayores cambios fueron los realizados al sistema de exclusión mutua. Actualmente, la lógica de exclusión mutua y la decisión de asignar un delivery a un pedido específico se realiza en el actor interno `OrderService`, que accede de forma serializada al estado global a través de `Storage`.
+La implementación final incluye un sistema donde los `CoordinatorManager` envían mensajes [`Ping`] al `CoordinatorManager` Líder. Este último responde con un mensaje [`Pong`]. Pasado un timeout de no recibir mensaje del Lider, se realiza una nueva elección de lider (usando el mensaje [`LeaderElection`]).
 
-Cuando varios deliveries aceptan la oferta mediante el mensaje [`AcceptedOrder`], `OrderService` garantiza que **solo el primer** mensaje que llegue sea el asignado al pedido, descartando las demás ofertas.
+### Nuevos Mensajes implementados
 
-En caso de que el `OrderService` recibe un mensaje de aceptacion del pedido, consulta con el storage el estado actual de la orden. En caso de que la orden ya estuviera tomada por otro delivery, le envía un mensaje para comunicarle que el delivery ya fue tomado [`DeliveryNoNeeded`].
+- **Mensajes para conexiones**
+  - `ConnectionClosed` : Notifica que una conexión TCP se cerró
+  - `RegisterConnectionWithCoordinator` : Usado por el `Aceptor` para registrar una nueva conexión con un `CoordinadorManager`
+  - `Ping` :Mensaje de heartbeat enviado periódicamente para verificar que la conexión sigue activa.
+  - `Pong` : Respuesta al mensaje `Ping`, confirmando que la conexión está viva.
+  - `CheckPongTimeout` : : Evento que verifica si se recibió un `Pong` dentro del tiempo esperado; si no, puede indicar una conexión caída.
 
-## Nuevo actor para payment Gateway: `PaymentAcceptor`
+- **Mensajes para el `Storage`**
+  - `DeliveryExpectedTime`: Mensaje utilizado para informar al cliente sobre el tiempo estimado de entrega de su pedido. Permite que el cliente conozca cuánto falta para recibir su orden.
+  - `OrderDelivered`: Mensaje enviado por el Delivery al servidor una vez que ha finalizado la entrega de un pedido. Permite actualizar el estado de la orden y notificar a las partes involucradas.
+  - `IAmDelivering`: Mensaje enviado por el Delivery al servidor para notificar que está en proceso de entregar un pedido. Sirve para actualizar el estado del delivery y de la orden correspondiente.
+  - `GetClient`: Permite consultar la información completa de un cliente específico a partir de su `client_id`. Devuelve un objeto `ClientDTO` con todos los datos asociados al cliente, o `None` si no existe.
+  - `GetRestaurant` : Permite obtener la información de un restaurante específico usando su `restaurant_id`. Devuelve un objeto `RestaurantDTO` con los datos del restaurante, o `None` si no existe.
+  - `GetDelivery` : Permite consultar la información de un repartidor (`delivery`) específico a partir de su `delivery_id`. Devuelve un objeto `DeliveryDTO` con los datos del delivery, o `None` si no existe.
+  - `GetRestaurants` : Devuelve una lista con todos los restaurantes registrados en el sistema, incluyendo su información completa (`Vec<RestaurantDTO>`).
+  - `GetAllRestaurantsInfo` : Devuelve una lista con la información básica (ID y posición) de todos los restaurantes, útil para mostrar opciones cercanas a un cliente (`Vec<RestaurantInfo>`).
+  - `GetDeliveries` : Devuelve una lista con todos los repartidores registrados en el sistema, incluyendo su información completa (`Vec<DeliveryDTO>`).
+  - `GetAllAvailableDeliveries` : Devuelve una lista con todos los repartidores que actualmente están disponibles para tomar pedidos, es decir, aquellos cuyo estado es `Available` (`Vec<DeliveryDTO>`).
+  - `SetOrderExpectedTime`: Permite establecer en el storage el tiempo estimado de entrega para una orden específica. Este dato puede ser consultado por el cliente para saber cuánto demorará su pedido.
+  - `InsertAcceptedDelivery`: Registra en el storage que un determinado delivery ha aceptado hacerse cargo de una orden. Se utiliza para evitar que otros deliveries acepten la misma orden y para llevar el control de asignaciones.
+  - `RemoveAcceptedDeliveries`: Elimina del storage todas las ofertas de deliveries que ya han sido aceptadas para una orden, dejando solo la asignación definitiva. Esto asegura que no haya asignaciones duplicadas o conflictos.
+  - `AddOrderAccepted`: Mensaje que indica que un delivery ha aceptado una oferta para entregar un pedido. Permite al storage registrar la intención del delivery antes de la confirmación final.
+  - `FinishDeliveryAssignment`: Notifica al storage que una orden fue finalmente asignada a un delivery específico. Actualiza los estados correspondientes y limpia las ofertas pendientes para esa orden.
+  - `GetMinLogIndex`: Solicita el índice mínimo del log de operaciones del storage. Es útil para sincronización y replicación entre servidores, permitiendo saber desde dónde deben solicitarse actualizaciones.
+  - `GetLogsFromIndex`: Permite obtener todos los logs de operaciones del storage a partir de un índice dado. Se utiliza para replicar cambios y mantener la consistencia entre instancias del servidor.
+  - `GetAllStorage`: Solicita una `Snapshot` completa del estado actual del storage, incluyendo clientes, restaurantes, deliveries y órdenes. Es fundamental para la recuperación de nodos nuevos o reiniciados.
+  - `StorageSnapshot`: Mensaje que contiene una copia completa del estado actual del storage (clientes, restaurantes, deliveries, órdenes, etc). Se utiliza principalmente cuando un nuevo servidor se conecta y necesita sincronizar su estado con el resto del sistema.
 
-El `PaymentAcceptor` es un actor agregado al proceso `PaymentGateway` cuya responsabilidad principal es escuchar conexiones TCP entrantes y registrar cada nueva conexión con el actor principal.
+- **Mensajes para el `PaymentGateway`**
+  - `PaymentCompleted` : Usado para que el `PaymentGateway` comunique a las partes que el pago fue completado.
+  - `BillPayment` : Usado por el `PaymentGateway` para pedirle al cliente el pago por un pedido.
 
-El `PaymentAcceptor` abstrae y desacopla la lógica de aceptación de conexiones de la lógica de procesamiento de pagos. De esta forma el `PaymentGateway` tiene enfoque en la lógica de negocio.
+- **Mensajes para el `Coordinator`**
+  - `LeaderIdIs` : mensaje que informa a nodo sobre el Id del Líder actual.
+  - `SetCoordinatorManager` : Mensaje para actualizar la referencia al `CoordinatorManager`
+  - `SetActorsAddresses` : Actualiza las direcciones de los coordinadores y storage en el orderService.
 
-## Heartbeats
+- **Mensajes genéricos para los usuarios: `Client`, `Restaurant`, `Delivery`**
+  - `Stop`
+  - `StartRunning`
+  - `RecoverProcedure` : Mensaje enviado para pedir la devolución de información de un usuario pos-crash.
+  - `RetryLater` : Mensaje enviado pidiendo que se vuelva a reenviar el mensaje más tarde.
+  - `Shutdown`: Señal para iniciar el proceso de cierre ordenado de la aplicación o componente.
 
-La implementación final incluye un sistema donde los `CoordinatorManager` envían mensajes [`Ping`] al `CoordinatorManager` Líder. Este último responde con un mensaje [`Pong`]. Pasado un timeout de no recibir mensaje del Lider, se realiza una nueva elección de lider (usando el mensaje [`CheckPongTimeout`]).
 
-## Nuevos Mensajes implementados
 
-- `ConnectionClosed` : Notifica que una conexión TCP se cerró
-- `RegisterConnectionWithCoordinator` : Usado por el `Aceptor` para registrar una nueva conexión con un `CoordinadorManager`
-- `RegisterConnection` : Usado por el `Aceptor` para registrar una nueva conexión con un `Coordinador`
-- `DeliveryExpectedTime` : Mensaje usado para informar al cliente del tiempo esperado de delivery.
-- `StorageSnapshot` : Es un mensaje del Storage con todos los datos del storage
-- `Ping` (ver heartbeat)
-- `Pong` (ver heartbeat)
-- `CheckPongTimeout` (ver heartbeat)
-- `OrderDelivered` : Mensaje que envía el Delivery al servidor cuando terminó de enviar un pedido.
-- `IAmDelivering` : Mensaje que envía el Delivery al servidor para notificar que el delivery está actualmente en progreso.
-- `GetClient`
-- `GetRestaurant`
-- `GetDelivery`
-- `GetRestaurants`
-- `GetAllRestaurantsInfo`
-- `GetDeliveries`
-- `GetAllAvailableDeliveries`
-- `SetOrderExpectedTime` : Usado para comunicar al storage el tiempo esperado en hacer el delivery de una orden
-- `InsertAcceptedDelivery` : Usado para comunicar al storage que una orden fue aceptada por un delivery
-- `RemoveAcceptedDeliveries` : Usada para que el Storage limpie o elimine las ofertas de repartidores (deliveries) que ya han sido aceptadas para un pedido específico.
-- `PaymentCompleted` : Usado para que el `PaymentGateway` comunique a las partes que el pago fue completado.
-- `BillPayment` : Usado por el `PaymentGateway` para pedirle al cliente el pago por un pedido.
-- `DeliveryAccepted` : Mensaje que envía el Delivery indicando que acepta una oferta de envío.
-- `LeaderIdIs` : mensaje que informa a nodo sobre el Id del Líder actual.
-- `StartRunning`
-- `NewLeaderConnection` : Mensaje que comunica la conexión de un nuevo Lider luego de un proceso de elección de líder.
-- `RecoverProcedure` : Mensaje enviado para pedir la devolución de información de un usuario pos-crash.
-- `RetryLater` : Mensaje enviado pidiendo que se vuelva a reenviar el mensaje más tarde.
-- `Shutdown`
-- `Stop`
-- `SetCoordinatorManager` : Mensaje para actualizar la referencia al `CoordinatorManager`
-- `AddOrderAccepted` : Mensaje usado para registrar que un repartidor (delivery) ha aceptado una oferta para entregar un pedido.
-- `FinishDeliveryAssignment` : Mensaje que notifica al `DeliveryAssigner` que una orden fue asignada a un delivery.
-- `SetActorsAddresses` : Actualiza las direcciones de los coordinadores y storage en el orderService.
-- `GetMinLogIndex` : Obtiene el Log de mínimo index del storage
-- `GetLogsFromIndex` : Obtiene todos los logs usando un índice
-- `GetAllStorage` : Para obtener una Snapshot de toda la data de storage
-- `ShareCommunicator`: Usado para compartir el `Comunicator` con los actores componentes del restaurante.
+
+
+## Instalación y Ejecución
+
+### **Requisitos previos**
+
+- [Rust (stable)](https://www.rust-lang.org/tools/install)
+- [Cargo](https://doc.rust-lang.org/cargo/getting-started/installation.html)
+- Linux (recomendado para ejecución y pruebas)
+
+### **Clonar el repositorio**
+
+```bash
+git clone https://github.com/iankvdh/PedidosRust.git
+cd PedidosRust
+```
+
+### **Compilar el proyecto**
+
+```bash
+cargo build
+```
+
+Esto generará los binarios en `target/`.
+
+### **Ejecución de los procesos**
+
+Cada proceso debe ejecutarse en una terminal diferente. A continuación se muestra cómo lanzar los procesos principales:
+
+#### **1. Lanzar el PaymentGateway**
+
+```bash
+cargo run --bin payment
+```
+
+#### **2. Lanzar los servidores**
+
+En diferentes terminales, ejecutar:
+
+```bash
+cargo run --bin server 8081
+cargo run --bin server 8082
+cargo run --bin server 8083
+cargo run --bin server 8084
+```
+
+#### **3. Lanzar clientes, restaurantes y deliveries**
+
+Cada uno en una terminal distinta, por ejemplo:
+
+```bash
+cargo run --bin client cliente_1
+cargo run --bin restaurant resto_1
+cargo run --bin delivery delivery_1
+```
+
+En este ejemplo, `cliente_1`, `resto_1` y `delivery_1` son identificadores únicos para cada entidad.
+
+> **Nota:** El nombre de usuario (`cliente_1`, `resto_1`, `delivery_1`, etc.) debe ser único en todo el sistema, incluso entre diferentes tipos de usuarios (clientes, restaurantes y deliveries). No puede haber dos entidades con el mismo nombre, sin importar su rol.
+
+---
+
+## Ejemplo de Ejecución
+
+A continuación se muestra un flujo típico de ejecución del sistema:
+
+1. **Iniciar el PaymentGateway y los servidores** (ver sección anterior).
+
+2. **Iniciar un restaurante**:
+   - El restaurante se conecta al servidor lider, recupera su estado en caso de existir y espera pedidos.
+   - Recibe el pedido del cliente, lo acepta y lo pasa a cocina. Al terminarlo , notifica al asignador de repartidores que el pedido está listo para ser entregado.
+
+3. **Iniciar un delivery**:
+   - El delivery se conecta al servidor lider, recupera su estado en caso de existir o bien se declara disponible.
+   - Cuando el pedido está listo, el servidor le ofrece la entrega.
+   - El delivery acepta o rechaza. En caso de aceptar, realiza la entrega y notifica la finalización.
+
+4. **Iniciar un cliente**:
+   - El cliente se conecta al servidor líder.
+   - Solicita restaurantes cercanos y selecciona uno.
+   - Realiza un pedido.
+
+5. **El cliente recibe notificaciones** del estado de su pedido en cada etapa.
+
+Durante la ejecución, cada proceso mostrará logs informativos sobre los mensajes enviados y recibidos, así como el estado de los pedidos.
+
+---
+
+## Pruebas
+
+### **Pruebas manuales**
+
+Se recomienda probar los siguientes escenarios manualmente:
+
+- **Flujo completo de pedido:** Cliente realiza un pedido, restaurante lo acepta, delivery lo entrega.
+- **Tolerancia a fallos:** Detener y reiniciar un servidor, verificar que el sistema elige un nuevo líder y mantiene la consistencia.
+- **Desconexión y reconexión de nodos:** Simular la caída y reconexión de clientes, restaurantes y deliveries.
+- **Rechazo de pedidos:** Simular que el restaurante o el PaymentGateway rechazan un pedido.
+
+
+### **Pruebas automáticas y de volumen**
+
+Además de las pruebas manuales, el repositorio incluye **scripts de automatización** que permiten lanzar múltiples instancias de clientes, restaurantes, deliveries y servidores de forma simultánea. Estos scripts están diseñados para facilitar pruebas de **volumen**, **concurrencia** y **resiliencia** del sistema bajo diferentes escenarios.
+
+- Los scripts permiten simular decenas de usuarios interactuando en paralelo, generando pedidos, aceptando/rechazando entregas y realizando reconexiones automáticas.
+- Se pueden lanzar varios servidores a la vez para probar la tolerancia a fallos y la correcta replicación del estado.
+- Los logs generados por cada proceso permiten analizar el comportamiento del sistema ante cargas elevadas y detectar posibles cuellos de botella o errores de sincronización.
+
+> **Nota:** Consulta la carpeta `scripts/` del repositorio para ver ejemplos de uso y las instrucciones detalladas para ejecutar pruebas automáticas y de stress.
+
+---
+

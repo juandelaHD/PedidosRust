@@ -1,9 +1,7 @@
-use crate::restaurant_actors::{chef::Chef, restaurant::Restaurant};
+use crate::restaurant_actors::{chef::Chef};
 use actix::{Addr, Message};
-use common::network::communicator::Communicator;
 use common::types::dtos::OrderDTO;
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
 
 /// Message sent from the restaurant to the kitchen to enqueue a new order for preparation.
 ///
@@ -40,13 +38,4 @@ pub struct SendThisOrder {
 pub struct IAmAvailable {
     pub chef_addr: Addr<Chef>,
     pub order: OrderDTO,
-}
-
-/// Message used to share the communicator instance between restaurant actors.
-///
-/// Contains an [`Arc`] to the [`Communicator`](../../common/network/communicator/struct.Communicator.html).
-#[derive(Message, Clone)]
-#[rtype(result = "()")]
-pub struct ShareCommunicator {
-    pub communicator: Arc<Communicator<Restaurant>>,
 }

@@ -8,15 +8,14 @@ use crate::types::dtos::UserDTO;
 use actix::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
-use tokio::net::TcpStream;
 
 /// Enum representing all possible network messages exchanged between system components.
 ///
-/// # Purpose
+/// ## Purpose
 /// This enum encapsulates all message types that can be sent over the network between clients,
 /// coordinators, restaurants, delivery agents, payment gateways, and coordinator managers.
 ///
-/// # Contents
+/// ## Contents
 /// Each variant wraps a specific message struct, grouping messages by their origin or target.
 /// See the documentation for each variant's struct for details.
 #[derive(Serialize, Deserialize, Debug, Message, Clone)]
@@ -125,7 +124,7 @@ pub enum NetworkMessage {
 /// ## Purpose
 /// Used by a node to discover the current leader's address and user ID.
 ///
-/// # Contents
+/// ## Contents
 /// - `origin_addr`: The address of the querying node.
 /// - `user_id`: The ID of the querying user.
 #[derive(Serialize, Deserialize, Debug, Message, Clone)]
@@ -168,21 +167,6 @@ pub struct LeaderIdIs {
 #[derive(Message, Debug, Clone, Serialize, Deserialize)]
 #[rtype(result = "()")]
 pub struct StartRunning;
-
-/// Message sent to notify a new leader connection.
-///
-/// ## Purpose
-/// Used to inform the system about a new leader connection established.
-///
-/// ## Contents
-/// - `addr`: The address of the new leader.
-/// - `stream`: The TCP stream for the new leader connection.
-#[derive(Message)]
-#[rtype(result = "()")]
-pub struct NewLeaderConnection {
-    pub addr: SocketAddr,
-    pub stream: TcpStream,
-}
 
 /// Message sent to register a new user in the system.
 ///
