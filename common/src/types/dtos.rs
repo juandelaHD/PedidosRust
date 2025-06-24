@@ -4,7 +4,47 @@ use crate::types::order_status::OrderStatus;
 use crate::{bimap::BiMap, types::delivery_status::DeliveryStatus};
 use actix::prelude::*;
 use serde::{Deserialize, Serialize};
+use serde_with::{DisplayFromStr, serde_as};
 use std::collections::HashMap;
+
+/// Custom serialization for BiMap<u64, String>
+mod bimap_u64_string_serde {
+    use super::BiMap;
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+    use std::collections::HashMap;
+
+    pub fn serialize<S>(bimap: &BiMap<u64, String>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        // Convert u64 keys to strings for JSON serialization
+        let string_map: HashMap<String, String> = bimap
+            .keys()
+            .zip(bimap.values())
+            .map(|(k, v)| (k.to_string(), v.clone()))
+            .collect();
+        string_map.serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<BiMap<u64, String>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let string_map: HashMap<String, String> = HashMap::deserialize(deserializer)?;
+        let mut bimap = BiMap::new();
+        for (k_str, v) in string_map {
+            match k_str.parse::<u64>() {
+                Ok(k) => {
+                    bimap.insert(k, v);
+                }
+                Err(_) => {
+                    return Err(serde::de::Error::custom(format!("Invalid u64 key: {}", k_str)));
+                }
+            }
+        }
+        Ok(bimap)
+    }
+}
 
 /// Data Tranfer Object to represent different types of users in the system.
 #[derive(Debug, Serialize, Deserialize, Message, Clone)]
@@ -102,6 +142,7 @@ impl std::hash::Hash for OrderDTO {
 }
 
 /// Data Transfer Object to represent a snapshot of the system state.
+#[serde_as]
 #[derive(Debug, Serialize, Deserialize, Message, Clone)]
 #[rtype(result = "()")]
 pub struct Snapshot {
@@ -112,8 +153,10 @@ pub struct Snapshot {
     /// Dictionary with information about deliveries.
     pub deliverys: HashMap<String, DeliveryDTO>,
     /// Dictionary with information about orders.
+    #[serde_as(as = "HashMap<DisplayFromStr, _>")]
     pub orders: HashMap<u64, OrderDTO>,
     /// BiMap of accepted deliveries
+    #[serde(with = "bimap_u64_string_serde")]
     pub accepted_deliveries: BiMap<u64, String>,
     /// Index of the next log
     pub next_log_id: u64,

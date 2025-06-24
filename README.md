@@ -1446,17 +1446,17 @@ Además de las pruebas manuales, el repositorio incluye **scripts de automatizac
    ```
 
 2. **Da permisos de ejecución al script deseado**  
-   Por ejemplo, para el script [`test_3_2_5_5.sh`](scripts/test_3_2_5_5.sh):
+   Por ejemplo, para el script [`test_3_1_5_5.sh`](scripts/test_3_1_5_5.sh):
 
    ```bash
-   chmod +x scripts/test_3_2_5_5.sh
+   chmod +x scripts/test_3_1_5_5.sh
    ```
 
 3. **Ejecuta el script**  
    Lanza la prueba automática con:
 
    ```bash
-   ./scripts/test_3_2_5_5.sh
+   ./scripts/test_3_1_5_5.sh
    ```
     > **Nota:** Este script lanza 3 servidores, 2 restaurantes, 5 deliveries y 5 clientes, simulando un escenario de prueba con múltiples interacciones.
 

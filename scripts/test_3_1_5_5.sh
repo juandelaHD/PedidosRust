@@ -15,12 +15,12 @@ for port in 8080 8081 8082; do
   sleep 0.5
 done
 
-# 4) Levantar dos restaurantes en terminales diferentes
-for i in {1..2}; do
-  gnome-terminal -- bash -c "cd \"$REPO_ROOT\" && cargo run --bin restaurant resto$i; exec bash"
+# 4) Levantar un restaurante en terminales diferentes
+for i in {1}; do
+  gnome-terminal -- bash -c "cd \"$REPO_ROOT\" && cargo run --bin restaurant resto_$i; exec bash"
 done
 
-gnome-terminal -- bash -c "cd \"$REPO_ROOT\" && cargo run --bin restaurant resto_1; exec bash"
+
 
 # 5) Levantar cinco deliveries en terminales diferentes
 for i in {1..5}; do
