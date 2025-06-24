@@ -63,17 +63,21 @@ impl Kitchen {
 
     /// Assigns pending orders to available chefs.
     ///
-    /// Iterates through the available chefs and pending orders, assigning each order to a chef
-    /// and updating the order status to "Preparing".
+    /// Iterates through the available chefs and pending orders, assigning each order to a chef.
+    /// Only updates order status to "Preparing" if the order is currently "Pending".
+    /// Orders already in "Preparing" or "ReadyForDelivery" maintain their status.
     pub fn assign_orders_to_chefs(&mut self, _ctx: &mut Context<Kitchen>) {
         while let Some(chef) = self.chefs_available.pop_front() {
             if let Some(mut order) = self.pending_orders.pop_front() {
-                order.status = OrderStatus::Preparing;
-                // Notify the restaurant that the order is being prepared
-                self.my_restaurant.do_send(UpdateOrderStatus {
-                    order: order.clone(),
-                });
-                // Assign the order to the chef
+                // Only change status to Preparing if it's currently Pending
+                if order.status == OrderStatus::Pending {
+                    order.status = OrderStatus::Preparing;
+                    // Notify the restaurant that the order is being prepared
+                    self.my_restaurant.do_send(UpdateOrderStatus {
+                        order: order.clone(),
+                    });
+                }
+                // Assign the order to the chef regardless of status
                 chef.do_send(AssignToChef {
                     order: order.clone(),
                 });

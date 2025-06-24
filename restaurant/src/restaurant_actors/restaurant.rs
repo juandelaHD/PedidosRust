@@ -413,10 +413,26 @@ impl Handler<NewOrder> for Restaurant {
                     });
                 }
             }
+            OrderStatus::Preparing | OrderStatus::ReadyForDelivery => {
+                // During recovery, we might receive orders that are already being prepared
+                // or ready for delivery. These should be sent to the kitchen to continue the workflow.
+                self.logger.info(format!(
+                    "Recovering order {} with status {:?}, sending to kitchen to continue workflow",
+                    new_order.order_id, new_order.status
+                ));
+                if let Some(kitchen_addr) = self.kitchen_address.clone() {
+                    kitchen_addr.do_send(SendToKitchen {
+                        order: new_order.clone(),
+                    });
+                } else {
+                    self.logger
+                        .error("Kitchen sender is not set, cannot send recovered order to kitchen");
+                }
+            }
             _ => {
                 self.logger.warn(format!(
-                    "Received new order with non-pending nor authorized status: {:?}",
-                    new_order.order_id
+                    "Received new order with non-processable status: {:?} (order_id: {})",
+                    new_order.status, new_order.order_id
                 ));
             }
         }

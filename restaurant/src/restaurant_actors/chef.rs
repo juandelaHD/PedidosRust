@@ -59,35 +59,71 @@ impl Actor for Chef {
 
 /// Handles [`AssignToChef`] messages.
 ///
-/// Receives an order assignment from the kitchen, simulates cooking time,
-/// and notifies the delivery assigner when the order is ready.
-/// After finishing, notifies the kitchen that the chef is available for a new order.
+/// Receives an order assignment from the kitchen. For orders that are "Preparing",
+/// simulates cooking time. For orders that are already "ReadyForDelivery",
+/// immediately sends them to the delivery assigner. After finishing,
+/// notifies the kitchen that the chef is available for a new order.
 impl Handler<AssignToChef> for Chef {
     type Result = ();
 
     fn handle(&mut self, msg: AssignToChef, ctx: &mut Self::Context) -> Self::Result {
-        self.logger
-            .info(format!("Chef received order: {:?}", msg.order.dish_name));
+        use common::types::order_status::OrderStatus;
+
+        self.logger.info(format!(
+            "Chef received order: {:?} with status: {:?}",
+            msg.order.dish_name, msg.order.status
+        ));
         self.order = Some(msg.order.clone());
-        let delivery_assigner = self.delivery_assigner_address.clone();
-        let logger = self.logger.clone();
-        let kitchen_sender = self.kitchen_address.clone();
-        self.logger
-            .info(format!("Chef is cooking order: {:?}", msg.order.dish_name));
-        ctx.run_later(self.time_to_cook, move |act, ctx| {
-            if let Some(order) = &act.order {
-                // Notify the delivery assigner that the order is ready
-                delivery_assigner.do_send(SendThisOrder {
-                    order: order.clone(),
+
+        match msg.order.status {
+            OrderStatus::ReadyForDelivery => {
+                // Order is already ready, send immediately to delivery assigner
+                self.logger.info(format!(
+                    "Order {:?} is already ready for delivery, sending to delivery assigner",
+                    msg.order.order_id
+                ));
+                self.delivery_assigner_address.do_send(SendThisOrder {
+                    order: msg.order.clone(),
                 });
-                logger.info(format!("Order {:?} is ready for delivery.", order.order_id));
-            } else {
-                logger.error("No order assigned to chef when time elapsed.");
+                self.kitchen_address.do_send(IAmAvailable {
+                    chef_addr: ctx.address().clone(),
+                    order: msg.order.clone(),
+                });
             }
-            kitchen_sender.do_send(IAmAvailable {
-                chef_addr: ctx.address().clone(),
-                order: act.order.clone().unwrap(),
-            });
-        });
+            OrderStatus::Preparing => {
+                // Order needs to be prepared
+                let delivery_assigner = self.delivery_assigner_address.clone();
+                let logger = self.logger.clone();
+                let kitchen_sender = self.kitchen_address.clone();
+                self.logger
+                    .info(format!("Chef is cooking order: {:?}", msg.order.dish_name));
+                ctx.run_later(self.time_to_cook, move |act, ctx| {
+                    if let Some(order) = &act.order {
+                        // Notify the delivery assigner that the order is ready
+                        delivery_assigner.do_send(SendThisOrder {
+                            order: order.clone(),
+                        });
+                        logger.info(format!("Order {:?} is ready for delivery.", order.order_id));
+                    } else {
+                        logger.error("No order assigned to chef when time elapsed.");
+                    }
+                    kitchen_sender.do_send(IAmAvailable {
+                        chef_addr: ctx.address().clone(),
+                        order: act.order.clone().unwrap(),
+                    });
+                });
+            }
+            _ => {
+                // Unexpected status, log warning and mark chef as available
+                self.logger.warn(format!(
+                    "Chef received order with unexpected status: {:?}, marking chef as available",
+                    msg.order.status
+                ));
+                self.kitchen_address.do_send(IAmAvailable {
+                    chef_addr: ctx.address().clone(),
+                    order: msg.order.clone(),
+                });
+            }
+        }
     }
 }

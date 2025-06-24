@@ -441,22 +441,29 @@ impl Handler<RecoverProcedure> for Delivery {
                         .info(format!("Delivery is Delivering order {}", order.order_id));
 
                     self.logger
-                        .info("Delivery position matches order location, sending OrderDelivered");
+                        .info("Resuming delivery process after reconnection");
                     self.status = DeliveryStatus::Delivering;
                     let distance_from_client =
                         calculate_distance(self.position, order.client_position);
                     let delay_ms = BASE_DELAY_MILLIS + (distance_from_client as u64 * 1000);
                     let mut order = order.clone();
+                    order.status = OrderStatus::Delivering;
                     order.expected_delivery_time = delay_ms;
 
-                    // Aviso  al servidor que estoy entregando
+                    self.logger.info(format!(
+                        "Resuming delivery for order {} with estimated time: {:.2} seconds",
+                        order.order_id,
+                        delay_ms as f64 / 1000.0
+                    ));
+
+                    // Notify server that we're continuing delivery
                     self.send_network_message(NetworkMessage::UpdateOrderStatus(
                         UpdateOrderStatus {
                             order: order.clone(),
                         },
                     ));
 
-                    // Simular el tiempo de entrega
+                    // Resume delivery timer
                     let client_position = order.client_position;
                     ctx.run_later(Duration::from_millis(delay_ms), move |_act, ctx| {
                         ctx.address().do_send(OrderDelivered {
@@ -473,9 +480,58 @@ impl Handler<RecoverProcedure> for Delivery {
                     }));
                 }
             }
+            DeliveryStatus::Available => {
+                // Check if there's a current order despite being "Available"
+                // This can happen if the delivery was disconnected while delivering
+                if let Some(order) = &self.current_order {
+                    self.logger.warn(format!(
+                        "Delivery status is Available but has current order {}. Assuming delivery was in progress, resuming delivery process.",
+                        order.order_id
+                    ));
+
+                    // Change status to Delivering and resume the process
+                    self.status = DeliveryStatus::Delivering;
+                    let distance_from_client =
+                        calculate_distance(self.position, order.client_position);
+                    let delay_ms = BASE_DELAY_MILLIS + (distance_from_client as u64 * 1000);
+                    let mut order = order.clone();
+                    order.status = OrderStatus::Delivering;
+                    order.expected_delivery_time = delay_ms;
+
+                    self.logger.info(format!(
+                        "Resuming delivery for order {} with estimated time: {:.2} seconds",
+                        order.order_id,
+                        delay_ms as f64 / 1000.0
+                    ));
+
+                    // Notify server that we're delivering
+                    self.send_network_message(NetworkMessage::UpdateOrderStatus(
+                        UpdateOrderStatus {
+                            order: order.clone(),
+                        },
+                    ));
+
+                    // Start delivery timer
+                    let client_position = order.client_position;
+                    ctx.run_later(Duration::from_millis(delay_ms), move |_act, ctx| {
+                        ctx.address().do_send(OrderDelivered {
+                            order: order.clone(),
+                        });
+                    });
+                    self.position = client_position;
+                } else {
+                    self.logger
+                        .info("Delivery is available and has no current order, ready to accept new orders.");
+                    self.send_network_message(NetworkMessage::IAmAvailable(IAmAvailable {
+                        delivery_info: delivery_dto.clone(),
+                    }));
+                }
+            }
             _ => {
-                self.logger
-                    .info("Delivery is available or in another state, no action needed.");
+                self.logger.info(format!(
+                    "Delivery is in state {:?}, no specific recovery action needed.",
+                    self.status
+                ));
             }
         }
     }
