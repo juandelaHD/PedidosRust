@@ -340,9 +340,9 @@ impl Handler<AddClient> for Storage {
     fn handle(&mut self, msg: AddClient, _ctx: &mut Self::Context) -> Self::Result {
         self.logger
             .info(format!("Client added: {}", msg.client.client_id));
+        self.add_to_log(StorageLogMessage::AddClient(msg.clone()));
         self.clients
             .insert(msg.client.client_id.clone(), msg.client.clone());
-        self.add_to_log(StorageLogMessage::AddClient(msg.clone()));
     }
 }
 
@@ -355,9 +355,9 @@ impl Handler<AddRestaurant> for Storage {
             "Restaurant added: {}",
             msg.restaurant.restaurant_id
         ));
+        self.add_to_log(StorageLogMessage::AddRestaurant(msg.clone()));
         self.restaurants
             .insert(msg.restaurant.restaurant_id.clone(), msg.restaurant.clone());
-        self.add_to_log(StorageLogMessage::AddRestaurant(msg.clone()));
     }
 }
 
@@ -368,9 +368,9 @@ impl Handler<AddDelivery> for Storage {
     fn handle(&mut self, msg: AddDelivery, _ctx: &mut Self::Context) -> Self::Result {
         self.logger
             .info(format!("Delivery added: {}", msg.delivery.delivery_id));
+        self.add_to_log(StorageLogMessage::AddDelivery(msg.clone()));
         self.deliverys
             .insert(msg.delivery.delivery_id.clone(), msg.delivery.clone());
-        self.add_to_log(StorageLogMessage::AddDelivery(msg.clone()));
     }
 }
 
@@ -381,6 +381,7 @@ impl Handler<AddOrder> for Storage {
     fn handle(&mut self, msg: AddOrder, _ctx: &mut Self::Context) -> Self::Result {
         self.logger
             .info(format!("Order added: {}", msg.order.order_id));
+        self.add_to_log(StorageLogMessage::AddOrder(msg.clone()));
         self.orders.insert(msg.order.order_id, msg.order.clone());
         if let Some(client) = self.clients.get_mut(&msg.order.client_id) {
             client.client_order = Some(msg.order.clone());
@@ -390,7 +391,6 @@ impl Handler<AddOrder> for Storage {
                 msg.order.client_id
             ));
         }
-        self.add_to_log(StorageLogMessage::AddOrder(msg.clone()));
     }
 }
 
@@ -480,9 +480,9 @@ impl Handler<InsertAcceptedDelivery> for Storage {
     type Result = ();
 
     fn handle(&mut self, msg: InsertAcceptedDelivery, _ctx: &mut Self::Context) -> Self::Result {
+        self.add_to_log(StorageLogMessage::InsertAcceptedDelivery(msg.clone()));
         self.accepted_deliveries
             .insert(msg.order_id, msg.delivery_id.clone());
-        self.add_to_log(StorageLogMessage::InsertAcceptedDelivery(msg.clone()));
     }
 }
 
@@ -495,6 +495,9 @@ impl Handler<AddAuthorizedOrderToRestaurant> for Storage {
         msg: AddAuthorizedOrderToRestaurant,
         _ctx: &mut Self::Context,
     ) -> Self::Result {
+        self.add_to_log(StorageLogMessage::AddAuthorizedOrderToRestaurant(
+            msg.clone(),
+        ));
         if let Some(restaurant) = self.restaurants.get_mut(&msg.restaurant_id) {
             if let Some(order) = self.orders.get(&msg.order.order_id) {
                 restaurant.authorized_orders.insert(order.clone());
@@ -508,9 +511,6 @@ impl Handler<AddAuthorizedOrderToRestaurant> for Storage {
                 msg.restaurant_id
             ));
         }
-        self.add_to_log(StorageLogMessage::AddAuthorizedOrderToRestaurant(
-            msg.clone(),
-        ));
     }
 }
 
@@ -523,6 +523,7 @@ impl Handler<AddPendingOrderToRestaurant> for Storage {
         msg: AddPendingOrderToRestaurant,
         _ctx: &mut Self::Context,
     ) -> Self::Result {
+        self.add_to_log(StorageLogMessage::AddPendingOrderToRestaurant(msg.clone()));
         if let Some(restaurant) = self.restaurants.get_mut(&msg.restaurant_id) {
             if let Some(order) = self.orders.get(&msg.order.order_id) {
                 // TODO: Ver si hay que eliminar la orden de authorized_orders acá
@@ -538,7 +539,6 @@ impl Handler<AddPendingOrderToRestaurant> for Storage {
                 msg.restaurant_id
             ));
         }
-        self.add_to_log(StorageLogMessage::AddPendingOrderToRestaurant(msg.clone()));
     }
 }
 
@@ -708,8 +708,8 @@ impl Handler<RemoveClient> for Storage {
     fn handle(&mut self, msg: RemoveClient, _ctx: &mut Self::Context) -> Self::Result {
         self.logger
             .info(format!("Client removed: {}", msg.client_id));
-        self.clients.remove(&msg.client_id);
         self.add_to_log(StorageLogMessage::RemoveClient(msg.clone()));
+        self.clients.remove(&msg.client_id);
     }
 }
 
@@ -733,8 +733,8 @@ impl Handler<RemoveDelivery> for Storage {
     fn handle(&mut self, msg: RemoveDelivery, _ctx: &mut Self::Context) -> Self::Result {
         self.logger
             .info(format!("Delivery removed: {}", msg.delivery_id));
-        self.deliverys.remove(&msg.delivery_id);
         self.add_to_log(StorageLogMessage::RemoveDelivery(msg.clone()));
+        self.deliverys.remove(&msg.delivery_id);
     }
 }
 
@@ -747,6 +747,9 @@ impl Handler<RemoveAuthorizedOrderToRestaurant> for Storage {
         msg: RemoveAuthorizedOrderToRestaurant,
         _ctx: &mut Self::Context,
     ) -> Self::Result {
+        self.add_to_log(StorageLogMessage::RemoveAuthorizedOrderToRestaurant(
+            msg.clone(),
+        ));
         if let Some(restaurant) = self.restaurants.get_mut(&msg.restaurant_id) {
             if let Some(order) = self.orders.get(&msg.order.order_id) {
                 restaurant.authorized_orders.remove(order);
@@ -760,9 +763,6 @@ impl Handler<RemoveAuthorizedOrderToRestaurant> for Storage {
                 msg.restaurant_id
             ));
         }
-        self.add_to_log(StorageLogMessage::RemoveAuthorizedOrderToRestaurant(
-            msg.clone(),
-        ));
     }
 }
 
@@ -775,6 +775,9 @@ impl Handler<RemovePendingOrderToRestaurant> for Storage {
         msg: RemovePendingOrderToRestaurant,
         _ctx: &mut Self::Context,
     ) -> Self::Result {
+        self.add_to_log(StorageLogMessage::RemovePendingOrderToRestaurant(
+            msg.clone(),
+        ));
         if let Some(restaurant) = self.restaurants.get_mut(&msg.restaurant_id) {
             if let Some(order) = self.orders.get(&msg.order.order_id) {
                 restaurant.pending_orders.remove(order);
@@ -788,9 +791,6 @@ impl Handler<RemovePendingOrderToRestaurant> for Storage {
                 msg.restaurant_id
             ));
         }
-        self.add_to_log(StorageLogMessage::RemovePendingOrderToRestaurant(
-            msg.clone(),
-        ));
     }
 }
 
@@ -801,6 +801,7 @@ impl Handler<RemoveOrder> for Storage {
     fn handle(&mut self, msg: RemoveOrder, _ctx: &mut Self::Context) -> Self::Result {
         self.logger
             .info(format!("Order removed: {}", msg.order.order_id));
+        self.add_to_log(StorageLogMessage::RemoveOrder(msg.clone()));
         if let Some(order) = self.orders.remove(&msg.order.order_id) {
             // Limpiar la orden del cliente
             if let Some(client) = self.clients.get_mut(&order.client_id) {
@@ -839,7 +840,6 @@ impl Handler<RemoveOrder> for Storage {
             self.logger
                 .warn(format!("Order not found: {}", msg.order.order_id));
         }
-        self.add_to_log(StorageLogMessage::RemoveOrder(msg.clone()));
     }
 }
 
@@ -850,6 +850,7 @@ impl Handler<SetDeliveryPosition> for Storage {
     type Result = ();
 
     fn handle(&mut self, msg: SetDeliveryPosition, _ctx: &mut Self::Context) -> Self::Result {
+        self.add_to_log(StorageLogMessage::SetDeliveryPosition(msg.clone()));
         if let Some(delivery) = self.deliverys.get_mut(&msg.delivery_id) {
             delivery.delivery_position = msg.position;
             self.logger
@@ -858,7 +859,6 @@ impl Handler<SetDeliveryPosition> for Storage {
             self.logger
                 .warn(format!("Delivery not found: {}", msg.delivery_id));
         }
-        self.add_to_log(StorageLogMessage::SetDeliveryPosition(msg.clone()));
     }
 }
 
@@ -871,6 +871,7 @@ impl Handler<SetCurrentClientToDelivery> for Storage {
         msg: SetCurrentClientToDelivery,
         _ctx: &mut Self::Context,
     ) -> Self::Result {
+        self.add_to_log(StorageLogMessage::SetCurrentClientToDelivery(msg.clone()));
         if let Some(delivery) = self.deliverys.get_mut(&msg.delivery_id) {
             delivery.current_client_id = Some(msg.client_id.clone());
             self.logger.info(format!(
@@ -881,7 +882,6 @@ impl Handler<SetCurrentClientToDelivery> for Storage {
             self.logger
                 .warn(format!("Delivery not found: {}", msg.delivery_id));
         }
-        self.add_to_log(StorageLogMessage::SetCurrentClientToDelivery(msg.clone()));
     }
 }
 
@@ -890,6 +890,7 @@ impl Handler<SetCurrentOrderToDelivery> for Storage {
     type Result = ();
 
     fn handle(&mut self, msg: SetCurrentOrderToDelivery, _ctx: &mut Self::Context) -> Self::Result {
+        self.add_to_log(StorageLogMessage::SetCurrentOrderToDelivery(msg.clone()));
         if let Some(delivery) = self.deliverys.get_mut(&msg.delivery_id) {
             // Obtener la orden del id pasado en el mensaje
             if let Some(order) = self.orders.get(&msg.order.order_id) {
@@ -906,7 +907,6 @@ impl Handler<SetCurrentOrderToDelivery> for Storage {
             self.logger
                 .warn(format!("Delivery not found: {}", msg.delivery_id));
         }
-        self.add_to_log(StorageLogMessage::SetCurrentOrderToDelivery(msg.clone()));
     }
 }
 
@@ -915,6 +915,7 @@ impl Handler<SetDeliveryStatus> for Storage {
     type Result = ();
 
     fn handle(&mut self, msg: SetDeliveryStatus, _ctx: &mut Self::Context) -> Self::Result {
+        self.add_to_log(StorageLogMessage::SetDeliveryStatus(msg.clone()));
         if let Some(delivery) = self.deliverys.get_mut(&msg.delivery_id) {
             delivery.status = msg.delivery_status;
             self.logger
@@ -923,7 +924,6 @@ impl Handler<SetDeliveryStatus> for Storage {
             self.logger
                 .warn(format!("Delivery not found: {}", msg.delivery_id));
         }
-        self.add_to_log(StorageLogMessage::SetDeliveryStatus(msg));
     }
 }
 
@@ -932,6 +932,7 @@ impl Handler<SetDeliveryToOrder> for Storage {
     type Result = ();
 
     fn handle(&mut self, msg: SetDeliveryToOrder, _ctx: &mut Self::Context) -> Self::Result {
+        self.add_to_log(StorageLogMessage::SetDeliveryToOrder(msg.clone()));
         if let Some(order) = self.orders.get_mut(&msg.order.order_id) {
             order.delivery_id = Some(msg.delivery_id.clone());
             let order_clone = order.clone();
@@ -940,7 +941,6 @@ impl Handler<SetDeliveryToOrder> for Storage {
             self.logger
                 .warn(format!("Order not found: {}", msg.order.order_id));
         }
-        self.add_to_log(StorageLogMessage::SetDeliveryToOrder(msg.clone()));
     }
 }
 
@@ -949,6 +949,7 @@ impl Handler<SetOrderStatus> for Storage {
     type Result = ();
 
     fn handle(&mut self, msg: SetOrderStatus, _ctx: &mut Self::Context) -> Self::Result {
+        self.add_to_log(StorageLogMessage::SetOrderStatus(msg.clone()));
         if let Some(order) = self.orders.get_mut(&msg.order.order_id) {
             order.status = msg.order_status.clone();
             let order_clone = order.clone();
@@ -957,7 +958,6 @@ impl Handler<SetOrderStatus> for Storage {
             self.logger
                 .warn(format!("Order not found: {}", msg.order.order_id));
         }
-        self.add_to_log(StorageLogMessage::SetOrderStatus(msg.clone()));
     }
 }
 
@@ -965,6 +965,7 @@ impl Handler<SetOrderExpectedTime> for Storage {
     type Result = ();
 
     fn handle(&mut self, msg: SetOrderExpectedTime, _ctx: &mut Self::Context) -> Self::Result {
+        self.add_to_log(StorageLogMessage::SetOrderExpectedTime(msg.clone()));
         if let Some(order) = self.orders.get_mut(&msg.order_id) {
             order.expected_delivery_time = msg.expected_time;
             let order_clone = order.clone();
@@ -973,7 +974,6 @@ impl Handler<SetOrderExpectedTime> for Storage {
             self.logger
                 .warn(format!("Order not found: {}", msg.order_id));
         }
-        self.add_to_log(StorageLogMessage::SetOrderExpectedTime(msg.clone()));
     }
 }
 
