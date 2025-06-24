@@ -38,7 +38,10 @@ mod bimap_u64_string_serde {
                     bimap.insert(k, v);
                 }
                 Err(_) => {
-                    return Err(serde::de::Error::custom(format!("Invalid u64 key: {}", k_str)));
+                    return Err(serde::de::Error::custom(format!(
+                        "Invalid u64 key: {}",
+                        k_str
+                    )));
                 }
             }
         }
