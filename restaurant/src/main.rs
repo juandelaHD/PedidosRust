@@ -42,7 +42,6 @@ async fn main() -> std::io::Result<()> {
 
     tokio::select! {
         _ = ctrl_c() => {
-            println!("Ctrl-C recibido, apagando...");
             actix::System::current().stop();
         }
     }

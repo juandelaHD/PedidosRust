@@ -165,10 +165,8 @@ impl Client {
                 ctx.cancel_future(handle);
             }
 
-            let delivery_time = order.expected_delivery_time / 1000 + BASE_DELAY_MILLIS;
+            let delivery_time = (order.expected_delivery_time + BASE_DELAY_MILLIS) / 1000;
             let handle = ctx.run_later(
-                //////////////////////////////////////////////
-                // TODO: IF YA LLEGÓ EL PEDIDO, NO HAY QUE ESPERAR, HACER UN SHUTDOWN ENTERO
                 std::time::Duration::from_secs(delivery_time),
                 move |act, _ctx| {
                     act.logger.info(format!(
@@ -182,9 +180,6 @@ impl Client {
                                 order.order_id
                             ));
                         } else {
-                            act.logger.warn(
-                                "Expected delivery time elapsed, sending order has been delivered",
-                            );
                             let mut order = order.clone();
                             order.status = OrderStatus::Delivered;
                             act.client_order = Some(order.clone());
@@ -416,31 +411,41 @@ impl Handler<RecoverProcedure> for Client {
                     self.client_order = client_dto.client_order;
 
                     // Si tengo una orden activa, chequeo su estado
-                    if let Some(client_dto) = &self.client_order {
+                    if let Some(order) = &self.client_order {
+                        let order_cloned = order.clone();
                         self.logger.info(format!(
                             "Client ID={} has an active order with status: {}",
-                            client_dto.client_id, client_dto.status
+                            order_cloned.client_id, order_cloned.status
                         ));
 
                         // Imprime los posibles estados del pedido
-                        match client_dto.status {
+                        match order_cloned.status {
                             OrderStatus::Cancelled => {
                                 self.logger.warn(format!(
                                     "Your order has been cancelled: {}. Try again later.",
-                                    client_dto.dish_name
+                                    order_cloned.dish_name
                                 ));
                                 ctx.stop();
                             }
                             OrderStatus::Delivered => {
                                 self.logger.info(format!(
                                     "Your order has already been delivered: {}. Enjoy your meal!",
-                                    client_dto.dish_name
+                                    order_cloned.dish_name
                                 ));
                                 ctx.stop();
                             }
+                            OrderStatus::Delivering => {
+                                self.logger.info(format!(
+                                    "Your order is out for delivery: {}.",
+                                    order_cloned.dish_name
+                                ));
+                                self.manage_delivery_time(&order_cloned, ctx);
+                            }
                             _ => {
-                                self.logger
-                                    .info(format!("State after recovering: {}", client_dto.status));
+                                self.logger.info(format!(
+                                    "State after recovering: {}",
+                                    order_cloned.status
+                                ));
                             }
                         }
                     } else {

@@ -81,7 +81,6 @@ impl Handler<SendThisOrder> for DeliveryAssigner {
             order: order.clone(),
             restaurant_info: self.restaurant_info.clone(),
         });
-        println!("Ready orders: {:?}", self.ready_orders);
     }
 }
 
@@ -97,8 +96,6 @@ impl Handler<DeliveryAvailable> for DeliveryAssigner {
             "Delivery '{}' is ready to take an order!",
             msg.delivery_info.delivery_id
         ));
-        println!("Received order: {:?}", msg.order);
-        println!("Ready orders: {:?}", self.ready_orders);
         // chequeo si esa orden esta en ready_orders
         if let Some(order) = self.ready_orders.get(&msg.order.order_id) {
             // chequeo si el delivery no es none:

@@ -137,8 +137,12 @@ impl Handler<NetworkMessage> for PaymentGateway {
                     }
                 }
             }
+            NetworkMessage::ConnectionClosed(msg) => {
+                self.logger
+                    .info(format!("Connection closed with: {:?}", msg));
+            }
             _ => {
-                self.logger.error(format!(
+                self.logger.warn(format!(
                     "Unhandled NetworkMessage in PaymentGateway: {:?}",
                     msg
                 ));

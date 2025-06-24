@@ -416,7 +416,7 @@ impl Handler<NewOrder> for Restaurant {
             _ => {
                 self.logger.warn(format!(
                     "Received new order with non-pending nor authorized status: {:?}",
-                    new_order
+                    new_order.order_id
                 ));
             }
         }
@@ -498,7 +498,7 @@ impl Handler<NetworkMessage> for Restaurant {
             }
             NetworkMessage::LeaderIs(msg_data) => ctx.address().do_send(msg_data),
             NetworkMessage::RecoveredInfo(user_dto_opt) => {
-                println!("AAAAAAAAAAAA Se recibió RecoveredInfo en Restaurant");
+                println!("Received RecoveredInfo in Restaurant");
                 let user_dto = user_dto_opt;
                 match user_dto {
                     UserDTO::Restaurant(restaurant_dto) => {

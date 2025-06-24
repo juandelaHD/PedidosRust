@@ -64,9 +64,8 @@ impl OrderService {
         let payment_gateway_address = format!("{}:{}", SERVER_IP_ADDRESS, PAYMENT_GATEWAY_PORT)
             .parse::<SocketAddr>()
             .expect("Failed to parse server address");
-
         println!(
-            "TRATANDO DE CONECTAR AL PAYMENT GATEWAY: {}",
+            "Trying to connect to Payment Gateway: {}",
             payment_gateway_address
         );
 
@@ -251,8 +250,8 @@ impl Handler<NetworkMessage> for OrderService {
             }
             NetworkMessage::PaymentCompleted(payment) => {
                 self.logger.info(format!(
-                    "Payment completed for order {}: {:?}",
-                    payment.order.order_id, payment
+                    "Payment completed for order {}",
+                    payment.order.order_id
                 ));
                 // Como se terminó la entrega, se elimina la orden del Storage
                 self.send_to_storage(RemoveOrder {
@@ -380,8 +379,8 @@ impl Handler<AcceptedOrder> for OrderService {
 
     fn handle(&mut self, msg: AcceptedOrder, ctx: &mut Self::Context) -> Self::Result {
         self.logger.info(format!(
-            "Reenviando AcceptOrder al Storage: {:?}",
-            msg.order
+            "Resending AcceptOrder to Storage: {:?}",
+            msg.order.order_id
         ));
         let message = AddOrderAccepted {
             order: msg.order.clone(),
@@ -425,7 +424,7 @@ impl Handler<OrderFinalized> for OrderService {
 
     fn handle(&mut self, msg: OrderFinalized, ctx: &mut Self::Context) -> Self::Result {
         self.logger
-            .info(format!("Finalizing order: {:?}", msg.order));
+            .info(format!("Finalizing order: {:?}", msg.order.order_id));
         if let Some(communicator) = self.payment_gateway_address.as_ref() {
             let socket_addr = communicator.local_address;
             if let Some(sender) = communicator.sender.as_ref() {
@@ -473,8 +472,8 @@ impl Handler<RemoveOrder> for OrderService {
 
     fn handle(&mut self, msg: RemoveOrder, _ctx: &mut Self::Context) -> Self::Result {
         self.logger.info(format!(
-            "Reenviando Remove Order al Storage: {:?}",
-            msg.order
+            "Resending Remove Order to Storage: {:?}",
+            msg.order.order_id
         ));
         self.send_to_storage(msg.clone());
     }
@@ -491,7 +490,7 @@ impl Handler<AddAuthorizedOrderToRestaurant> for OrderService {
     ) -> Self::Result {
         self.logger.info(format!(
             "Sending AddAuthorizedOrderToRestaurant to Storage: {:?} -> {}",
-            msg.order, msg.restaurant_id
+            msg.order.order_id, msg.restaurant_id
         ));
         self.send_to_storage(msg);
     }

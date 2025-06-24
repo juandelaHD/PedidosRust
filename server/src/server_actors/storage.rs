@@ -130,7 +130,7 @@ impl Storage {
             }
         } else {
             self.logger
-                .error(format!("Order not found: {}", order.order_id));
+                .warn(format!("Order not found: {}", order.order_id));
         }
     }
 }
@@ -205,7 +205,6 @@ impl Handler<ApplyStorageUpdates> for Storage {
                 }
             }
         }
-        println!("MIN_LOG_INDEX: {}", self.min_persistent_log_index);
     }
 }
 
@@ -501,7 +500,7 @@ impl Handler<AddAuthorizedOrderToRestaurant> for Storage {
                 restaurant.authorized_orders.insert(order.clone());
             } else {
                 self.logger
-                    .error(format!("Order not found: {}", msg.order.order_id));
+                    .warn(format!("Order not found: {}", msg.order.order_id));
             }
         } else {
             self.logger.error(format!(
@@ -531,7 +530,7 @@ impl Handler<AddPendingOrderToRestaurant> for Storage {
                 restaurant.pending_orders.insert(order.clone());
             } else {
                 self.logger
-                    .error(format!("Order not found: {}", msg.order.order_id));
+                    .warn(format!("Order not found: {}", msg.order.order_id));
             }
         } else {
             self.logger.error(format!(
@@ -697,8 +696,7 @@ impl Handler<RemoveUser> for Storage {
                 ctx,
             );
         } else {
-            self.logger
-                .error(format!("User not found: {}", msg.user_id));
+            self.logger.warn(format!("User not found: {}", msg.user_id));
         }
     }
 }
@@ -754,7 +752,7 @@ impl Handler<RemoveAuthorizedOrderToRestaurant> for Storage {
                 restaurant.authorized_orders.remove(order);
             } else {
                 self.logger
-                    .error(format!("Order not found: {}", msg.order.order_id));
+                    .warn(format!("Order not found: {}", msg.order.order_id));
             }
         } else {
             self.logger.error(format!(
@@ -782,7 +780,7 @@ impl Handler<RemovePendingOrderToRestaurant> for Storage {
                 restaurant.pending_orders.remove(order);
             } else {
                 self.logger
-                    .error(format!("Order not found: {}", msg.order.order_id));
+                    .warn(format!("Order not found: {}", msg.order.order_id));
             }
         } else {
             self.logger.error(format!(
@@ -839,7 +837,7 @@ impl Handler<RemoveOrder> for Storage {
             self.clients.remove(&msg.order.client_id);
         } else {
             self.logger
-                .error(format!("Order not found: {}", msg.order.order_id));
+                .warn(format!("Order not found: {}", msg.order.order_id));
         }
         self.add_to_log(StorageLogMessage::RemoveOrder(msg.clone()));
     }
@@ -858,7 +856,7 @@ impl Handler<SetDeliveryPosition> for Storage {
                 .info(format!("Delivery position updated: {}", msg.delivery_id));
         } else {
             self.logger
-                .error(format!("Delivery not found: {}", msg.delivery_id));
+                .warn(format!("Delivery not found: {}", msg.delivery_id));
         }
         self.add_to_log(StorageLogMessage::SetDeliveryPosition(msg.clone()));
     }
@@ -881,7 +879,7 @@ impl Handler<SetCurrentClientToDelivery> for Storage {
             ));
         } else {
             self.logger
-                .error(format!("Delivery not found: {}", msg.delivery_id));
+                .warn(format!("Delivery not found: {}", msg.delivery_id));
         }
         self.add_to_log(StorageLogMessage::SetCurrentClientToDelivery(msg.clone()));
     }
@@ -902,11 +900,11 @@ impl Handler<SetCurrentOrderToDelivery> for Storage {
                 ));
             } else {
                 self.logger
-                    .error(format!("Order not found: {}", msg.order.order_id));
+                    .warn(format!("Order not found: {}", msg.order.order_id));
             }
         } else {
             self.logger
-                .error(format!("Delivery not found: {}", msg.delivery_id));
+                .warn(format!("Delivery not found: {}", msg.delivery_id));
         }
         self.add_to_log(StorageLogMessage::SetCurrentOrderToDelivery(msg.clone()));
     }
@@ -923,7 +921,7 @@ impl Handler<SetDeliveryStatus> for Storage {
                 .info(format!("Delivery status updated: {}", msg.delivery_id));
         } else {
             self.logger
-                .error(format!("Delivery not found: {}", msg.delivery_id));
+                .warn(format!("Delivery not found: {}", msg.delivery_id));
         }
         self.add_to_log(StorageLogMessage::SetDeliveryStatus(msg));
     }
@@ -940,7 +938,7 @@ impl Handler<SetDeliveryToOrder> for Storage {
             self.update_associated_order(&order_clone);
         } else {
             self.logger
-                .error(format!("Order not found: {}", msg.order.order_id));
+                .warn(format!("Order not found: {}", msg.order.order_id));
         }
         self.add_to_log(StorageLogMessage::SetDeliveryToOrder(msg.clone()));
     }
@@ -957,7 +955,7 @@ impl Handler<SetOrderStatus> for Storage {
             self.update_associated_order(&order_clone);
         } else {
             self.logger
-                .error(format!("Order not found: {}", msg.order.order_id));
+                .warn(format!("Order not found: {}", msg.order.order_id));
         }
         self.add_to_log(StorageLogMessage::SetOrderStatus(msg.clone()));
     }
@@ -973,7 +971,7 @@ impl Handler<SetOrderExpectedTime> for Storage {
             self.update_associated_order(&order_clone);
         } else {
             self.logger
-                .error(format!("Order not found: {}", msg.order_id));
+                .warn(format!("Order not found: {}", msg.order_id));
         }
         self.add_to_log(StorageLogMessage::SetOrderExpectedTime(msg.clone()));
     }
@@ -1012,10 +1010,6 @@ impl Handler<GetDeliveries> for Storage {
 
     fn handle(&mut self, _msg: GetDeliveries, _ctx: &mut Self::Context) -> Self::Result {
         let deliveries: Vec<DeliveryDTO> = self.deliverys.values().cloned().collect();
-        println!(
-            "[STORAGEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE][DEBUG] Deliveries en storage: {:?}",
-            deliveries
-        );
         MessageResult(deliveries)
     }
 }

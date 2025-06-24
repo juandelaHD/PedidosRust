@@ -179,24 +179,24 @@ impl Handler<ConnectionClosed> for Delivery {
     type Result = ();
 
     fn handle(&mut self, _msg: ConnectionClosed, ctx: &mut Self::Context) -> Self::Result {
-        println!("[Delivery][ConnectionClosed] Handler llamado");
+        println!("[Delivery][ConnectionClosed] Handler called");
         println!(
-            "[Delivery][ConnectionClosed] Estado communicator: {:?}",
+            "[Delivery][ConnectionClosed] Communicator state: {:?}",
             self.communicator.is_some()
         );
         let servers = self.servers.clone();
         println!(
-            "[Delivery][ConnectionClosed] Llamando a reconnect con: {:?}",
+            "[Delivery][ConnectionClosed] Calling reconnect with: {:?}",
             servers
         );
         let fut = async move { reconnect(servers, PeerType::DeliveryType).await };
 
         let fut = wrap_future::<_, Self>(fut).map(|result, actor: &mut Self, ctx| {
-            println!("[Delivery][ConnectionClosed] Futuro de reconexión terminado");
+            println!("[Delivery][ConnectionClosed] Reconnection future finished");
             match result {
                 Some(stream) => {
                     println!(
-                        "[Delivery][ConnectionClosed] Reconexión exitosa, creando communicator"
+                        "[Delivery][ConnectionClosed] Reconnection successful, creating communicator"
                     );
                     let communicator =
                         Communicator::new(stream, ctx.address(), PeerType::DeliveryType);
@@ -209,14 +209,14 @@ impl Handler<ConnectionClosed> for Delivery {
                     if let Some(handler) = actor.waiting_reconnection_timer.take() {
                         ctx.cancel_future(handler);
                         actor.waiting_reconnection_timer = None;
-                        println!("[Delivery][ConnectionClosed] CANCELANDO TIMER DE RECONEXIÓN");
+                        println!("[Delivery][ConnectionClosed] Cancelling reconnection timer");
                     }
 
                     let addr = ctx.address();
                     let handler =
                         ctx.run_later(std::time::Duration::from_millis(100), move |_, _| {
                             println!(
-                                "[Delivery][ConnectionClosed] Enviando StartRunning tras reconexión"
+                                "[Delivery][ConnectionClosed] Sending StartRunning after reconnection"
                             );
                             addr.do_send(StartRunning);
                         });
@@ -224,7 +224,7 @@ impl Handler<ConnectionClosed> for Delivery {
                 }
                 None => {
                     println!(
-                        "[Delivery][ConnectionClosed] No se pudo reconectar, deteniendo actor"
+                        "[Delivery][ConnectionClosed] Failed to reconnect, stopping actor"
                     );
                     actor
                         .logger
@@ -269,25 +269,21 @@ impl Handler<LeaderIs> for Delivery {
     type Result = ();
 
     fn handle(&mut self, msg: LeaderIs, ctx: &mut Self::Context) -> Self::Result {
-        println!(
-            "[Delivery][LeaderIs] Recibido LeaderIs: {:?}",
-            msg.coord_addr
-        );
+        // cambia esto por un logger info en ingles
+        self.logger
+            .info(format!(" Received LeaderIs message: {:?}", msg.coord_addr));
+
         let leader_addr = msg.coord_addr;
 
         let communicator_opt = self.communicator.as_ref().map(|c| c.peer_address);
 
-        println!(
-            "[Delivery][LeaderIs] Comparando leader_addr: {:?} con communicator.peer_address: {:?}",
-            leader_addr, communicator_opt
-        );
-
         if Some(leader_addr) == communicator_opt {
-            println!("[Delivery][LeaderIs] Ya conectado al líder");
+            self.logger.info("Already connected to leader");
             // CANCELA EL KEEP-ALIVE SI EXISTE
             if let Some(handler) = self.keep_alive_timer.take() {
                 ctx.cancel_future(handler);
-                println!("[Delivery][LeaderIs] KEEP-ALIVE CANCELADO (ya conectado al líder)");
+                self.logger
+                    .info("KEEP-ALIVE CANCELLED (already connected to leader)");
             }
 
             let local_address = self
@@ -311,10 +307,12 @@ impl Handler<LeaderIs> for Delivery {
         let fut_connect = async move { connect_one(leader_addr, PeerType::DeliveryType).await };
 
         let fut = wrap_future::<_, Self>(fut_connect).map(|result, actor: &mut Self, ctx| {
-            println!("[Delivery][LeaderIs] Futuro de reconexión terminado");
+            actor.logger.info("Reconnection finished");
             match result {
                 Some(stream) => {
-                    println!("[Delivery][LeaderIs] Reconexión exitosa, creando communicator");
+                    actor
+                        .logger
+                        .info("Reconnection successful, creating communicator");
                     let communicator =
                         Communicator::new(stream, ctx.address(), PeerType::DeliveryType);
                     actor.communicator = Some(communicator);
@@ -326,30 +324,24 @@ impl Handler<LeaderIs> for Delivery {
                     // CANCELA EL KEEP-ALIVE SI EXISTE
                     if let Some(handler) = actor.keep_alive_timer.take() {
                         ctx.cancel_future(handler);
-                        println!("[Delivery][LeaderIs] KEEP-ALIVE CANCELADO");
                     }
 
                     if let Some(handler) = actor.waiting_reconnection_timer.take() {
                         ctx.cancel_future(handler);
                         actor.waiting_reconnection_timer = None;
-                        println!("[Delivery][LeaderIs] CANCELANDO TIMER DE RECONEXIÓN");
                     }
 
                     let addr = ctx.address();
                     let handler =
                         ctx.run_later(std::time::Duration::from_millis(100), move |_, _| {
-                            println!("[Delivery][LeaderIs] Enviando StartRunning tras reconexión");
                             addr.do_send(StartRunning);
                         });
                     actor.waiting_reconnection_timer = Some(handler);
                 }
                 None => {
-                    println!(
-                        "[Delivery][LeaderIs] No se pudo reconectar al líder, deteniendo actor"
-                    );
                     actor
                         .logger
-                        .error("Failed to reconnect to any server after closed connection");
+                        .error("Failed to reconnect to leader, stopping actor");
                     ctx.stop();
                 }
             }
@@ -726,13 +718,10 @@ impl Handler<NetworkMessage> for Delivery {
             }
             NetworkMessage::ConnectionClosed(msg_data) => {
                 println!(
-                    "[Delivery][NetworkMessage] ConnectionClosed recibido: {:?}",
+                    "[Delivery][NetworkMessage] ConnectionClosed received: {:?}",
                     msg_data.remote_addr
                 );
-                println!(
-                    "[DEBUG] Intentando reconectar a servidores: {:?}",
-                    self.servers
-                );
+                println!("[DEBUG] Trying to reconnect to servers: {:?}", self.servers);
                 self.logger.info(format!(
                     "Connection closed with address: {}",
                     msg_data.remote_addr
@@ -758,7 +747,7 @@ impl Handler<NetworkMessage> for Delivery {
                 // Programa un timer dummy para mantener vivo el actor
                 let keep_alive_handle = ctx.run_interval(Duration::from_secs(1), |_, _| {
                     // No hace nada, solo mantiene vivo el actor
-                    println!("[Delivery][KeepAlive] Manteniendo actor vivo durante reconexión");
+                    println!("[Delivery][KeepAlive] Keeping actor alive during reconnection");
                 });
                 self.keep_alive_timer = Some(keep_alive_handle);
 

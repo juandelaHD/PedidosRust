@@ -75,36 +75,28 @@ async fn try_to_connect(server_addr: SocketAddr) -> Option<TcpStream> {
 }
 
 pub async fn reconnect(servers: Vec<SocketAddr>, peer_type: PeerType) -> Option<TcpStream> {
-    println!(
-        "[reconnect] Entrando a reconnect con servidores: {:?}",
-        servers
-    );
     for addr in servers {
-        println!("[reconnect] Intentando conectar a {}", addr);
+        println!("Trying to connect to {}", addr);
         match timeout(Duration::from_secs(2), TcpStream::connect(addr)).await {
             Ok(Ok(mut stream)) => {
                 // Enviar solo el byte del tipo de peer
                 let type_byte = [peer_type.to_u8()];
                 if let Err(e) = stream.write_all(&type_byte).await {
-                    println!(
-                        "[reconnect] Falló el envío del tipo de peer a {}: {}",
-                        addr, e
-                    );
+                    println!("Failed to send peer type to {}: {}", addr, e);
                     continue;
                 }
-                println!("[reconnect] Conectado exitosamente a {}", addr);
+                println!("Successfully connected to {}", addr);
                 return Some(stream);
             }
             Ok(Err(e)) => {
-                println!("[reconnect] Falló la conexión a {}: {}", addr, e);
+                println!("Failed to connect to {}: {}", addr, e);
                 continue;
             }
             Err(_) => {
-                println!("[reconnect] Timeout al conectar a {}", addr);
+                println!("Timeout while connecting to {}", addr);
                 continue;
             }
         }
     }
-    println!("[reconnect] No se pudo conectar a ningún servidor.");
     None
 }

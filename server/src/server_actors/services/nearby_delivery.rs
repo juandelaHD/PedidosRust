@@ -85,7 +85,7 @@ impl Handler<RequestNearbyDelivery> for NearbyDeliveryService {
         let order = msg.order;
         self.logger.info(format!(
             "Requesting nearby deliveries for order: {:?} at restaurant position: {:?}",
-            order, restaurant
+            order.order_id, restaurant
         ));
         self.storage_address
             .send(GetDeliveries)
@@ -117,7 +117,7 @@ impl Handler<RequestNearbyDelivery> for NearbyDeliveryService {
                             logger.info(format!(
                                 "Found {} nearby deliveries for order: {:?}",
                                 nearby.len(),
-                                order
+                                order.order_id
                             ));
                             coordinator_addr.do_send(NearbyDeliveries {
                                 order,

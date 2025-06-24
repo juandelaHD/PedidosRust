@@ -408,7 +408,6 @@ impl Handler<WhoIsLeader> for Coordinator {
 
         // Si el origen está en user_addresses, actualizar el ID del usuario
         if let Some(_user_id) = self.user_addresses.get_by_key(&user_address) {
-            println!("EL ORIGEN ESTA EN USER_ADDRESSES");
             self.user_addresses
                 .insert(user_address, msg.user_id.clone());
             self.logger.info(format!(
@@ -421,7 +420,6 @@ impl Handler<WhoIsLeader> for Coordinator {
                 "No user ID found for {}. Adding as UNKNOWN_USER.",
                 user_address
             ));
-            println!("EL ORIGEN NOOO ESTA EN USER_ADDRESSES");
             // Si no está, lo actualizamos o lo agregamos
             self.user_addresses
                 .insert(user_address, msg.user_id.clone());
@@ -430,7 +428,7 @@ impl Handler<WhoIsLeader> for Coordinator {
         //  Si hay un coordinador actual, se lo notificamos al cliente
         if let Some(addr) = self.current_coordinator {
             if let Some(sender) = &self.communicators[&msg.origin_addr].sender {
-                println!("ENVIANDO LEADER IS A {}", msg.origin_addr);
+                println!("Sending Leader Is to {}", msg.origin_addr);
                 sender.do_send(NetworkMessage::LeaderIs(LeaderIs { coord_addr: (addr) }));
             } else {
                 self.logger
@@ -495,7 +493,7 @@ impl Handler<NewOrder> for Coordinator {
     fn handle(&mut self, msg: NewOrder, _ctx: &mut Self::Context) -> Self::Result {
         self.logger.info(format!(
             "Received new order: {:?} for restaurant: {}",
-            msg.order,
+            msg.order.order_id,
             msg.order.restaurant_id.clone()
         ));
         let restaurant_id = msg.order.restaurant_id.clone();
@@ -550,7 +548,7 @@ impl Handler<CancelOrder> for Coordinator {
 impl Handler<NetworkMessage> for Coordinator {
     type Result = ();
     fn handle(&mut self, msg: NetworkMessage, ctx: &mut Self::Context) -> Self::Result {
-        println!("Received NetworkMessage: {:?}", msg);
+        //println!("Received NetworkMessage: {:?}", msg);
         match msg {
             // All Users messages
             NetworkMessage::WhoIsLeader(msg_data) => {

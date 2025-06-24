@@ -13,7 +13,7 @@ use tokio::signal::ctrl_c;
 async fn main() -> std::io::Result<()> {
     let args: Vec<String> = env::args().collect();
     if args.len() < 2 {
-        eprintln!("Uso: {} <delivery_id>", args[0]);
+        eprintln!("Usage: {} <delivery_id>", args[0]);
         std::process::exit(1);
     }
 
@@ -22,7 +22,7 @@ async fn main() -> std::io::Result<()> {
         .map(|i| {
             format!("{}:{}", SERVER_IP_ADDRESS, BASE_PORT + i)
                 .parse()
-                .expect("Dirección IP inválida")
+                .expect("Invalid IP address")
         })
         .collect();
 
@@ -35,7 +35,6 @@ async fn main() -> std::io::Result<()> {
 
     tokio::select! {
         _ = ctrl_c() => {
-            println!("Ctrl-C recibido, apagando...");
             actix::System::current().stop();
         }
     }
