@@ -2,13 +2,13 @@
   <img src=img/logo_pedidos_rust.png width="350" alt="Logo PedidosRust">
 </p>
 
-# Programacion Concurrente - 2C2025 - PedidosRust
+**PedidosRust** es un sistema distribuido desarrollado en Rust que simula una plataforma moderna para la gestión de pedidos en el rubro gastronómico. El sistema modela la interacción entre *clientes*, *restaurantes*, *repartidores* y un *gateway de pagos*, permitiendo coordinar el ciclo completo de un pedido: desde la solicitud por parte del cliente, pasando por la preparación y despacho en el restaurante, la entrega por parte del repartidor y la gestión de pagos de manera segura.
 
-[![Review Assignment Due Date](https://classroom.github.com/assets/deadline-readme-button-22041afd0340ce965d47ae6ef1cefeee28c7c493a6346c4f15d667ab976d596c.svg)](https://classroom.github.com/a/YmMajyCa)
+Nuestro sistema está construido bajo un enfoque de concurrencia y resiliencia, empleando el modelo de actores asincrónicos y técnicas avanzadas de coordinación distribuida, como la elección dinámica de líderes y replicación de estado entre servidores. Cada componente del sistema opera como un proceso independiente, comunicándose mediante mensajes TCP para garantizar la tolerancia a fallos y la alta disponibilidad.
 
-**PedidosRust** es un sistema distribuido implementado en Rust que modela la interacción entre _clientes_, _restaurantes_, _repartidores_ y un _gateway de pagos_. Cada entidad funciona como una aplicación independiente, comunicándose mediante mensajes TCP.
+El objetivo principal del proyecto es desarrollar una arquitectura robusta que responda eficientemente ante desconexiones, caídas parciales y reconexiones, manteniendo la consistencia de los datos y la experiencia del usuario.
 
-La consigna del trabajo práctico puede encontrarse [aqui](https://concurrentes-fiuba.github.io/2025_1C_tp2.html)
+La consigna completa del trabajo práctico puede encontrarse [aqui](https://concurrentes-fiuba.github.io/2025_1C_tp2.html)
 
 ---
 
