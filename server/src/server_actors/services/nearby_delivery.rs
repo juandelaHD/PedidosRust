@@ -11,13 +11,28 @@ use common::messages::restaurant_messages::RequestNearbyDelivery;
 use common::types::dtos::DeliveryDTO;
 use common::utils::calculate_distance;
 
+/// The `NearbyDeliveryService` Actor is responsible for tracking nearby delivery users suitable
+/// for a given restaurant's order based on their geographical position.
+///
+/// ## Responsibilities
+/// - Fetches available deliveries from the storage.
+/// - Filters deliveries based on proximity to the restaurant's position.
+/// - Sends the filtered list of nearby deliveries to the coordinator.
 pub struct NearbyDeliveryService {
+    /// The address of the Coordinator actor to send messages to.
     pub coordinator_address: Addr<Coordinator>,
+    /// The address of the Storage actor to fetch deliveries from.
     pub storage_address: Addr<Storage>,
+    /// Logger instance for events
     pub logger: Logger,
 }
 
 impl NearbyDeliveryService {
+    /// Creates a new instance of `NearbyDeliveryService`.
+    ///
+    /// ## Arguments
+    /// * `storage_address` - The address of the Storage actor.
+    /// * `coordinator_address` - The address of the Coordinator actor.
     pub fn new(storage_address: Addr<Storage>, coordinator_address: Addr<Coordinator>) -> Self {
         let logger = Logger::new("Nearby Delivery Service", Color::Green);
         NearbyDeliveryService {
@@ -27,6 +42,15 @@ impl NearbyDeliveryService {
         }
     }
 
+    /// Filters the available deliveries to find those that are within a specified radius
+    /// from the restaurant's position.
+    ///
+    /// ## Arguments
+    /// * `available_deliveries` - A vector of `DeliveryDTO` containing all available deliveries.
+    /// * `restaurant_pos` - A tuple representing the restaurant's geographical position (latitude, longitude).
+    ///
+    /// ## Returns
+    /// A vector of `DeliveryDTO` containing only those deliveries that are within the specified radius.
     fn get_nearby_deliveries(
         &self,
         available_deliveries: Vec<DeliveryDTO>,
@@ -49,6 +73,9 @@ impl Actor for NearbyDeliveryService {
 impl Handler<RequestNearbyDelivery> for NearbyDeliveryService {
     type Result = ();
 
+    /// Handles the `RequestNearbyDelivery` message by fetching deliveries from storage,
+    /// filtering them based on proximity to the restaurant's position, and sending the results
+    /// to the Coordinator actor.
     fn handle(&mut self, msg: RequestNearbyDelivery, ctx: &mut Context<Self>) {
         let coordinator_addr = self.coordinator_address.clone();
         let logger = self.logger.clone();
@@ -58,7 +85,7 @@ impl Handler<RequestNearbyDelivery> for NearbyDeliveryService {
         let order = msg.order;
         self.logger.info(format!(
             "Requesting nearby deliveries for order: {:?} at restaurant position: {:?}",
-            order, restaurant
+            order.order_id, restaurant
         ));
         self.storage_address
             .send(GetDeliveries)
@@ -90,7 +117,7 @@ impl Handler<RequestNearbyDelivery> for NearbyDeliveryService {
                             logger.info(format!(
                                 "Found {} nearby deliveries for order: {:?}",
                                 nearby.len(),
-                                order
+                                order.order_id
                             ));
                             coordinator_addr.do_send(NearbyDeliveries {
                                 order,

@@ -1,82 +1,132 @@
 use std::collections::HashSet;
 
-use crate::types::delivery_status::DeliveryStatus;
 use crate::types::order_status::OrderStatus;
+use crate::{bimap::BiMap, types::delivery_status::DeliveryStatus};
 use actix::prelude::*;
 use serde::{Deserialize, Serialize};
+use serde_with::{DisplayFromStr, serde_as};
 use std::collections::HashMap;
 
+/// Custom serialization for BiMap<u64, String>
+mod bimap_u64_string_serde {
+    use super::BiMap;
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+    use std::collections::HashMap;
+
+    pub fn serialize<S>(bimap: &BiMap<u64, String>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        // Convert u64 keys to strings for JSON serialization
+        let string_map: HashMap<String, String> = bimap
+            .keys()
+            .zip(bimap.values())
+            .map(|(k, v)| (k.to_string(), v.clone()))
+            .collect();
+        string_map.serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<BiMap<u64, String>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let string_map: HashMap<String, String> = HashMap::deserialize(deserializer)?;
+        let mut bimap = BiMap::new();
+        for (k_str, v) in string_map {
+            match k_str.parse::<u64>() {
+                Ok(k) => {
+                    bimap.insert(k, v);
+                }
+                Err(_) => {
+                    return Err(serde::de::Error::custom(format!(
+                        "Invalid u64 key: {}",
+                        k_str
+                    )));
+                }
+            }
+        }
+        Ok(bimap)
+    }
+}
+
+/// Data Tranfer Object to represent different types of users in the system.
 #[derive(Debug, Serialize, Deserialize, Message, Clone)]
 #[serde(tag = "user_type")]
 #[rtype(result = "()")]
 pub enum UserDTO {
+    /// Represents a Client (user who rquests orders).
     Client(ClientDTO),
+    /// Represents a Restaurant (user who prepares orders).
     Restaurant(RestaurantDTO),
+    /// Represents a Delivery (user who brings orders to clients).
     Delivery(DeliveryDTO),
 }
 
+/// Data Transfer Object to represent a client in the system.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ClientDTO {
-    /// Posición actual del cliente en coordenadas 2D.
+    /// Position of the client in 2D coordinates.
     pub client_position: (f32, f32),
-    /// ID único del cliente.
+    /// Unique ID of the client.
     pub client_id: String,
-    /// Pedido del cliente
+    /// User Order associated with the client (if any).
     pub client_order: Option<OrderDTO>,
-    /// Marca de tiempo que registra la última actualización del cliente.
+    /// Timestamp that records the last update of the client.
     pub time_stamp: std::time::SystemTime,
 }
 
+/// Data Transfer Object to represent a restaurant in the system.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RestaurantDTO {
-    /// Posición actual del restaurante en coordenadas 2D.
+    /// Position of the restaurant in 2D coordinates.
     pub restaurant_position: (f32, f32),
-    /// ID único del restaurante.
+    /// Unique ID of the restaurant.
     pub restaurant_id: String,
-    /// Pedidos autorizados por el PaymentGatewat pero no aceptados todavía
-    /// por el restaurante
+    /// Orders that the payment system has authorized for the restaurant, not yet accepted by the restaurant.
     pub authorized_orders: HashSet<OrderDTO>,
-    /// Pedidos pendientes.
+    /// Pending orders that the restaurant has not yet prepared.
     pub pending_orders: HashSet<OrderDTO>,
-    /// Marca de tiempo que registra la última actualización del restaurante.
+    /// Timestamp that records the last update of the restaurant.
     pub time_stamp: std::time::SystemTime,
 }
 
+/// Data Transfer Object to represent a delivery user in the system.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeliveryDTO {
-    /// Posición actual del delivery en coordenadas 2D.
+    /// Position of the restaurant in 2D coordinates.
     pub delivery_position: (f32, f32),
-    /// ID único del delivery.
+    /// Unique ID of the delivery user.
     pub delivery_id: String,
-    /// ID del cliente actual asociado con el delivery (si existe).
+    /// Unique ID of the client currently being served by the delivery. (None if not available).
     pub current_client_id: Option<String>,
-    /// ID de la orden actual.
+    /// Unique ID of the order being delivered (None if available).
     pub current_order: Option<OrderDTO>,
-    /// Estado actual del delivery.
+    /// State of delivery user
     pub status: DeliveryStatus,
-    /// Marca de tiempo que registra la última actualización del delivery.
+    /// Timestamp that records the last update of the delivery user.
     pub time_stamp: std::time::SystemTime,
 }
 
+/// Data Transfer Object to represent an order in the system.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OrderDTO {
-    /// ID de la orden.
+    /// Unique ID of the order.
     pub order_id: u64,
-    /// Nombre del plato seleccionado
+    /// Name of the dish associated with the order.
     pub dish_name: String,
-    /// ID del cliente asociado a la orden.
+    /// Unique ID of the client who placed the order.
     pub client_id: String,
-    /// ID del restaurante asociado a la orden.
+    /// Unique ID of the restaurant that will prepare the order.
     pub restaurant_id: String,
-    /// ID del delivery asociado a la orden.
+    /// Unique ID of the delivery user assigned to deliver the order (None if not being delivered).
     pub delivery_id: Option<String>,
-    /// Estado de la orden.
+    /// State of the order.
     pub status: OrderStatus,
-    /// Posición del cliente que realizó la orden.
-    pub client_position: (f32, f32), // Útil para calcular distancias
-    /// Tiempo estimado de preparación de la orden en segundos.
+    /// Postion of the client in 2D coordinates.
+    pub client_position: (f32, f32),
+    /// Estimated time for the order to be delivered.
     pub expected_delivery_time: u64,
-    /// Marca de tiempo que registra la última actualización de la orden.
+    /// Timestamp that records the last update of the order.
     pub time_stamp: std::time::SystemTime,
 }
 
@@ -94,21 +144,25 @@ impl std::hash::Hash for OrderDTO {
     }
 }
 
+/// Data Transfer Object to represent a snapshot of the system state.
+#[serde_as]
 #[derive(Debug, Serialize, Deserialize, Message, Clone)]
 #[rtype(result = "()")]
 pub struct Snapshot {
-    /// Diccionario con información sobre clientes.
+    /// Dictionary with information about clients.
     pub clients: HashMap<String, ClientDTO>,
-    /// Diccionario con información sobre restaurantes.
+    /// Dictionary with information about restaurants.
     pub restaurants: HashMap<String, RestaurantDTO>,
-    /// Diccionario con información sobre deliverys.
+    /// Dictionary with information about deliveries.
     pub deliverys: HashMap<String, DeliveryDTO>,
-    /// Diccionario de órdenes.
+    /// Dictionary with information about orders.
+    #[serde_as(as = "HashMap<DisplayFromStr, _>")]
     pub orders: HashMap<u64, OrderDTO>,
-    /// Deliveries que solicitaron aceptar órdenes.
-    pub accepted_deliveries: HashMap<u64, HashSet<String>>,
-    /// Índice del próximo log.
+    /// BiMap of accepted deliveries
+    #[serde(with = "bimap_u64_string_serde")]
+    pub accepted_deliveries: BiMap<u64, String>,
+    /// Index of the next log
     pub next_log_id: u64,
-    /// Índice de la mínima operación persistente en el log.
+    /// Index of the minimum persistent log
     pub min_persistent_log_index: u64,
 }

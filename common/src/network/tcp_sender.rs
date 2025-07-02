@@ -1,88 +1,21 @@
-// use crate::messages::shared_messages::NetworkMessage;
-// use actix::prelude::*;
-// use std::collections::VecDeque;
-// use tokio::io::{AsyncWriteExt, BufWriter, WriteHalf};
-// use tokio::net::TcpStream;
-
-// pub struct TCPSender {
-//     pub writer: Option<BufWriter<WriteHalf<TcpStream>>>,
-//     pub queue: VecDeque<NetworkMessage>,
-// }
-
-// impl TCPSender {
-//     pub fn new(write_half: WriteHalf<TcpStream>) -> Self {
-//         Self {
-//             writer: Some(BufWriter::new(write_half)),
-//             queue: VecDeque::new(),
-//         }
-//     }
-// }
-
-// impl Actor for TCPSender {
-//     type Context = Context<Self>;
-// }
-
-// struct ProcessQueue;
-
-// impl Message for ProcessQueue {
-//     type Result = ();
-// }
-
-// impl Handler<NetworkMessage> for TCPSender {
-//     type Result = ();
-
-//     fn handle(&mut self, msg: NetworkMessage, ctx: &mut Self::Context) {
-//         self.queue.push_back(msg);
-//         if self.queue.len() == 1 {
-//             ctx.notify(ProcessQueue);
-//         }
-//     }
-// }
-
-// impl Handler<ProcessQueue> for TCPSender {
-//     type Result = ResponseActFuture<Self, ()>;
-
-//     fn handle(&mut self, _msg: ProcessQueue, _ctx: &mut Self::Context) -> Self::Result {
-//         if let (Some(mut writer), Some(msg)) = (self.writer.take(), self.queue.front().cloned()) {
-//             let fut = async move {
-//                 let serialized = match serde_json::to_string(&msg) {
-//                     Ok(s) => s,
-//                     Err(e) => panic!("Error serializing message: {:?}", e),
-//                 };
-//                 let to_send = format!("{}\n", serialized);
-//                 if let Err(e) = writer.write_all(to_send.as_bytes()).await {
-//                     panic!("Error writing to socket: {:?}", e);
-//                 }
-//                 if let Err(e) = writer.flush().await {
-//                     panic!("Error flushing socket: {:?}", e);
-//                 }
-//                 writer
-//             };
-//             Box::pin(fut.into_actor(self).map(|writer, act, ctx| {
-//                 act.writer = Some(writer);
-//                 act.queue.pop_front();
-//                 if !act.queue.is_empty() {
-//                     ctx.notify(ProcessQueue);
-//                 }
-//             }))
-//         } else {
-//             Box::pin(async {}.into_actor(self))
-//         }
-//     }
-// }
-
 use crate::messages::shared_messages::NetworkMessage;
+use crate::messages::shared_messages::Shutdown;
 use actix::prelude::*;
 use std::collections::VecDeque;
 use tokio::io::{AsyncWriteExt, BufWriter, WriteHalf};
 use tokio::net::TcpStream;
 
+/// The `TCPSender` actor is responsible for serializing and sending [`NetworkMessage`]s
+/// over a TCP stream to a remote peer. It maintains a queue to ensure messages are sent in order.
 pub struct TCPSender {
+    /// The buffered writer for the TCP stream.
     pub writer: Option<BufWriter<WriteHalf<TcpStream>>>,
+    /// The queue of messages to be sent.
     pub queue: VecDeque<NetworkMessage>,
 }
 
 impl TCPSender {
+    /// Creates a new `TCPSender` with the given write half of a TCP stream.
     pub fn new(write_half: WriteHalf<TcpStream>) -> Self {
         Self {
             writer: Some(BufWriter::new(write_half)),
@@ -91,26 +24,13 @@ impl TCPSender {
     }
 }
 
-/// Mensaje para indicar error en el socket, que se puede propagar al supervisor.
+/// Message sent to indicate an error occurred while sending data over the socket.
 #[derive(Message)]
 #[rtype(result = "()")]
 pub struct SendError(pub String);
 
 impl Actor for TCPSender {
     type Context = Context<Self>;
-
-    fn started(&mut self, ctx: &mut Self::Context) {
-        // Cada 2 segundos (ajusta el intervalo según tu necesidad)
-        ctx.run_interval(std::time::Duration::from_secs(2), |act, ctx| {
-            if !act.queue.is_empty() && act.writer.is_some() {
-                ctx.notify(ProcessQueue);
-            } else {
-                println!(
-                    "[TCPSender] No messages to process or writer is None, skipping processing."
-                );
-            }
-        });
-    }
 }
 
 struct ProcessQueue;
@@ -124,11 +44,6 @@ impl Handler<NetworkMessage> for TCPSender {
 
     fn handle(&mut self, msg: NetworkMessage, ctx: &mut Self::Context) {
         self.queue.push_back(msg);
-        println!(
-            "[TCPSender] Message added to queue, queue size: {}",
-            self.queue.len()
-        );
-        println!("[TCPSender] Current queue: {:?}", self.queue);
         if self.queue.len() == 1 {
             ctx.notify(ProcessQueue);
         }
@@ -138,10 +53,8 @@ impl Handler<NetworkMessage> for TCPSender {
 impl Handler<ProcessQueue> for TCPSender {
     type Result = ResponseActFuture<Self, ()>;
 
-    fn handle(&mut self, _msg: ProcessQueue, ctx: &mut Self::Context) -> Self::Result {
+    fn handle(&mut self, _msg: ProcessQueue, _ctx: &mut Self::Context) -> Self::Result {
         if let (Some(mut writer), Some(msg)) = (self.writer.take(), self.queue.front().cloned()) {
-            let addr = ctx.address();
-
             let fut = async move {
                 let serialized = match serde_json::to_string(&msg) {
                     Ok(s) => s,
@@ -179,18 +92,22 @@ impl Handler<ProcessQueue> for TCPSender {
                         act.queue.clear(); // Opcional: limpiar cola porque hay error
 
                         // Loguear error (o enviar a otro actor supervisor)
-                        println!("[TCPSender] {}", err_msg);
-
-                        // Por ejemplo, enviar mensaje a supervisor o hacer self-stop:
-                        // ctx.stop();
-
-                        // O emitir mensaje para que quien controle la conexión maneje reconexión
-                        // addr.do_send(SendError(err_msg));
+                        eprintln!("[TCPSender] {}", err_msg);
                     }
                 }
             }))
         } else {
             Box::pin(async {}.into_actor(self))
         }
+    }
+}
+
+impl Handler<Shutdown> for TCPSender {
+    type Result = ();
+
+    fn handle(&mut self, _msg: Shutdown, ctx: &mut Self::Context) {
+        self.writer = None;
+        self.queue.clear();
+        ctx.stop();
     }
 }

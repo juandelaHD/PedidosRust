@@ -9,7 +9,7 @@ use common::logger::Logger;
 use common::messages::internal_messages::{
     AddAuthorizedOrderToRestaurant, AddOrder, AddPendingOrderToRestaurant,
     RemoveAuthorizedOrderToRestaurant, RemoveOrder, RemovePendingOrderToRestaurant,
-    SetCurrentOrderToDelivery, SetDeliveryToOrder, SetOrderStatus,
+    SetCurrentOrderToDelivery, SetDeliveryToOrder, SetOrderExpectedTime, SetOrderStatus,
 };
 use common::messages::{
     AcceptedOrder, BillPayment, DeliverThisOrder, DeliveryAccepted, DeliveryAvailable,
@@ -27,33 +27,56 @@ use common::{
 use std::{collections::HashMap, net::SocketAddr};
 use tokio::net::TcpStream;
 
-/// OrderService es responsable de:  
-/// 1. Reenviar mensajes al Storage.  
-/// 2. Notificar al Coordinator para que este informe a los actores externos.
-/// 3. Reenviar nuevas órdenes al PaymentGateway.
+/// The `OrderService` actor is responsible for managing orders in the system.
+///
+/// ## Responsibilities
+/// - Receives and processes order requests from clients.
+/// - Coordinates payment authorization with the PaymentGateway.
+/// - Updates order status and notifies the Coordinator and Storage actors.
+/// - Handles delivery assignments and order finalization.
+/// - Maintains mappings between clients, restaurants, and their orders.
 pub struct OrderService {
+    /// Tracks the status of each order by order ID.
     pub orders: HashMap<u64, OrderStatus>,
+    /// Maps client IDs to their associated order IDs.
     pub clients_orders: HashMap<String, Vec<u64>>,
+    /// Maps restaurant IDs to their associated order IDs.
     pub restaurants_orders: HashMap<String, Vec<u64>>,
+    /// List of pending order IDs.
     pub pending_orders: Vec<u64>,
+    /// Address of the Coordinator actor.
     pub coordinator_address: Option<Addr<Coordinator>>,
+    /// Address of the Storage actor.
     pub storage_address: Option<Addr<Storage>>,
+    /// Logger for order service events.
     pub logger: Logger,
+    /// Communicator for interacting with the PaymentGateway.
     pub payment_gateway_address: Option<Communicator<OrderService>>,
+    /// Pending TCP stream for PaymentGateway connection.
     pub pending_stream: Option<TcpStream>,
 }
 
 impl OrderService {
+    /// Asynchronously creates a new `OrderService` instance and attempts to connect to the PaymentGateway.
     pub async fn new() -> Self {
         let logger = Logger::new("Order Service", Color::Green);
 
         let payment_gateway_address = format!("{}:{}", SERVER_IP_ADDRESS, PAYMENT_GATEWAY_PORT)
             .parse::<SocketAddr>()
             .expect("Failed to parse server address");
+        println!(
+            "Trying to connect to Payment Gateway: {}",
+            payment_gateway_address
+        );
 
         let pending_stream =
             connect_some(vec![payment_gateway_address], PeerType::CoordinatorType).await;
 
+        if pending_stream.is_none() {
+            logger.error("Failed to connect to PaymentGateway");
+        } else {
+            logger.info("Connected to PaymentGateway successfully");
+        }
         Self {
             orders: HashMap::new(),
             clients_orders: HashMap::new(),
@@ -67,6 +90,11 @@ impl OrderService {
         }
     }
 
+    /// Handles an unauthorized order by notifying the Coordinator.
+    ///
+    /// ## Arguments
+    /// * `order` - The unauthorized [`OrderDTO`].
+    /// * `coordinator` - The address of the Coordinator actor.
     fn handle_unauthorized_order(&mut self, order: &OrderDTO, coordinator: Addr<Coordinator>) {
         self.logger.warn(format!(
             "Order {} unauthorized, notifying Coordinator",
@@ -78,6 +106,11 @@ impl OrderService {
         });
     }
 
+    /// Handles an authorized order by storing it and notifying the Coordinator.
+    ///
+    /// ## Arguments
+    /// * `order` - The authorized [`OrderDTO`].
+    /// * `coordinator` - The address of the Coordinator actor.
     fn handle_authorized_order(&mut self, order: &OrderDTO, coordinator: Addr<Coordinator>) {
         self.logger.info(format!(
             "Order {} authorized, notifying Coordinator",
@@ -99,6 +132,7 @@ impl OrderService {
         });
     }
 
+    /// Sends a message to the Storage actor if its address is set.
     fn send_to_storage<T>(&self, msg: T)
     where
         T: Message + Send + 'static,
@@ -113,6 +147,7 @@ impl OrderService {
         }
     }
 
+    /// Sends a message to the Coordinator actor if its address is set.
     fn send_to_coordinator<T>(&self, msg: T)
     where
         T: Message + Send + 'static,
@@ -131,6 +166,7 @@ impl OrderService {
 impl Actor for OrderService {
     type Context = Context<Self>;
 
+    /// Initializes the PaymentGateway communicator when the actor starts.
     fn started(&mut self, ctx: &mut Self::Context) {
         if let Some(stream) = self.pending_stream.take() {
             let communicator = Communicator::new(stream, ctx.address(), PeerType::CoordinatorType);
@@ -141,6 +177,7 @@ impl Actor for OrderService {
     }
 }
 
+/// Handles setting the addresses of the Coordinator and Storage actors.
 impl Handler<SetActorsAddresses> for OrderService {
     type Result = ();
 
@@ -150,6 +187,7 @@ impl Handler<SetActorsAddresses> for OrderService {
     }
 }
 
+/// Handles order requests from clients by forwarding them to the PaymentGateway for authorization.
 impl Handler<RequestThisOrder> for OrderService {
     type Result = ();
 
@@ -174,6 +212,7 @@ impl Handler<RequestThisOrder> for OrderService {
     }
 }
 
+/// Handles payment authorization results and updates the order accordingly.
 impl Handler<AuthorizationResult> for OrderService {
     type Result = ();
 
@@ -200,6 +239,7 @@ impl Handler<AuthorizationResult> for OrderService {
     }
 }
 
+/// Handles incoming network messages, such as payment completion and authorization results.
 impl Handler<NetworkMessage> for OrderService {
     type Result = ();
 
@@ -210,8 +250,8 @@ impl Handler<NetworkMessage> for OrderService {
             }
             NetworkMessage::PaymentCompleted(payment) => {
                 self.logger.info(format!(
-                    "Payment completed for order {}: {:?}",
-                    payment.order.order_id, payment
+                    "Payment completed for order {}",
+                    payment.order.order_id
                 ));
                 // Como se terminó la entrega, se elimina la orden del Storage
                 self.send_to_storage(RemoveOrder {
@@ -237,6 +277,7 @@ impl Handler<NetworkMessage> for OrderService {
     }
 }
 
+/// Handles updates to the status of an order and coordinates changes with Storage and Coordinator.
 impl Handler<UpdateOrderStatus> for OrderService {
     type Result = ();
 
@@ -286,22 +327,14 @@ impl Handler<UpdateOrderStatus> for OrderService {
                     ));
                     return;
                 }
-                let delivery_id = delivery_id_opt.unwrap();
-                ctx.address().do_send(SetCurrentOrderToDelivery {
-                    delivery_id: delivery_id.clone(),
-                    order: msg.order.clone(),
+                ctx.address().do_send(SetOrderExpectedTime {
+                    order_id: msg.order.order_id,
+                    expected_time: msg.order.expected_delivery_time,
                 });
-                ctx.address().do_send(SetDeliveryToOrder {
+
+                self.send_to_coordinator(NotifyOrderUpdated {
+                    peer_id: msg.order.client_id.clone(),
                     order: msg.order.clone(),
-                    delivery_id,
-                });
-                ctx.address().do_send(SetOrderStatus {
-                    order: msg.order.clone(),
-                    order_status: OrderStatus::Delivering,
-                });
-                ctx.address().do_send(RemoveAuthorizedOrderToRestaurant {
-                    order: msg.order.clone(),
-                    restaurant_id: msg.order.restaurant_id.clone(),
                 });
             }
             OrderStatus::Delivered => {
@@ -319,6 +352,7 @@ impl Handler<UpdateOrderStatus> for OrderService {
     }
 }
 
+/// Handles notifications that a delivery agent has accepted an order.
 impl Handler<DeliveryAccepted> for OrderService {
     type Result = ();
 
@@ -339,13 +373,14 @@ impl Handler<DeliveryAccepted> for OrderService {
     }
 }
 
+/// Handles notifications that an order has been accepted by a delivery agent and stores the assignment.
 impl Handler<AcceptedOrder> for OrderService {
     type Result = ();
 
     fn handle(&mut self, msg: AcceptedOrder, ctx: &mut Self::Context) -> Self::Result {
         self.logger.info(format!(
-            "Reenviando AcceptOrder al Storage: {:?}",
-            msg.order
+            "Resending AcceptOrder to Storage: {:?}",
+            msg.order.order_id
         ));
         let message = AddOrderAccepted {
             order: msg.order.clone(),
@@ -356,6 +391,7 @@ impl Handler<AcceptedOrder> for OrderService {
     }
 }
 
+/// Handles notifications that a delivery agent is available for an order.
 impl Handler<DeliveryAvailable> for OrderService {
     type Result = ();
 
@@ -368,6 +404,7 @@ impl Handler<DeliveryAvailable> for OrderService {
     }
 }
 
+/// Handles notifications that a delivery agent is no longer needed for an order.
 impl Handler<DeliveryNoNeeded> for OrderService {
     type Result = ();
 
@@ -381,14 +418,13 @@ impl Handler<DeliveryNoNeeded> for OrderService {
     }
 }
 
+/// Handles notifications that an order has been finalized (delivered or cancelled).
 impl Handler<OrderFinalized> for OrderService {
     type Result = ();
 
-    fn handle(&mut self, msg: OrderFinalized, _ctx: &mut Self::Context) -> Self::Result {
-        self.logger.info(format!(
-            "Reenviando CancelOrder al Storage: {:?}",
-            msg.order
-        ));
+    fn handle(&mut self, msg: OrderFinalized, ctx: &mut Self::Context) -> Self::Result {
+        self.logger
+            .info(format!("Finalizing order: {:?}", msg.order.order_id));
         if let Some(communicator) = self.payment_gateway_address.as_ref() {
             let socket_addr = communicator.local_address;
             if let Some(sender) = communicator.sender.as_ref() {
@@ -405,9 +441,14 @@ impl Handler<OrderFinalized> for OrderService {
             self.logger
                 .error("PaymentGateway Communicator not initialized");
         }
+        // eliminar datos asociados a la orden -> eliminar el cliente, si está en el restaurant y si está en el delivery
+        ctx.address().do_send(RemoveOrder {
+            order: msg.order.clone(),
+        });
     }
 }
 
+/// Handles instructions to finish a delivery assignment for an order.
 impl Handler<DeliverThisOrder> for OrderService {
     type Result = ();
 
@@ -425,19 +466,20 @@ impl Handler<DeliverThisOrder> for OrderService {
     }
 }
 
+/// Handles requests to remove an order from the system.
 impl Handler<RemoveOrder> for OrderService {
     type Result = ();
 
     fn handle(&mut self, msg: RemoveOrder, _ctx: &mut Self::Context) -> Self::Result {
         self.logger.info(format!(
-            "Reenviando Remove Order al Storage: {:?}",
-            msg.order
+            "Resending Remove Order to Storage: {:?}",
+            msg.order.order_id
         ));
         self.send_to_storage(msg.clone());
     }
 }
 
-//
+/// Handles requests to add an authorized order to a restaurant.
 impl Handler<AddAuthorizedOrderToRestaurant> for OrderService {
     type Result = ();
 
@@ -448,12 +490,13 @@ impl Handler<AddAuthorizedOrderToRestaurant> for OrderService {
     ) -> Self::Result {
         self.logger.info(format!(
             "Sending AddAuthorizedOrderToRestaurant to Storage: {:?} -> {}",
-            msg.order, msg.restaurant_id
+            msg.order.order_id, msg.restaurant_id
         ));
         self.send_to_storage(msg);
     }
 }
 
+/// Handles requests to add a pending order to a restaurant.
 impl Handler<AddPendingOrderToRestaurant> for OrderService {
     type Result = ();
 
@@ -471,6 +514,7 @@ impl Handler<AddPendingOrderToRestaurant> for OrderService {
     }
 }
 
+/// Handles requests to remove an authorized order from a restaurant.
 impl Handler<RemoveAuthorizedOrderToRestaurant> for OrderService {
     type Result = ();
 
@@ -488,6 +532,7 @@ impl Handler<RemoveAuthorizedOrderToRestaurant> for OrderService {
     }
 }
 
+/// Handles requests to remove a pending order from a restaurant.
 impl Handler<RemovePendingOrderToRestaurant> for OrderService {
     type Result = ();
 
@@ -505,6 +550,7 @@ impl Handler<RemovePendingOrderToRestaurant> for OrderService {
     }
 }
 
+/// Handles requests to set the current order for a delivery agent.
 impl Handler<SetCurrentOrderToDelivery> for OrderService {
     type Result = ();
 
@@ -518,6 +564,7 @@ impl Handler<SetCurrentOrderToDelivery> for OrderService {
     }
 }
 
+/// Handles requests to update the status of an order.
 impl Handler<SetOrderStatus> for OrderService {
     type Result = ();
 
@@ -540,6 +587,7 @@ impl Handler<SetOrderStatus> for OrderService {
     }
 }
 
+/// Handles requests to assign a delivery agent to an order.
 impl Handler<SetDeliveryToOrder> for OrderService {
     type Result = ();
 
@@ -550,6 +598,18 @@ impl Handler<SetDeliveryToOrder> for OrderService {
             msg.order.order_id.clone()
         ));
 
+        self.send_to_storage(msg);
+    }
+}
+
+impl Handler<SetOrderExpectedTime> for OrderService {
+    type Result = ();
+
+    fn handle(&mut self, msg: SetOrderExpectedTime, _ctx: &mut Self::Context) -> Self::Result {
+        self.logger.info(format!(
+            "Sending SetOrderExpectedTime to Storage: order {} -> expected time {:?}",
+            msg.order_id, msg.expected_time
+        ));
         self.send_to_storage(msg);
     }
 }

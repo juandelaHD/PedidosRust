@@ -1,5 +1,5 @@
 use crate::constants::COORDINATE_SCALE;
-use crate::constants::SUCCESS_PROBABILITY;
+//use crate::constants::SUCCESS_PROBABILITY;
 use rand::random;
 use std::io::{self, Write};
 
@@ -8,11 +8,6 @@ pub fn get_rand_f32_tuple() -> (f32, f32) {
         (rand::random::<f32>() * COORDINATE_SCALE).round(),
         (rand::random::<f32>() * COORDINATE_SCALE).round(),
     )
-}
-
-pub fn random_bool_by_probability() -> bool {
-    let rand_value: f32 = random();
-    rand_value < SUCCESS_PROBABILITY
 }
 
 pub fn random_bool_by_given_probability(probability: f32) -> bool {

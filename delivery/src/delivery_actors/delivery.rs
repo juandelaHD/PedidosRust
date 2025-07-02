@@ -1,21 +1,24 @@
 use actix::fut::wrap_future;
 use actix::prelude::*;
 use colored::Color;
-use common::constants::BASE_DELAY_MILLIS;
+use common::constants::{BASE_DELAY_MILLIS, DELAY_SECONDS_TO_START_RECONNECT};
 use common::logger::Logger;
-use common::messages::delivery_messages::{IAmAvailable, OrderDelivered};
+use common::messages::delivery_messages::*;
+use common::messages::shared_messages::*;
 use common::messages::{
-    AcceptedOrder, DeliverThisOrder, DeliveryNoNeeded, NewOfferToDeliver, UpdateOrderStatus,
-    shared_messages::*,
+    AcceptedOrder, DeliverThisOrder, DeliveryNoNeeded, LeaderIs, NetworkMessage, NewOfferToDeliver,
+    RecoverProcedure, UpdateOrderStatus, WhoIsLeader,
 };
+
 use common::network::communicator::Communicator;
-use common::network::connections::{connect_some, try_to_connect};
+use common::network::connections::{connect_one, connect_some, reconnect};
 use common::network::peer_types::PeerType;
 use common::types::delivery_status::DeliveryStatus;
 use common::types::dtos::{DeliveryDTO, OrderDTO, UserDTO};
 use common::types::order_status::OrderStatus;
 use common::utils::calculate_distance;
 use std::net::SocketAddr;
+use std::process;
 use std::time::Duration;
 use tokio::net::TcpStream;
 
@@ -46,6 +49,12 @@ pub struct Delivery {
     pub pending_stream: Option<TcpStream>,
     /// Logger for delivery events.
     pub logger: Logger,
+    /// Timer handle for waiting reconnection attempts.
+    waiting_reconnection_timer: Option<actix::SpawnHandle>,
+    /// Timer handle for keeping the actor alive during reconnection attempts.
+    keep_alive_timer: Option<actix::SpawnHandle>,
+    /// Flag to indicate if the delivery is already connected and waiting for reconnection.
+    already_connected: bool,
 }
 
 impl Delivery {
@@ -73,7 +82,10 @@ impl Delivery {
         let pending_stream = connect_some(servers.clone(), PeerType::DeliveryType).await;
 
         if pending_stream.is_none() {
-            logger.error("Failed to connect to any server. Exiting delivery actor.");
+            logger.error(format!(
+                "Failed to connect to any server from the list: {:?}",
+                servers
+            ));
             std::process::exit(1);
         }
 
@@ -87,6 +99,9 @@ impl Delivery {
             communicator: None,
             pending_stream,
             logger,
+            waiting_reconnection_timer: None,
+            keep_alive_timer: None,
+            already_connected: false,
         }
     }
 
@@ -119,6 +134,10 @@ impl Delivery {
             .as_ref()
             .map(|c| c.local_address)
             .expect("Socket address not initialized");
+        self.logger.info(format!(
+            "Starting Delivery actor with ID: {} at position: {:?}",
+            self.delivery_id, self.position
+        ));
         self.send_network_message(NetworkMessage::WhoIsLeader(WhoIsLeader {
             origin_addr: actual_socket_addr,
             user_id: self.delivery_id.clone(),
@@ -151,6 +170,73 @@ impl Delivery {
     }
 }
 
+/// Handles [`ConnectionClosed`] messages.
+///
+/// This handler is triggered when the connection to the server is lost.
+/// It attempts to reconnect to one of the known servers. If reconnection is successful,
+/// it reinitializes the communicator and restarts the actor. If not, the actor is stopped.
+impl Handler<ConnectionClosed> for Delivery {
+    type Result = ();
+
+    fn handle(&mut self, _msg: ConnectionClosed, ctx: &mut Self::Context) -> Self::Result {
+        println!("[Delivery][ConnectionClosed] Handler called");
+        println!(
+            "[Delivery][ConnectionClosed] Communicator state: {:?}",
+            self.communicator.is_some()
+        );
+        let servers = self.servers.clone();
+        println!(
+            "[Delivery][ConnectionClosed] Calling reconnect with: {:?}",
+            servers
+        );
+        let fut = async move { reconnect(servers, PeerType::DeliveryType).await };
+
+        let fut = wrap_future::<_, Self>(fut).map(|result, actor: &mut Self, ctx| {
+            println!("[Delivery][ConnectionClosed] Reconnection future finished");
+            match result {
+                Some(stream) => {
+                    println!(
+                        "[Delivery][ConnectionClosed] Reconnection successful, creating communicator"
+                    );
+                    let communicator =
+                        Communicator::new(stream, ctx.address(), PeerType::DeliveryType);
+                    actor.communicator = Some(communicator);
+
+                    actor
+                        .logger
+                        .info("Reconnected successfully. Restarting actor...");
+
+                    if let Some(handler) = actor.waiting_reconnection_timer.take() {
+                        ctx.cancel_future(handler);
+                        actor.waiting_reconnection_timer = None;
+                        println!("[Delivery][ConnectionClosed] Cancelling reconnection timer");
+                    }
+
+                    let addr = ctx.address();
+                    let handler =
+                        ctx.run_later(std::time::Duration::from_millis(100), move |_, _| {
+                            println!(
+                                "[Delivery][ConnectionClosed] Sending StartRunning after reconnection"
+                            );
+                            addr.do_send(StartRunning);
+                        });
+                    actor.waiting_reconnection_timer = Some(handler);
+                }
+                None => {
+                    println!(
+                        "[Delivery][ConnectionClosed] Failed to reconnect, stopping actor"
+                    );
+                    actor
+                        .logger
+                        .error("Failed to reconnect to any server after closed connection");
+                    ctx.stop();
+                }
+            }
+        });
+        ctx.spawn(fut);
+    }
+}
+
 impl Actor for Delivery {
     type Context = Context<Self>;
 
@@ -170,74 +256,36 @@ impl Actor for Delivery {
             PeerType::DeliveryType,
         );
         self.communicator = Some(communicator);
-        self.start_running(ctx);
+        // Esperar 100ms antes de enviar WhoIsLeader
+        let addr = ctx.address();
+        let handler = ctx.run_later(std::time::Duration::from_millis(100), move |_, _| {
+            addr.do_send(StartRunning);
+        });
+        self.waiting_reconnection_timer = Some(handler);
     }
 }
 
-/// Message used to update the network communicator for the delivery actor.
-pub struct UpdateCommunicator(pub Communicator<Delivery>);
-
-impl Message for UpdateCommunicator {
-    type Result = ();
-}
-
-/// Handler for the `UpdateCommunicator` message.
-///
-/// Updates the delivery's communicator with a new instance, typically after reconnecting to a new leader.
-impl Handler<UpdateCommunicator> for Delivery {
-    type Result = ();
-
-    fn handle(&mut self, msg: UpdateCommunicator, _ctx: &mut Self::Context) -> Self::Result {
-        self.communicator = Some(msg.0);
-    }
-}
-
-/// Message used to trigger registration with the server.
-pub struct SendRegistration();
-
-impl Message for SendRegistration {
-    type Result = ();
-}
-
-/// Handler for the `SendRegistration` message.
-///
-/// Registers the delivery actor with the server by sending a `RegisterUser` message.
-impl Handler<SendRegistration> for Delivery {
-    type Result = ();
-
-    fn handle(&mut self, _msg: SendRegistration, _ctx: &mut Self::Context) -> Self::Result {
-        let local_address = self
-            .communicator
-            .as_ref()
-            .map(|c| c.local_address)
-            .expect("Socket address not set");
-        self.send_network_message(NetworkMessage::RegisterUser(RegisterUser {
-            origin_addr: local_address,
-            user_id: self.delivery_id.clone(),
-            position: self.position,
-        }));
-    }
-}
-
-/// Handler for the `LeaderIs` message.
-///
-/// Handles notification of the current leader's address. If not already connected to the leader,
-/// attempts to establish a new connection and updates the communicator.
 impl Handler<LeaderIs> for Delivery {
     type Result = ();
 
     fn handle(&mut self, msg: LeaderIs, ctx: &mut Self::Context) -> Self::Result {
+        // cambia esto por un logger info en ingles
+        self.logger
+            .info(format!(" Received LeaderIs message: {:?}", msg.coord_addr));
+
         let leader_addr = msg.coord_addr;
-        let self_addr = ctx.address();
-        let logger = self.logger.clone();
+
         let communicator_opt = self.communicator.as_ref().map(|c| c.peer_address);
 
-        // Si ya estamos conectados al líder, enviamos que nos registre
         if Some(leader_addr) == communicator_opt {
-            self.logger.info(format!(
-                "Already connected to the leader at address: {}",
-                leader_addr
-            ));
+            self.logger.info("Already connected to leader");
+            // CANCELA EL KEEP-ALIVE SI EXISTE
+            if let Some(handler) = self.keep_alive_timer.take() {
+                ctx.cancel_future(handler);
+                self.logger
+                    .info("KEEP-ALIVE CANCELLED (already connected to leader)");
+            }
+
             let local_address = self
                 .communicator
                 .as_ref()
@@ -250,33 +298,80 @@ impl Handler<LeaderIs> for Delivery {
             }));
             return;
         }
-        // Si no estamos conectados al líder, intentamos conectarnos
-        // Clone the necessary fields to move into the async block
-        ctx.spawn(wrap_future(async move {
-            if let Some(new_stream) = try_to_connect(leader_addr).await {
-                let new_communicator =
-                    Communicator::new(new_stream, self_addr.clone(), PeerType::DeliveryType);
-                self_addr.do_send(UpdateCommunicator(new_communicator));
-                logger.info(format!(
-                    "Communicator updated with new peer address: {}",
-                    leader_addr
-                ));
-            } else {
-                logger.error(format!(
-                    "Failed to connect to the new leader at {}",
-                    leader_addr
-                ));
+
+        if let Some(comm) = self.communicator.as_mut() {
+            comm.shutdown();
+        }
+        self.communicator = None;
+
+        let fut_connect = async move { connect_one(leader_addr, PeerType::DeliveryType).await };
+
+        let fut = wrap_future::<_, Self>(fut_connect).map(|result, actor: &mut Self, ctx| {
+            actor.logger.info("Reconnection finished");
+            match result {
+                Some(stream) => {
+                    actor
+                        .logger
+                        .info("Reconnection successful, creating communicator");
+                    let communicator =
+                        Communicator::new(stream, ctx.address(), PeerType::DeliveryType);
+                    actor.communicator = Some(communicator);
+
+                    actor
+                        .logger
+                        .info("Reconnected successfully. Restarting actor...");
+
+                    // CANCELA EL KEEP-ALIVE SI EXISTE
+                    if let Some(handler) = actor.keep_alive_timer.take() {
+                        ctx.cancel_future(handler);
+                    }
+
+                    if let Some(handler) = actor.waiting_reconnection_timer.take() {
+                        ctx.cancel_future(handler);
+                        actor.waiting_reconnection_timer = None;
+                    }
+
+                    let addr = ctx.address();
+                    let handler =
+                        ctx.run_later(std::time::Duration::from_millis(100), move |_, _| {
+                            addr.do_send(StartRunning);
+                        });
+                    actor.waiting_reconnection_timer = Some(handler);
+                }
+                None => {
+                    actor
+                        .logger
+                        .error("Failed to reconnect to leader, stopping actor");
+                    ctx.stop();
+                }
             }
-        }));
-        let actual_socket_addr = self
-            .communicator
-            .as_ref()
-            .map(|c| c.local_address)
-            .expect("Socket address not set");
-        self.send_network_message(NetworkMessage::WhoIsLeader(WhoIsLeader {
-            origin_addr: actual_socket_addr,
-            user_id: self.delivery_id.clone(),
-        }));
+        });
+
+        ctx.spawn(fut);
+    }
+}
+// Mensaje para pedir la dirección local
+pub struct GetLocalAddress;
+
+impl Message for GetLocalAddress {
+    type Result = Option<SocketAddr>;
+}
+
+// Handler para responder con la dirección local
+impl Handler<GetLocalAddress> for Delivery {
+    type Result = MessageResult<GetLocalAddress>;
+
+    fn handle(&mut self, _msg: GetLocalAddress, _ctx: &mut Self::Context) -> Self::Result {
+        let addr = self.communicator.as_ref().map(|c| c.local_address);
+        MessageResult(addr)
+    }
+}
+
+impl Handler<StartRunning> for Delivery {
+    type Result = ();
+
+    fn handle(&mut self, _msg: StartRunning, ctx: &mut Self::Context) -> Self::Result {
+        self.start_running(ctx);
     }
 }
 
@@ -288,6 +383,11 @@ impl Handler<RecoverProcedure> for Delivery {
     type Result = ();
 
     fn handle(&mut self, msg: RecoverProcedure, ctx: &mut Self::Context) -> Self::Result {
+        if self.already_connected {
+            self.logger
+                .info("Already connected, skipping recovery procedure.");
+            return;
+        }
         self.logger.info(format!(
             "Handling RecoverProcedure for Delivery ID={}",
             self.delivery_id
@@ -300,6 +400,7 @@ impl Handler<RecoverProcedure> for Delivery {
                 return;
             }
         };
+        self.already_connected = true;
         let order_dto = delivery_dto.current_order.clone();
 
         // Actualizar el estado del delivery con la información recuperada
@@ -340,22 +441,29 @@ impl Handler<RecoverProcedure> for Delivery {
                         .info(format!("Delivery is Delivering order {}", order.order_id));
 
                     self.logger
-                        .info("Delivery position matches order location, sending OrderDelivered");
+                        .info("Resuming delivery process after reconnection");
                     self.status = DeliveryStatus::Delivering;
                     let distance_from_client =
                         calculate_distance(self.position, order.client_position);
                     let delay_ms = BASE_DELAY_MILLIS + (distance_from_client as u64 * 1000);
                     let mut order = order.clone();
+                    order.status = OrderStatus::Delivering;
                     order.expected_delivery_time = delay_ms;
 
-                    // Aviso  al servidor que estoy entregando
+                    self.logger.info(format!(
+                        "Resuming delivery for order {} with estimated time: {:.2} seconds",
+                        order.order_id,
+                        delay_ms as f64 / 1000.0
+                    ));
+
+                    // Notify server that we're continuing delivery
                     self.send_network_message(NetworkMessage::UpdateOrderStatus(
                         UpdateOrderStatus {
                             order: order.clone(),
                         },
                     ));
 
-                    // Simular el tiempo de entrega
+                    // Resume delivery timer
                     let client_position = order.client_position;
                     ctx.run_later(Duration::from_millis(delay_ms), move |_act, ctx| {
                         ctx.address().do_send(OrderDelivered {
@@ -372,9 +480,58 @@ impl Handler<RecoverProcedure> for Delivery {
                     }));
                 }
             }
+            DeliveryStatus::Available => {
+                // Check if there's a current order despite being "Available"
+                // This can happen if the delivery was disconnected while delivering
+                if let Some(order) = &self.current_order {
+                    self.logger.warn(format!(
+                        "Delivery status is Available but has current order {}. Assuming delivery was in progress, resuming delivery process.",
+                        order.order_id
+                    ));
+
+                    // Change status to Delivering and resume the process
+                    self.status = DeliveryStatus::Delivering;
+                    let distance_from_client =
+                        calculate_distance(self.position, order.client_position);
+                    let delay_ms = BASE_DELAY_MILLIS + (distance_from_client as u64 * 1000);
+                    let mut order = order.clone();
+                    order.status = OrderStatus::Delivering;
+                    order.expected_delivery_time = delay_ms;
+
+                    self.logger.info(format!(
+                        "Resuming delivery for order {} with estimated time: {:.2} seconds",
+                        order.order_id,
+                        delay_ms as f64 / 1000.0
+                    ));
+
+                    // Notify server that we're delivering
+                    self.send_network_message(NetworkMessage::UpdateOrderStatus(
+                        UpdateOrderStatus {
+                            order: order.clone(),
+                        },
+                    ));
+
+                    // Start delivery timer
+                    let client_position = order.client_position;
+                    ctx.run_later(Duration::from_millis(delay_ms), move |_act, ctx| {
+                        ctx.address().do_send(OrderDelivered {
+                            order: order.clone(),
+                        });
+                    });
+                    self.position = client_position;
+                } else {
+                    self.logger
+                        .info("Delivery is available and has no current order, ready to accept new orders.");
+                    self.send_network_message(NetworkMessage::IAmAvailable(IAmAvailable {
+                        delivery_info: delivery_dto.clone(),
+                    }));
+                }
+            }
             _ => {
-                self.logger
-                    .info("Delivery is available or in another state, no action needed.");
+                self.logger.info(format!(
+                    "Delivery is in state {:?}, no specific recovery action needed.",
+                    self.status
+                ));
             }
         }
     }
@@ -392,8 +549,8 @@ impl Handler<NewOfferToDeliver> for Delivery {
             msg.order.order_id
         ));
         match self.status {
-            // Si estoy disponible, acepto el pedido
-            DeliveryStatus::Available => {
+            // Si estoy disponible o esperando confirmación, acepto el pedido
+            DeliveryStatus::Available | DeliveryStatus::WaitingConfirmation => {
                 // Probabilidad de aceptar el pedido
                 let accept_order = rand::random::<f32>() < self.probability;
                 if !accept_order {
@@ -403,7 +560,7 @@ impl Handler<NewOfferToDeliver> for Delivery {
                     ));
                     return;
                 }
-                self.current_order = Some(msg.order.clone());
+                // self.current_order = Some(msg.order.clone());
                 self.status = DeliveryStatus::WaitingConfirmation;
                 let my_info = DeliveryDTO {
                     delivery_id: self.delivery_id.clone(),
@@ -418,11 +575,7 @@ impl Handler<NewOfferToDeliver> for Delivery {
                     delivery_info: my_info.clone(),
                 }));
             }
-            // Si estoy ocupado, ignoro el pedido
-            DeliveryStatus::WaitingConfirmation => {
-                self.logger
-                    .warn("Already waiting for confirmation, ignoring new offer.");
-            }
+            // Si estoy en otro estado, ignoro el pedido
             _ => {
                 self.logger.warn(format!(
                     "Delivery is not available to accept new offers, current status: {:?}",
@@ -440,20 +593,18 @@ impl Handler<DeliveryNoNeeded> for Delivery {
     type Result = ();
 
     fn handle(&mut self, msg: DeliveryNoNeeded, _ctx: &mut Self::Context) -> Self::Result {
-        if let Some(current_order) = &self.current_order {
-            if current_order.order_id == msg.order.order_id {
-                self.logger
-                    .info("Order no longer needed, resetting current order.");
-                self.current_order = None;
-                self.status = DeliveryStatus::Available;
-            } else {
-                self.logger.warn(format!(
-                    "Received DeliveryNoNeeded for a different order ({}), ignoring",
-                    msg.order.order_id
-                ));
-            }
+        if let Some(_current_order) = &self.current_order {
+            self.logger.info(format!(
+                "Received DeliveryNoNeeded for a different order ({}), ignoring",
+                msg.order.order_id
+            ));
         } else {
-            self.logger.warn("No current order to cancel.");
+            self.logger.info(format!(
+                "DeliveryNoNeeded received for order ID: {}",
+                msg.order.order_id
+            ));
+            self.current_order = None;
+            self.status = DeliveryStatus::Available;
         }
     }
 }
@@ -466,49 +617,47 @@ impl Handler<DeliverThisOrder> for Delivery {
 
     fn handle(&mut self, msg: DeliverThisOrder, ctx: &mut Self::Context) -> Self::Result {
         if let Some(current_order) = &self.current_order {
-            if current_order.order_id == msg.order.order_id {
-                self.logger.info(format!(
-                    "Delivering order for client '{}' to destination {:?}",
-                    current_order.client_id, msg.order.client_position
-                ));
-                // Actualizar el estado del delivery y la orden
-                let mut new_order = msg.order.clone();
-                new_order.status = OrderStatus::Delivering;
-
-                // Simular el tiempo de llegada al restaurante y al cliente
-                let delay_ms = self.calcular_delay_ms(
-                    msg.restaurant_info.position,
-                    msg.order.client_position,
-                    BASE_DELAY_MILLIS,
-                );
-
-                self.logger.info(format!(
-                    "Estimated delivery time: {:.2} seconds",
-                    delay_ms as f64 / 1000.0
-                ));
-
-                new_order.expected_delivery_time = delay_ms;
-
-                self.send_network_message(NetworkMessage::UpdateOrderStatus(UpdateOrderStatus {
-                    order: new_order.clone(),
-                }));
-
-                let order = msg.order.clone();
-                ctx.run_later(Duration::from_millis(delay_ms), move |_act, ctx| {
-                    ctx.address().do_send(OrderDelivered {
-                        order: order.clone(),
-                    });
-                });
-
-                self.position = msg.order.client_position;
-            } else {
-                self.logger.warn(format!(
-                    "Received DeliverThisOrder for a different order ({}), ignoring",
-                    msg.order.order_id
-                ));
-            }
+            self.logger.warn(format!(
+                "Delivery already has an order (ID: {}), cannot deliver new order (ID: {})",
+                current_order.order_id, msg.order.order_id
+            ));
         } else {
-            self.logger.warn("No current order to deliver.");
+            self.status = DeliveryStatus::Delivering;
+            let mut new_order = msg.order.clone();
+
+            self.logger.info(format!(
+                "Delivering order for client '{}' to destination {:?}",
+                new_order.client_id, new_order.client_position
+            ));
+
+            // Simular el tiempo de llegada al restaurante y al cliente
+            let delay_ms = self.calcular_delay_ms(
+                msg.restaurant_info.position,
+                msg.order.client_position,
+                BASE_DELAY_MILLIS,
+            );
+
+            self.logger.info(format!(
+                "Estimated delivery time: {:.2} seconds",
+                delay_ms as f64 / 1000.0
+            ));
+
+            new_order.expected_delivery_time = delay_ms;
+
+            self.current_order = Some(new_order.clone());
+
+            self.send_network_message(NetworkMessage::UpdateOrderStatus(UpdateOrderStatus {
+                order: new_order.clone(),
+            }));
+
+            let order = msg.order.clone();
+            ctx.run_later(Duration::from_millis(delay_ms), move |_act, ctx| {
+                ctx.address().do_send(OrderDelivered {
+                    order: order.clone(),
+                });
+            });
+
+            self.position = msg.order.client_position;
         }
     }
 }
@@ -568,6 +717,9 @@ impl Handler<NetworkMessage> for Delivery {
     fn handle(&mut self, msg: NetworkMessage, ctx: &mut Self::Context) -> Self::Result {
         match msg {
             // Users messages
+            NetworkMessage::RetryLater(_msg_data) => {
+                self.logger.info("Retrying to connect in some seconds");
+            }
             NetworkMessage::LeaderIs(msg_data) => ctx.address().do_send(msg_data),
             NetworkMessage::RecoveredInfo(user_dto_opt) => {
                 let user_dto = user_dto_opt;
@@ -600,6 +752,7 @@ impl Handler<NetworkMessage> for Delivery {
             NetworkMessage::NoRecoveredInfo => {
                 self.logger
                     .warn("No recovered info available, proceeding with normal operation.");
+                self.already_connected = true;
             }
 
             NetworkMessage::NewOfferToDeliver(msg_data) => {
@@ -619,205 +772,62 @@ impl Handler<NetworkMessage> for Delivery {
                 ));
                 ctx.address().do_send(msg_data);
             }
-
-            _ => {
+            NetworkMessage::ConnectionClosed(msg_data) => {
+                println!(
+                    "[Delivery][NetworkMessage] ConnectionClosed received: {:?}",
+                    msg_data.remote_addr
+                );
+                println!("[DEBUG] Trying to reconnect to servers: {:?}", self.servers);
                 self.logger.info(format!(
-                    "NetworkMessage descartado/no implementado: {:?}",
-                    msg
+                    "Connection closed with address: {}",
+                    msg_data.remote_addr
                 ));
+
+                self.logger.info(format!(
+                    "Removing communicator for address: {}",
+                    msg_data.remote_addr
+                ));
+                if let Some(comm) = self.communicator.as_mut() {
+                    comm.shutdown();
+                }
+                self.communicator = None;
+                self.logger.warn("Retrying to reconnect to the server ...");
+
+                let msg_data_cloned = msg_data.clone();
+
+                // --- KEEP ALIVE TIMER ---
+                // Cancela uno anterior si existe
+                if let Some(handle) = self.keep_alive_timer.take() {
+                    ctx.cancel_future(handle);
+                }
+                // Programa un timer dummy para mantener vivo el actor
+                let keep_alive_handle = ctx.run_interval(Duration::from_secs(1), |_, _| {
+                    // No hace nada, solo mantiene vivo el actor
+                    println!("[Delivery][KeepAlive] Keeping actor alive during reconnection");
+                });
+                self.keep_alive_timer = Some(keep_alive_handle);
+
+                // --- TIMER DE RECONEXIÓN ---
+                let handle = ctx.run_later(DELAY_SECONDS_TO_START_RECONNECT, move |_, ctx| {
+                    println!("Attempting to reconnect after delay...");
+                    ctx.address().do_send(ConnectionClosed {
+                        remote_addr: msg_data_cloned.remote_addr,
+                    });
+                    println!("Reconnection attempt sent.");
+                });
+                self.waiting_reconnection_timer = Some(handle);
+            }
+            _ => {
+                self.logger
+                    .info(format!("NetworkMessage ignored: {:?}", msg));
             }
         }
     }
 }
 
-/*
-// ------- TESTING ------- //
-struct GetStatus;
-impl Message for GetStatus {
-    type Result = UserDTO;
-}
-impl Handler<GetStatus> for Delivery {
-    type Result = MessageResult<GetStatus>;
-    fn handle(&mut self, _msg: GetStatus, _ctx: &mut Self::Context) -> Self::Result {
-        MessageResult(UserDTO::Delivery(DeliveryDTO {
-            delivery_id: self.delivery_id.clone(),
-            delivery_position: self.position,
-            status: self.status.clone(),
-            current_order: self.current_order.clone(),
-            current_client_id: self.current_order.as_ref().map(|o| o.client_id.clone()),
-            time_stamp: std::time::SystemTime::now(),
-        }))
+impl Drop for Delivery {
+    fn drop(&mut self) {
+        actix::System::current().stop();
+        process::exit(0);
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use common::types::order_status::OrderStatus;
-    use std::collections::HashMap;
-
-    fn test_order(order_id: u64) -> OrderDTO {
-        OrderDTO {
-            order_id,
-            dish_name: "Pizza".to_string(),
-            client_id: "client1".to_string(),
-            restaurant_id: "rest1".to_string(),
-            delivery_id: Some("delivery1".to_string()),
-            status: OrderStatus::Pending,
-            client_position: (1.0, 2.0),
-            time_stamp: std::time::SystemTime::now(),
-        }
-    }
-
-    fn dummy_delivery(status: DeliveryStatus, current_order: Option<OrderDTO>) -> Delivery {
-
-    }
-
-    #[actix_rt::test]
-    async fn test_handle_new_offer_to_deliver_accepts_order() {
-        let delivery = dummy_delivery(DeliveryStatus::Available, None).start();
-        let order = test_order(1);
-        let msg = NewOfferToDeliver {
-            order: order.clone(),
-        };
-
-        // Enviamos el mensaje y esperamos a que se procese
-        delivery.send(msg).await.unwrap();
-
-        // Consultar el estado del actor Delivery
-        let result = delivery.send(GetStatus).await.unwrap();
-        if let UserDTO::Delivery(delivery_dto) = result {
-            assert_eq!(delivery_dto.status, DeliveryStatus::WaitingConfirmation);
-            assert_eq!(delivery_dto.current_order.unwrap().order_id, 1);
-        } else {
-            panic!("Expected UserDTO::Delivery variant");
-        }
-    }
-
-    #[actix_rt::test]
-    async fn test_handle_delivery_no_needed_resets_order() {
-        let order = test_order(2);
-        let delivery =
-            dummy_delivery(DeliveryStatus::WaitingConfirmation, Some(order.clone())).start();
-
-        // Primero simulamos que el delivery tiene un pedido pendiente
-        // Enviamos el mensaje DeliveryNoNeeded
-        delivery
-            .send(DeliveryNoNeeded {
-                order: order.clone(),
-            })
-            .await
-            .unwrap();
-
-        // Consultamos el estado
-        let result = delivery.send(GetStatus).await.unwrap();
-        if let UserDTO::Delivery(delivery_dto) = result {
-            assert_eq!(delivery_dto.status, DeliveryStatus::Available);
-            assert!(delivery_dto.current_order.is_none());
-        } else {
-            panic!("Expected UserDTO::Delivery variant");
-        }
-    }
-
-    #[actix_rt::test]
-    async fn test_handle_deliver_this_order_sets_delivering() {
-        let order = test_order(3);
-        let delivery =
-            dummy_delivery(DeliveryStatus::WaitingConfirmation, Some(order.clone())).start();
-
-        // Enviamos el mensaje DeliverThisOrder
-        delivery
-            .send(DeliverThisOrder {
-                order: order.clone(),
-            })
-            .await
-            .unwrap();
-
-        // Consultamos el estado
-        let result = delivery.send(GetStatus).await.unwrap();
-        if let UserDTO::Delivery(delivery_dto) = result {
-            assert_eq!(delivery_dto.status, DeliveryStatus::Delivering);
-            assert_eq!(delivery_dto.delivery_position, order.client_position);
-        } else {
-            panic!("Expected UserDTO::Delivery variant");
-        }
-    }
-
-    #[actix_rt::test]
-    async fn test_handle_order_delivered_sets_available() {
-        let order = test_order(4);
-        let delivery = dummy_delivery(DeliveryStatus::Delivering, Some(order.clone())).start();
-
-        // Enviamos el mensaje OrderDelivered
-        delivery
-            .send(OrderDelivered {
-                order: order.clone(),
-            })
-            .await
-            .unwrap();
-
-        // Consultamos el estado
-        let result = delivery.send(GetStatus).await.unwrap();
-        if let UserDTO::Delivery(delivery_dto) = result {
-            assert_eq!(delivery_dto.status, DeliveryStatus::Available);
-            assert!(delivery_dto.current_order.is_none());
-        } else {
-            panic!("Expected UserDTO::Delivery variant");
-        }
-    }
-
-    #[actix_rt::test]
-    async fn test_network_message_dispatch() {
-        let order = test_order(5);
-        let delivery = dummy_delivery(DeliveryStatus::Available, None).start();
-
-        // NewOfferToDeliver
-        delivery
-            .send(NetworkMessage::NewOfferToDeliver(NewOfferToDeliver {
-                order: order.clone(),
-            }))
-            .await
-            .unwrap();
-        let result = delivery.send(GetStatus).await.unwrap();
-        if let UserDTO::Delivery(delivery_dto) = result {
-            assert_eq!(delivery_dto.status, DeliveryStatus::WaitingConfirmation);
-        } else {
-            panic!("Expected UserDTO::Delivery variant");
-        }
-
-        // DeliveryNoNeeded
-        delivery
-            .send(NetworkMessage::DeliveryNoNeeded(DeliveryNoNeeded {
-                order: order.clone(),
-            }))
-            .await
-            .unwrap();
-        let result = delivery.send(GetStatus).await.unwrap();
-        if let UserDTO::Delivery(delivery_dto) = result {
-            assert_eq!(delivery_dto.status, DeliveryStatus::Available);
-        } else {
-            panic!("Expected UserDTO::Delivery variant");
-        }
-
-        // DeliverThisOrder
-        delivery
-            .send(NetworkMessage::NewOfferToDeliver(NewOfferToDeliver {
-                order: order.clone(),
-            }))
-            .await
-            .unwrap();
-        delivery
-            .send(NetworkMessage::DeliverThisOrder(DeliverThisOrder {
-                order: order.clone(),
-            }))
-            .await
-            .unwrap();
-        let result = delivery.send(GetStatus).await.unwrap();
-        if let UserDTO::Delivery(delivery_dto) = result {
-            assert_eq!(delivery_dto.status, DeliveryStatus::Delivering);
-        } else {
-            panic!("Expected UserDTO::Delivery variant");
-        }
-    }
-}
-*/
